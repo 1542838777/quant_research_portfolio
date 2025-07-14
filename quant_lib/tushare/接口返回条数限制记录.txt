@@ -1,0 +1,2 @@
+fina_indicator ：每次请求最多返回100条记录
+--解决办法：用fina_indicator_vip接口（不限制100条

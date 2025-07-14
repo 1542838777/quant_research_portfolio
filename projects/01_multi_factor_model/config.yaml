@@ -1,0 +1,76 @@
+# 多因子模型回测配置
+
+# 回测时间范围
+start_date: '2020-01-01'
+end_date: '2023-12-31'
+
+# 股票池设置
+universe:
+  index_code: '000300.SH'  # 沪深300成分股
+  exclude_st: true  # 排除ST股票
+  exclude_suspended: true  # 排除停牌股票
+
+# 因子设置
+factors:
+  - name: 'value'
+    weight: 0.3
+    params:
+      fields:
+        - 'pe_ttm'
+        - 'pb'
+        - 'ps_ttm'
+  
+  - name: 'momentum'
+    weight: 0.3
+    params:
+      lookback_periods:
+        - 20
+        - 60
+        - 120
+  
+  - name: 'quality'
+    weight: 0.2
+    params:
+      fields:
+        - 'roe'
+        - 'grossprofit_margin'
+        - 'debt_to_assets'
+  
+  - name: 'growth'
+    weight: 0.1
+    params:
+      fields:
+        - 'netprofit_yoy'
+        - 'revenue_yoy'
+  
+  - name: 'volatility'
+    weight: 0.1
+    params:
+      window: 20
+
+# 回测设置
+backtest:
+  rebalance_freq: 'month'  # 调仓频率: day, week, month, quarter
+  n_stocks: 50  # 持仓股票数量
+  fee_rate: 0.0003  # 交易费率
+  slippage: 0.0002  # 滑点
+  benchmark: '000300.SH'  # 基准指数
+  capital: 10000000.0  # 初始资金
+
+# 因子处理设置
+factor_processing:
+  winsorize: true  # 是否去极值
+  standardize: true  # 是否标准化
+  neutralize: true  # 是否中性化
+  industry_neutralize: true  # 是否行业中性化
+  market_cap_neutralize: true  # 是否市值中性化
+
+# 评估设置
+evaluation:
+  ic_decay_periods:
+    - 1
+    - 5
+    - 10
+    - 20
+    - 60
+  quantile_count: 5  # 分层回测的分位数数量 

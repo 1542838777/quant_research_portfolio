@@ -1,0 +1,107 @@
+end_date: '2023-12-31'
+evaluation:
+  forward_periods:
+  - 5
+  - 20
+  - 60
+  n_groups: 5
+factor_combination:
+  weight_method: ir_weighted
+factor_selection:
+  correlation_threshold: 0.5
+factors:
+- description: "PE\u5012\u6570\u56E0\u5B50"
+  fields:
+  - pe_ttm
+  name: pe_inv
+  type: value
+- description: "PB\u5012\u6570\u56E0\u5B50"
+  fields:
+  - pb
+  name: pb_inv
+  type: value
+- description: "PS\u5012\u6570\u56E0\u5B50"
+  fields:
+  - ps_ttm
+  name: ps_inv
+  type: value
+- description: "\u51C0\u8D44\u4EA7\u6536\u76CA\u7387"
+  fields:
+  - roe
+  name: roe
+  type: quality
+- description: "\u6BDB\u5229\u7387"
+  fields:
+  - grossprofit_margin
+  name: profit_margin
+  type: quality
+- description: "\u8D44\u4EA7\u8D1F\u503A\u7387\uFF08\u9006\u5411\uFF09"
+  fields:
+  - debt_to_assets
+  name: leverage
+  type: quality
+- description: "\u80A1\u6743\u81EA\u7531\u73B0\u91D1\u6D41/\u603B\u5E02\u503C"
+  fields:
+  - fcfe
+  - total_mv
+  name: cash_quality
+  type: quality
+- description: "\u540C\u6BD4\u589E\u957F\u7387\u56E0\u5B50"
+  fields:
+  - netprofit_yoy
+  - or_yoy
+  name: growth_yoy
+  type: growth
+- description: "\u8425\u6536\u548C\u5229\u6DA6\u73AF\u6BD4\u589E\u957F\u7387"
+  fields:
+  - q_gr_qoq
+  - q_profit_qoq
+  name: growth_qoq
+  type: growth
+- description: "3\u4E2A\u6708\u52A8\u91CF"
+  fields:
+  - close
+  name: momentum_60d
+  params:
+    lookback_periods:
+    - 60
+  type: momentum
+- description: "6\u4E2A\u6708\u52A8\u91CF"
+  fields:
+  - close
+  name: momentum_120d
+  params:
+    lookback_periods:
+    - 120
+  type: momentum
+- description: "1\u4E2A\u6708\u53CD\u8F6C"
+  fields:
+  - close
+  name: reversal_20d
+  params:
+    lookback_periods:
+    - 20
+  type: reversal
+- description: "\u5BF9\u6570\u603B\u5E02\u503C\u5012\u6570"
+  fields:
+  - total_mv
+  name: size_inv
+  type: size
+- description: "\u6708\u5E73\u5747\u6362\u624B\u7387\uFF08\u9006\u5411\uFF09"
+  fields:
+  - turnover_rate_f
+  name: liquidity
+  params:
+    window: 20
+  type: liquidity
+- description: "\u5927\u5355\u53CA\u7279\u5927\u5355\u51C0\u6D41\u5165/\u6D41\u901A\
+    \u5E02\u503C"
+  fields:
+  - buy_lg_amount
+  - sell_lg_amount
+  - buy_elg_amount
+  - sell_elg_amount
+  - circ_mv
+  name: large_order_inflow
+  type: capital_flow
+start_date: '2018-01-01'

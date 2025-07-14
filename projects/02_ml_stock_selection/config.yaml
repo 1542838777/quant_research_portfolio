@@ -1,0 +1,99 @@
+# 机器学习选股模型配置
+
+# 回测时间范围
+start_date: '2020-01-01'
+end_date: '2023-12-31'
+
+# 股票池设置
+universe:
+  index_code: '000300.SH'  # 沪深300成分股
+  exclude_st: true  # 排除ST股票
+  exclude_suspended: true  # 排除停牌股票
+
+# 特征设置
+features:
+  # 价格特征
+  price_features:
+    - 'close'
+    - 'open'
+    - 'high'
+    - 'low'
+    - 'volume'
+    - 'amount'
+  
+  # 基本面特征
+  fundamental_features:
+    - 'pe_ttm'
+    - 'pb'
+    - 'ps_ttm'
+    - 'roe'
+    - 'roa'
+    - 'grossprofit_margin'
+    - 'netprofit_margin'
+    - 'debt_to_assets'
+    - 'current_ratio'
+    - 'quick_ratio'
+  
+  # 技术指标
+  technical_features:
+    - name: 'ma'
+      windows: [5, 10, 20, 60]
+    - name: 'rsi'
+      windows: [6, 14, 21]
+    - name: 'macd'
+      params: {fast_period: 12, slow_period: 26, signal_period: 9}
+    - name: 'kdj'
+      params: {fastk_period: 9, slowk_period: 3, slowd_period: 3}
+  
+  # 时间序列特征
+  time_series:
+    lag_periods: [1, 5, 10, 20]
+    rolling_windows: [5, 10, 20, 60]
+    date_features: true
+
+# 目标变量设置
+target:
+  type: 'return'  # 'return' 或 'classification'
+  forward_period: 5  # 未来5天收益率
+  classification_threshold: 0.01  # 如果type为'classification'，正样本阈值
+
+# 模型设置
+model:
+  type: 'lightgbm'  # 'lightgbm', 'xgboost', 'random_forest', 'linear', 'svm'
+  task_type: 'regression'  # 'regression' 或 'classification'
+  test_size: 0.2
+  cv: 5
+  tune_hyperparams: true
+  
+  # 超参数网格
+  param_grid:
+    learning_rate: [0.01, 0.05, 0.1]
+    n_estimators: [100, 200, 300]
+    max_depth: [3, 5, 7]
+    num_leaves: [31, 63, 127]
+
+# 回测设置
+backtest:
+  rebalance_freq: 'month'  # 调仓频率: day, week, month, quarter
+  n_stocks: 50  # 持仓股票数量
+  fee_rate: 0.0003  # 交易费率
+  slippage: 0.0002  # 滑点
+  benchmark: '000300.SH'  # 基准指数
+  capital: 10000000.0  # 初始资金
+
+# 特征处理设置
+feature_processing:
+  scaling: 'standard'  # 'standard' 或 'minmax'
+  remove_outliers: true
+  fill_missing: 'mean'  # 'mean', 'median', 'zero'
+
+# 评估设置
+evaluation:
+  metrics:
+    - 'mse'
+    - 'rmse'
+    - 'r2'
+    - 'sharpe'
+    - 'max_drawdown'
+  feature_importance: true
+  shap_analysis: true 

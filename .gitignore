@@ -1,0 +1,14 @@
+# Python virtual environments
+.venv/
+venv/
+ENV/
+D:\lqs\codeAbout\py\env\vector_bt_env/
+D:\lqs\codeAbout\py\env/
+
+# IDE files
+.idea/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class

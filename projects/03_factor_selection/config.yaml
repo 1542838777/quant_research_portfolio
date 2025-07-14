@@ -1,0 +1,102 @@
+# 因子选择配置文件
+
+# 回测时间范围
+# 有自信 后期尝试跳到2018开始！
+start_date: '2018-01-01'
+end_date: '2023-12-31'
+
+# 因子定义
+factors:
+  # 价值因子
+  - name: 'pe_inv'
+    type: 'value'
+    description: 'PE倒数因子'
+    fields: ['pe_ttm']
+  
+  - name: 'pb_inv'
+    type: 'value'
+    description: 'PB倒数因子'
+    fields: ['pb']
+  
+  - name: 'ps_inv'
+    type: 'value'
+    description: 'PS倒数因子'
+    fields: ['ps_ttm']
+  
+  # 质量因子
+  - name: 'roe'
+    type: 'quality'
+    description: '净资产收益率'
+    fields: ['roe']
+  
+  - name: 'roa'
+    type: 'quality'
+    description: '总资产收益率'
+    fields: ['roa']
+  
+  - name: 'profit_margin'
+    type: 'quality'
+    description: '毛利率'
+    fields: ['grossprofit_margin']
+  
+  # 动量因子
+  - name: 'momentum_1m'
+    type: 'momentum'
+    description: '1个月动量'
+    params:
+      lookback_periods: [20]
+    fields: ['close']
+  
+  - name: 'momentum_3m'
+    type: 'momentum'
+    description: '3个月动量'
+    params:
+      lookback_periods: [60]
+    fields: ['close']
+  
+  - name: 'momentum_6m'
+    type: 'momentum'
+    description: '6个月动量'
+    params:
+      lookback_periods: [120]
+    fields: ['close']
+  
+  # 波动率因子
+  - name: 'volatility_1m'
+    type: 'volatility'
+    description: '1个月波动率'
+    params:
+      window: 20
+    fields: ['close']
+  
+  - name: 'volatility_3m'
+    type: 'volatility'
+    description: '3个月波动率'
+    params:
+      window: 60
+    fields: ['close']
+
+#todo 成长类因子、 大单、...
+
+# 因子评价设置
+evaluation:
+  n_groups: 5  # 分层回测的分组数
+  forward_periods: [1, 5, 20]  # 未来收益率计算的时间周期列表，单位为交易日
+  ic_threshold: 0.02  # IC均值阈值
+  ir_threshold: 0.3  # IR阈值
+
+# 因子选择设置
+factor_selection:
+  correlation_threshold: 0.5  # 相关性阈值，高于此值的因子对视为高相关
+
+# 因子合成设置
+factor_combination:
+  weight_method: 'equal'  # 权重方法：'equal'(等权重)或'ir'(IR加权)
+
+# 回测设置
+backtest:
+  rebalance_freq: 'month'  # 调仓频率: day, week, month, quarter
+  n_stocks: 50  # 持仓股票数量
+  fee_rate: 0.0003  # 交易费率
+  slippage: 0.0002  # 滑点
+  benchmark: '000300.SH'  # 基准指数 
