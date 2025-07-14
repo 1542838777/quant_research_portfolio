@@ -27,6 +27,7 @@ from factor_evaluation import (
     FactorEvaluator
 )
 from quant_lib.data_loader import DataLoader
+from data_manager import DataManager
 from quant_lib.factor_factory import (
     create_factor,
     create_factor_combiner,
@@ -70,36 +71,31 @@ def load_config(config_path: str) -> dict:
     return load_from_yaml(config_path)
 
 
-def load_data(config: dict) -> dict:
+def load_data(config_path: str) -> tuple:
     """
-    加载数据
-    
+    使用DataManager加载数据和构建股票池
+
     Args:
-        config: 配置字典
-        
+        config_path: 配置文件路径
+
     Returns:
-        数据字典
+        (data_dict, universe_df): 数据字典和股票池DataFrame
     """
     logger.info("开始加载数据...")
-    
-    # 创建数据加载器
-    data_loader = DataLoader(data_path=LOCAL_PARQUET_DATA_DIR)
-    
-    # 确定需要加载的字段
-    fields = ['close']
-    for factor_config in config['factors']:
-        if 'fields' in factor_config:
-            fields.extend(factor_config['fields'])
-    
-    # 加载数据
-    data_dict = data_loader.load_data(
-        fields=fields,
-        start_date=config['start_date'],
-        end_date=config['end_date']
-    )
-    
+
+    # 创建数据管理器
+    data_manager = DataManager(config_path)
+
+    # 加载所有数据（包括股票池构建）
+    data_dict = data_manager.load_all_data()
+
+    # 获取股票池
+    universe_df = data_manager.get_universe()
+
     logger.info(f"数据加载完成，共加载 {len(data_dict)} 个字段")
-    return data_dict
+    logger.info(f"股票池构建完成，平均每日股票数: {universe_df.sum(axis=1).mean():.0f}")
+
+    return data_dict, universe_df
 
 
 def generate_factors(config: dict, data_dict: dict) -> Dict[str, pd.DataFrame]:
@@ -162,8 +158,8 @@ def step1_single_factor_test(config: dict, factor_dict: Dict[str, pd.DataFrame],
     factor_summary = batch_evaluate_factors(
         factor_dict=factor_dict,
         price_df=price_df,
-        start_date=config['start_date'],
-        end_date=config['end_date'],
+        start_date=config['backtest']['start_date'],
+        end_date=config['backtest']['end_date'],
         n_groups=config['evaluation']['n_groups'],
         forward_periods=config['evaluation']['forward_periods'],
         result_dir=step1_dir,
@@ -458,8 +454,8 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
         factor_name='composite',
         factor_df=composite_factor,
         price_df=price_df,
-        start_date=config['start_date'],
-        end_date=config['end_date'],
+        start_date=config['backtest']['start_date'],
+        end_date=config['backtest']['end_date'],
         n_groups=config['evaluation']['n_groups'],
         forward_periods=config['evaluation']['forward_periods'],
         result_dir=step3_dir,
@@ -481,7 +477,7 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
         factor_name='composite_in_sample',
         factor_df=composite_factor,
         price_df=price_df,
-        start_date=config['start_date'],
+        start_date=config['backtest']['start_date'],
         end_date=in_sample_end.strftime('%Y-%m-%d'),
         n_groups=config['evaluation']['n_groups'],
         forward_periods=config['evaluation']['forward_periods'],
@@ -496,7 +492,7 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
         factor_df=composite_factor,
         price_df=price_df,
         start_date=out_sample_start.strftime('%Y-%m-%d'),
-        end_date=config['end_date'],
+        end_date=config['backtest']['end_date'],
         n_groups=config['evaluation']['n_groups'],
         forward_periods=config['evaluation']['forward_periods'],
         result_dir=step3_dir / 'out_sample',
@@ -556,7 +552,7 @@ def main():
         yaml.dump(config, f, default_flow_style=False)
     
     # 加载数据
-    data_dict = load_data(config)
+    data_dict, universe_df = load_data(config_path)
     
     # 生成因子
     factor_dict = generate_factors(config, data_dict)

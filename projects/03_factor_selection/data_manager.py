@@ -99,8 +99,12 @@ class DataManager:
         required_fields = set()
         
         # 基础字段
-        required_fields.update(['close', 'total_mv', 'turnover_rate'])
-        
+        required_fields.update(['close',
+                                'total_mv', 'turnover_rate',#为了过滤 很差劲的股票 仅此而已，不会作其他计算 、'total_mv'还可 用于计算中性化
+                                'industry',#用于计算中性化
+                                'circ_mv'#流通市值 用于WOS，加权最小二方跟  ，回归法会用到
+                                ])
+
         # 目标因子字段
         target_factor = self.config['target_factor']
         required_fields.update(target_factor['fields'])
@@ -112,7 +116,8 @@ class DataManager:
                 required_fields.add('industry')
             if 'market_cap' in neutralization['factors']:
                 required_fields.add('total_mv')
-        
+
+
         # 股票池过滤需要的字段
         universe_filters = self.config['universe']['filters']
         if universe_filters.get('remove_st', False):
@@ -184,7 +189,12 @@ class DataManager:
                 universe_df,
                 universe_filters['min_market_cap_percentile']
             )
-        
+
+        # 4. 剔除次日停牌股票
+        if universe_filters.get('remove_next_day_suspended', False):
+            print("    应用次日停牌股票过滤...")
+            universe_df = self._filter_next_day_suspended(universe_df)
+
         # 统计股票池信息
         daily_count = universe_df.sum(axis=1)
         print(f"    股票池统计:")
@@ -255,7 +265,33 @@ class DataManager:
                     universe_df.loc[date, small_cap_mask] = False
         
         return universe_df
-    
+
+    def _filter_next_day_suspended(self, universe_df: pd.DataFrame) -> pd.DataFrame:
+        """剔除次日停牌股票"""
+        if 'close' not in self.raw_data:
+            print("    警告: 缺少价格数据，无法过滤次日停牌股票")
+            return universe_df
+
+        close_df = self.raw_data['close']
+
+        # 获取所有交易日
+        trading_dates = universe_df.index.tolist()
+
+        for i, date in enumerate(trading_dates[:-1]):  # 排除最后一天
+            next_date = trading_dates[i + 1]
+
+            # 今日有价格但明日无价格的股票，认为明日停牌
+            today_has_price = close_df.loc[date].notna()
+            tomorrow_has_price = close_df.loc[next_date].notna()
+
+            # 明日停牌的股票：今日有价格但明日无价格
+            next_day_suspended = today_has_price & (~tomorrow_has_price)
+
+            # 从今日股票池中剔除明日停牌的股票
+            universe_df.loc[date, next_day_suspended] = False
+
+        return universe_df
+
     def _apply_universe_filter(self):
         """将股票池过滤应用到所有数据"""
         print("  将股票池过滤应用到所有数据...")

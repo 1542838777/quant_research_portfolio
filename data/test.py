@@ -1,13 +1,14 @@
 import pandas as pd
 
-from data.data_loader import LOCAL_PARQUET_DATA_DIR
+from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
 
 
 def get_fields_map():
     result = []
-    paths = ['adj_factor', 'daily_basic', 'daily_hfq', 'fina_indicator_vip', 'margin_detail', 'stock_basic.parquet',
+    paths = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_indicator_vip', 'margin_detail', 'stk_limit',
+             'stock_basic.parquet',
              'trade_cal.parquet']
     for path in paths:
         df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
@@ -19,48 +20,36 @@ def get_fields_map():
 
 
 if __name__ == '__main__':
-    long_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / "stk_limit")
-    long_df = long_df[long_df['ts_code']=='002550.SZ']
+    maps = get_fields_map()
+    sum = 0
+    for map in maps :
+        sum += len(map['fields'])
+    print(maps) #总数187 trade_date  7  ts_code 8
 
+    print(f'总数{sum}')
 
-    data_to_download_tasks = {
-        'stk_limit': {'func': 'stk_limit', 'params': {}, 'mode': 'by_stock'},
-        # 模式: batch_stock (按股票代码分批，适用于大多数pro接口)
-        'fina_indicator_vip': {'func': 'fina_indicator_vip', 'params': {},
-                               'mode': 'batch_stock'}
-
-    }
-    symbols = ['600000.SH']
-    year_start = '20220101'
-    year_end = '20221231'
-
-    for name, info in data_to_download_tasks.items():
-
-        download_mode = info['mode']
-
-        if download_mode == 'by_stock':
-            # 【新逻辑】按单个股票循环下载，保证数据完整性
-            print(f"  采用'逐个股票'模式下载...")
-            for i, symbol in enumerate(symbols):
-                print(f"    处理股票 {symbol} ({i + 1}/{len(symbols)})...")
-                api_params = {'ts_code': symbol, 'start_date': year_start, 'end_date': year_end,
-                              **info.get('params', {})}
-
-                api_type = info.get('api_type', 'pro')
-                if api_type == 'ts':
-                    df_batch = call_ts_tushare_api(info['func'], **api_params)
-                else:
-                    df_batch = call_pro_tushare_api(info['func'], **api_params)
-
-        elif download_mode == 'batch_stock':
-            # 【旧逻辑】按股票分批下载
-            print(f"  采用'按股票分批'模式下载...")
-            for i in range(0, len(symbols), 20):
-                batch_symbols = symbols[i: i + 20]
-                symbols_str = ",".join(batch_symbols)
-                print(f"    处理批次 {i // 20 + 1} ({len(batch_symbols)}只股票)...")
-
-                api_params = {'ts_code': symbols_str, 'start_date': year_start, 'end_date': year_end,
-                              **info['params']}
-
-                df_batch = call_pro_tushare_api(info['func'], **api_params)
+    ##
+    #
+    #
+    # D:\lqs\codeAbout\py\env\vector_bt_env\Scripts\python.exe D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\data\test.py
+    # [{'name': 'adj_factor', 'fields': Index(['ts_code', 'trade_date', 'adj_factor', 'year'], dtype='object')}, {'name': 'daily', 'fields': Index(['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close',
+    #        'change', 'pct_chg', 'vol', 'amount', 'year'],
+    #       dtype='object')}, {'name': 'daily_basic', 'fields': Index(['ts_code', 'trade_date', 'close', 'turnover_rate', 'turnover_rate_f',
+    #        'volume_ratio', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm', 'dv_ratio',
+    #        'dv_ttm', 'total_share', 'float_share', 'free_share', 'total_mv',
+    #        'circ_mv', 'year'],
+    #       dtype='object')}, {'name': 'daily_hfq', 'fields': Index(['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close',
+    #        'change', 'pct_chg', 'vol', 'amount', 'year'],
+    #       dtype='object')}, {'name': 'fina_indicator_vip', 'fields': Index(['ts_code', 'ann_date', 'end_date', 'eps', 'dt_eps', 'total_revenue_ps',
+    #        'revenue_ps', 'capital_rese_ps', 'surplus_rese_ps', 'undist_profit_ps',
+    #        ...
+    #        'bps_yoy', 'assets_yoy', 'eqt_yoy', 'tr_yoy', 'or_yoy', 'q_sales_yoy',
+    #        'q_op_qoq', 'equity_yoy', 'update_flag', 'year'],
+    #       dtype='object', length=110)}, {'name': 'margin_detail', 'fields': Index(['trade_date', 'ts_code', 'rzye', 'rqye', 'rzmre', 'rqyl', 'rzche',
+    #        'rqchl', 'rqmcl', 'rzrqye', 'year'],
+    #       dtype='object')}, {'name': 'stk_limit', 'fields': Index(['trade_date', 'ts_code', 'up_limit', 'down_limit', 'year'], dtype='object')}, {'name': 'stock_basic.parquet', 'fields': Index(['ts_code', 'symbol', 'name', 'area', 'industry', 'cnspell', 'market',
+    #        'list_date', 'act_name', 'act_ent_type'],
+    #       dtype='object')}, {'name': 'trade_cal.parquet', 'fields': Index(['exchange', 'cal_date', 'is_open', 'pretrade_date'], dtype='object')}]
+    # 总数187
+    #
+    # Process finished with exit code 0#

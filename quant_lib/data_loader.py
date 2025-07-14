@@ -70,13 +70,13 @@ class DataLoader:
                 # 只读取schema以获取列名
                 columns = pq.read_schema(file_path).names
                 
-                # 确定逻辑数据集名称
+                # data.xxx 就是逻辑数据集名称（即：按年份分区的数据
                 if file_path.stem == 'data':
                     # 分区数据
                     logical_name = file_path.parent.parent.name
                 else:
                     # 单文件
-                    logical_name = file_path.stem
+                    logical_name = file_path.stem+'.parquet'
                 
                 # 构建字段映射
                 for col in columns:
@@ -157,6 +157,7 @@ class DataLoader:
                         raw_dfs[col] = wide_df
             except Exception as e:
                 logger.error(f"处理数据集 {logical_name} 失败: {e}")
+                raise ValueError(f"处理数据集 {logical_name} 失败: {e}")
         
         # 对齐数据
         aligned_data = self._align_dataframes(raw_dfs)
