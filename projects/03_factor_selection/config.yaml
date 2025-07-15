@@ -2,8 +2,8 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2018-01-01'
-  end_date: '2023-12-31'
+  start_date: '2022-11-11'
+  end_date: '2023-06-30'
 
 # 股票池设置
 universe:

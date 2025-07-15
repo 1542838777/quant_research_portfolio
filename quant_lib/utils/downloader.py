@@ -2,14 +2,16 @@
 # 作用：一个健壮的数据下载器，用于从Tushare获取所有需要的A股核心数据，
 #      并以高效的Parquet格式保存在本地，为后续的量化研究做准备。
 #      本脚本已处理好API的频率和单次条数限制。
-
+import time
 from datetime import timedelta, datetime
 from pathlib import Path
 
 import pandas as pd
+from yfinance import download
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
+from quant_lib.tushare.tushare_client import TushareClient
 
 # --- 2. 全局配置 ---
 START_YEAR = 2018
@@ -24,6 +26,43 @@ def get_year_end(year):
         beijing_yesterday = beijing_now - timedelta(days=1)
         return beijing_yesterday.strftime('%Y%m%d')
     return f'{year}1231'
+
+
+
+def download_stock_info(stock_basic_path):
+    if not stock_basic_path.exists():
+        print("--- 正在下载股票基本信息 ---")
+        stock_basic =   TushareClient.get_pro().stock_basic( list_status = 'L,D,P', fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type')
+        if not stock_basic.empty:
+            stock_basic.to_parquet(stock_basic_path)
+    else:
+        print("股票基本信息已存在，跳过下载。")
+
+
+def download_stock_change_name_details():
+    # 在 downloader.py 的“下载配套数据”部分，增加以下逻辑
+
+    namechange_path = LOCAL_PARQUET_DATA_DIR / 'namechange.parquet'
+    if not namechange_path.exists():
+        print("--- 正在下载股票名称变更历史 ---")
+        # Tushare的namechange接口可能需要循环获取，因为它有单次返回限制
+        # 一个稳健的做法是获取所有股票列表，然后逐个调用
+        stock_list = call_pro_tushare_api("stock_basic", list_status = 'L,D,P',fields='ts_code')['ts_code'].tolist()
+        all_changes = []
+        startIdx=0
+        for stock in stock_list:
+            print(f"开始处理第{startIdx+1}/{len(stock_list)}只股票")
+            df = call_pro_tushare_api("namechange", ts_code=stock)
+            df.drop_duplicates(inplace=True)
+            all_changes.append(df)
+            startIdx+=1
+
+        namechange_df = pd.concat(all_changes)
+        if not namechange_df.empty:
+            namechange_df.to_parquet(namechange_path)
+            print(f"股票名称变更历史已保存到 {namechange_path}")
+    else:
+        print("股票名称变更历史已存在，跳过下载。")
 
 
 # --- 4. 主下载逻辑 ---
@@ -43,14 +82,8 @@ if __name__ == '__main__':
         print("交易日历已存在，跳过下载。")
 
     stock_basic_path = LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet'
-    if not stock_basic_path.exists():
-        print("--- 正在下载股票基本信息 ---")
-        stock_basic = call_pro_tushare_api("stock_basic"
-                                           )
-        if not stock_basic.empty:
-            stock_basic.to_parquet(stock_basic_path)
-    else:
-        print("股票基本信息已存在，跳过下载。")
+
+    download_stock_info(stock_basic_path)
 
     # --- 按年份循环下载核心数据 ---
     for year in range(START_YEAR, END_YEAR + 1):
@@ -132,3 +165,6 @@ if __name__ == '__main__':
                 print(f"{year} 年的 {name} 数据已存在，跳过下载。")
 
     print("\n===== 所有数据下载任务完成！ =====")
+#todo 注意 股票状态 需要每天刷新！
+#todo trade_date 每天刷新！
+#也就是每天重新下载download_stock_info ，更新股票状态1

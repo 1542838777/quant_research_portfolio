@@ -83,7 +83,7 @@ def load_data(config_path: str) -> tuple:
     """
     logger.info("开始加载数据...")
 
-    # 创建数据管理器
+    # 创建数据管理器（读取本地config 以及 读取本地quarket文件 字段结构）
     data_manager = DataManager(config_path)
 
     # 加载所有数据（包括股票池构建）

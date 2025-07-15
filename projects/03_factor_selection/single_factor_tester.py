@@ -224,6 +224,8 @@ class SingleFactorTester:
                 factor_df=factor_data,
                 price_df=self.price_data,
                 forward_returns_period=period
+                # weights_df=weights_df,  # <-- 传入流通市值作为权重，执行WLS
+                # neutral_factors=neutral_factors  # <-- 传入市值和行业作为控制变量
             )
             
             # 添加显著性评级

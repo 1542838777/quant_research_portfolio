@@ -3,6 +3,7 @@ import pandas as pd
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
+from quant_lib.utils.downloader import download_stock_info, download_stock_change_name_details
 
 
 def get_fields_map():
@@ -20,11 +21,9 @@ def get_fields_map():
 
 
 if __name__ == '__main__':
-    maps = get_fields_map()
-    sum = 0
-    for map in maps :
-        sum += len(map['fields'])
-    print(maps) #总数187 trade_date  7  ts_code 8
+
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'namechange.parquet')
+    print(df.colun)
 
     print(f'总数{sum}')
 
