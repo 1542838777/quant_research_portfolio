@@ -109,6 +109,7 @@ class DataManager:
 
         # 基础字段
         required_fields.update(['close',
+                                'pb',#为了计算价值类因子
                                 'total_mv', 'turnover_rate',  # 为了过滤 很差劲的股票 仅此而已，不会作其他计算 、'total_mv'还可 用于计算中性化
                                 'industry',  # 用于计算中性化
                                 'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
@@ -156,25 +157,23 @@ class DataManager:
     def _build_universe(self) -> pd.DataFrame:
         """
         构建动态股票池
-        
         Returns:
             股票池DataFrame，True表示该股票在该日期可用
         """
         print("  构建基础股票池...")
 
-        # 获取价格数据作为基础
+        # 第一步：基础股票池 - 有价格数据的股票
         if 'close' not in self.raw_data:
             raise ValueError("缺少价格数据，无法构建股票池")
 
         close_df = self.raw_data['close']
-        universe_df = pd.DataFrame(
-            index=close_df.index,
-            columns=close_df.columns,
-            data=False
-        )
-
-        # 基础过滤：有价格数据的股票
-        universe_df = close_df.notna()  # 新建df
+        universe_df = close_df.notna()
+        print(f"    基础（未过滤）股票池：{universe_df.sum(axis=1).mean():.0f} 只股票/日")
+        # 第二步：指数成分股过滤（如果启用）
+        index_config = self.config['universe'].get('index_filter', {})
+        if index_config.get('enable', False):
+            print(f"    应用指数过滤: {index_config['index_code']}")
+            universe_df = self._build_dynamic_index_universe(universe_df, index_config['index_code'])
 
         # 应用各种过滤条件
         universe_filters = self.config['universe']['filters']
@@ -207,7 +206,7 @@ class DataManager:
 
         # 统计股票池信息
         daily_count = universe_df.sum(axis=1)
-        print(f"    股票池统计:")
+        print(f"    过滤后（市值、换手率...)股票池统计:")
         print(f"      平均每日股票数: {daily_count.mean():.0f}")
         print(f"      最少每日股票数: {daily_count.min():.0f}")
         print(f"      最多每日股票数: {daily_count.max():.0f}")
@@ -298,8 +297,8 @@ class DataManager:
                 valid_turnover = turnover_values[universe_df.loc[date]]
 
                 if len(valid_turnover) > 10:
-                    threshold = valid_turnover.quantile(min_percentile)
-                    low_liquidity_mask = turnover_values < threshold
+                    threshold = valid_turnover.quantile(min_percentile)  # 从小到大val 排在20%位置的阈值
+                    low_liquidity_mask = turnover_values < threshold  # 比阈值还小！ 果然不要！
                     universe_df.loc[date, low_liquidity_mask] = False
 
         return universe_df
@@ -351,6 +350,108 @@ class DataManager:
 
         return universe_df
 
+    def _filter_by_index_components(self, universe_df: pd.DataFrame,
+                                    index_code: str) -> pd.DataFrame:
+        """根据指数成分股过滤"""
+        try:
+            # 加载指数成分股数据
+            index_components = self._load_index_components(index_code)
+
+            # 只保留成分股
+            valid_stocks = universe_df.columns.intersection(index_components)
+            filtered_universe = universe_df[valid_stocks].copy()
+
+            print(f"    指数 {index_code} 成分股过滤完成，保留 {len(valid_stocks)} 只股票")
+            return filtered_universe
+
+        except Exception as e:
+            print(f"    指数成分股过滤失败: {e}，使用原始股票池")
+            return universe_df
+
+    ## return ts_code list
+    def _load_index_components(self, index_code: str) -> list:
+        """加载指数成分股列表"""
+        # 方案1：从本地文件加载
+        components_file = LOCAL_PARQUET_DATA_DIR / 'index_weights' / f"{index_code.replace('.', '_')}"
+        if components_file.exists():
+            df = pd.read_parquet(components_file)
+            return df['con_code'].unique().tolist()
+
+        raise ValueError(f"未找到指数 {index_code} 的成分股数据")
+
+    def _load_dynamic_index_components(self, index_code: str,
+                                       start_date: str, end_date: str) -> pd.DataFrame:
+        """加载动态指数成分股数据"""
+        print(f"    加载 {index_code} 动态成分股数据...")
+
+        index_file_name = index_code.replace('.', '_')
+        index_data_path = LOCAL_PARQUET_DATA_DIR / 'index_weights' / index_file_name
+
+        if not index_data_path.exists():
+            raise ValueError(f"未找到指数 {index_code} 的成分股数据，请先运行downloader下载")
+
+        # 直接读取分区数据，pandas会自动合并所有year=*分区
+        components_df = pd.read_parquet(index_data_path)
+        components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
+
+        # 时间范围过滤
+        mask = (components_df['trade_date'] >= pd.Timestamp(start_date)) & \
+               (components_df['trade_date'] <= pd.Timestamp(end_date))
+        components_df = components_df[mask]
+
+        print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
+        return components_df
+
+    def _build_dynamic_index_universe(self, universe_df, index_code: str) -> pd.DataFrame:
+        """构建动态指数股票池"""
+        start_date = self.config['backtest']['start_date']
+        end_date = self.config['backtest']['end_date']
+
+        # 加载动态成分股数据
+        components_df = self._load_dynamic_index_components(index_code, start_date, end_date)
+
+        # 获取交易日序列
+        trading_dates = self.data_loader.get_trading_dates(start_date, end_date)
+
+        # 获取所有可能的股票代码
+        all_stocks = self.raw_data['close'].columns
+
+        # 逐日填充成分股信息
+        for date in trading_dates:
+            # 获取当日成分股
+            daily_components = components_df[
+                components_df['trade_date'] == date
+                ]['con_code'].tolist()
+
+            if daily_components:
+                # 当日有成分股数据
+                valid_stocks = universe_df.columns.intersection(daily_components)
+                # 正确做法：先清零，再设置
+                universe_df.loc[date, :] = False  # 先把当日所有股票设为False
+                universe_df.loc[date, valid_stocks] = True  # 再把成分股设为True
+            else:
+                # 当日无成分股数据，使用最近一次的成分股
+                recent_components = components_df[
+                    components_df['trade_date'] <= date
+                    ]
+                if not recent_components.empty:
+                    latest_date = recent_components['trade_date'].max()
+                    latest_components = recent_components[
+                        recent_components['trade_date'] == latest_date
+                        ]['con_code'].tolist()
+
+                    valid_stocks = universe_df.columns.intersection(latest_components)
+                    universe_df.loc[date, :] = False  # 先把当日所有股票设为False
+                    universe_df.loc[date, valid_stocks] = True  # 再把成分股设为True
+
+        daily_count = universe_df.sum(axis=1)
+        print(f"    动态指数股票池构建完成:")
+        print(f"      平均每日股票数: {daily_count.mean():.0f}")
+        print(f"      最少每日股票数: {daily_count.min():.0f}")
+        print(f"      最多每日股票数: {daily_count.max():.0f}")
+
+        return universe_df
+
     def _apply_universe_filter(self):
         """将股票池过滤应用到所有数据"""
         print("  将股票池过滤应用到所有数据...")
@@ -397,16 +498,6 @@ class DataManager:
         namechange_path = LOCAL_PARQUET_DATA_DIR / 'namechange.parquet'
 
         return pd.read_parquet(namechange_path)
-
-    def _load_trade_cal(self) -> pd.DataFrame:
-        """加载交易日历"""
-        try:
-            trade_cal_df = pd.read_parquet(self.data_path / 'trade_cal.parquet')
-            trade_cal_df['cal_date'] = pd.to_datetime(trade_cal_df['cal_date'])
-            return trade_cal_df
-        except Exception as e:
-            logger.error(f"加载交易日历失败: {e}")
-            raise
 
     def save_data_summary(self, output_dir: str):
         """保存数据摘要"""

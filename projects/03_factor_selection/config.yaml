@@ -7,11 +7,18 @@ backtest:
 
 # 股票池设置
 universe:
+
   filters:
     remove_st: true  # 剔除ST股票
-    min_liquidity_percentile: 0.2  # 流动性过滤：保留换手率前80%的股票
-    min_market_cap_percentile: 0.1  # 市值过滤：剔除市值最小的10%股票
+    min_liquidity_percentile: 0.3  # 流动性过滤：保留换手率前80%的股票
+    min_market_cap_percentile: 0.2  # 市值过滤：剔除市值最小的10%股票
     remove_next_day_suspended: true  # 剔除次日停牌股票
+# 新增：指数成分股过滤
+  index_filter:
+    enable: true
+    index_code: '000906.SH'  # 中证800指数代码
+    # index_code: '000300.SH'  # 沪深300
+    # index_code: '000905.SH'  # 中证500
 
 # 目标因子设置（用于DataManager）
 target_factor:

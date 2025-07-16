@@ -3,7 +3,7 @@ import pandas as pd
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
-from quant_lib.utils.downloader import download_stock_info, download_stock_change_name_details
+from quant_lib.utils.downloader import download_stock_info, download_stock_change_name_details, download_index_weights
 
 
 def get_fields_map():
@@ -21,6 +21,7 @@ def get_fields_map():
 
 
 if __name__ == '__main__':
+    download_index_weights()
 
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'namechange.parquet')
     print(df.colun)

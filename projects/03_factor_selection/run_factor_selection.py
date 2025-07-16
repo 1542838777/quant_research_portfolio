@@ -90,12 +90,12 @@ def load_data(config_path: str) -> tuple:
     data_dict = data_manager.load_all_data()
 
     # 获取股票池
-    universe_df = data_manager.get_universe()
+    # universe_df = data_manager.get_universe()
 
     logger.info(f"数据加载完成，共加载 {len(data_dict)} 个字段")
-    logger.info(f"股票池构建完成，平均每日股票数: {universe_df.sum(axis=1).mean():.0f}")
+    # logger.info(f"股票池构建完成，平均每日股票数: {universe_df.sum(axis=1).mean():.0f}")
 
-    return data_dict, universe_df
+    return data_dict#, universe_df
 
 
 def generate_factors(config: dict, data_dict: dict) -> Dict[str, pd.DataFrame]:
@@ -548,11 +548,13 @@ def main():
     ensure_dir_exists(result_dir)
     
     # 保存配置副本
-    with open(result_dir / 'config.yaml', 'w') as f:
-        yaml.dump(config, f, default_flow_style=False)
+    # dev 不需要保存现场！
+    # with open(result_dir / 'config.yaml', 'w') as f:
+    #     yaml.dump(config, f, default_flow_style=False)
     
     # 加载数据
-    data_dict, universe_df = load_data(config_path)
+    data_dict = load_data(config_path)    # 必须只考虑在每个时间点上，universe_df中为True的股票。
+
     
     # 生成因子
     factor_dict = generate_factors(config, data_dict)

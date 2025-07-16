@@ -28,6 +28,73 @@ def get_year_end(year):
     return f'{year}1231'
 
 
+def download_index_weights():
+    """下载指数成分股历史数据"""
+    print("\n===== 开始下载指数成分股数据 =====")
+
+    # 常用指数列表
+    index_codes = [
+        '000300.SH',  # 沪深300
+        '000905.SH',  # 中证500
+        '000906.SH',  # 中证800
+        '000852.SH',  # 中证1000
+    ]
+
+    for index_code in index_codes:
+        index_path = LOCAL_PARQUET_DATA_DIR / 'index_weights' / f"{index_code.replace('.', '_')}"
+
+        for year in range(START_YEAR, END_YEAR + 1):
+            year_path = index_path / f"year={year}"
+
+            if not year_path.exists():
+                print(f"--- 正在下载 {year} 年的 {index_code} 成分股数据 ---")
+
+                year_start = f'{year}0101'
+                year_end = get_year_end(year)
+
+                # 获取该年度所有交易日
+                trade_cal = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'trade_cal.parquet')
+                trade_dates = trade_cal[
+                    (trade_cal['cal_date'] >= year_start) &
+                    (trade_cal['cal_date'] <= year_end) &
+                    (trade_cal['is_open'] == 1)
+                    ]['cal_date'].tolist()
+
+                all_weights = []
+
+                # 逐日获取成分股
+                for i, trade_date in enumerate(trade_dates):
+                    print(f"    处理交易日 {trade_date} ({i + 1}/{len(trade_dates)})...")
+
+                    try:
+                        df_weight = call_pro_tushare_api(
+                            'index_weight',
+                            index_code=index_code,
+                            trade_date=trade_date
+                            # fields='index_code,con_code,trade_date,weight'
+                        )
+
+                        if not df_weight.empty:
+                            all_weights.append(df_weight)
+                        else:
+                            print(f"      {trade_date} 无成分股数据")
+
+                    except Exception as e:
+                        print(f"      {trade_date} 获取失败: {e}")
+                        continue
+
+                # 保存年度数据
+                if all_weights:
+                    final_df = pd.concat(all_weights, ignore_index=True)
+                    final_df.drop_duplicates(inplace=True)
+
+                    year_path.mkdir(parents=True, exist_ok=True)
+                    final_df.to_parquet(year_path / 'data.parquet')
+                    print(f"成功保存 {year} 年的 {index_code} 成分股数据")
+                else:
+                    print(f"未获取到 {year} 年的 {index_code} 成分股数据")
+            else:
+                print(f"{year} 年的 {index_code} 成分股数据已存在，跳过下载")
 
 def download_stock_info(stock_basic_path):
     if not stock_basic_path.exists():
