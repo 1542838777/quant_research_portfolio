@@ -1,0 +1,128 @@
+# 因子选择配置文件
+
+# 回测时间范围
+backtest:
+  start_date: '2022-11-11'
+  end_date: '2023-06-30'
+
+# 股票池设置
+universe:
+
+  filters:
+    remove_st: true  # 剔除ST股票
+    min_liquidity_percentile: 0.3  # 流动性过滤：保留换手率前80%的股票
+    min_market_cap_percentile: 0.2  # 市值过滤：剔除市值最小的10%股票
+    remove_next_day_suspended: true  # 剔除次日停牌股票
+# 新增：指数成分股过滤
+  index_filter:
+    enable: true
+    index_code: '000906.SH'  # 中证800指数代码
+    # index_code: '000300.SH'  # 沪深300
+    # index_code: '000905.SH'  # 中证500
+
+# 目标因子设置（用于DataManager）
+target_factor:
+  name: 'pe_inv'
+  fields: ['pe_ttm']
+
+# 数据预处理设置
+preprocessing:
+  neutralization:
+    enable: true
+    factors: ['market_cap', 'industry']
+
+# 因子定义
+factors:
+  # 价值因子
+  - name: 'pe_inv'
+    type: 'value'
+    description: 'PE倒数因子'
+    fields: ['pe_ttm']
+  
+  - name: 'pb_inv'
+    type: 'value'
+    description: 'PB倒数因子'
+    fields: ['pb']
+  
+  - name: 'ps_inv'
+    type: 'value'
+    description: 'PS倒数因子'
+    fields: ['ps_ttm']
+  
+  # 质量因子
+  - name: 'roe'
+    type: 'quality'
+    description: '净资产收益率'
+    fields: ['roe']
+  
+  - name: 'roa'
+    type: 'quality'
+    description: '总资产收益率'
+    fields: ['roa']
+  
+  - name: 'profit_margin'
+    type: 'quality'
+    description: '毛利率'
+    fields: ['grossprofit_margin']
+  
+  # 动量因子
+  - name: 'momentum_1m'
+    type: 'momentum'
+    description: '1个月动量'
+    params:
+      lookback_periods: [20]
+    fields: ['close']
+  
+  - name: 'momentum_3m'
+    type: 'momentum'
+    description: '3个月动量'
+    params:
+      lookback_periods: [60]
+    fields: ['close']
+  
+  - name: 'momentum_6m'
+    type: 'momentum'
+    description: '6个月动量'
+    params:
+      lookback_periods: [120]
+    fields: ['close']
+  
+  # 波动率因子
+  - name: 'volatility_1m'
+    type: 'volatility'
+    description: '1个月波动率'
+    params:
+      window: 20
+    fields: ['close']
+  
+  - name: 'volatility_3m'
+    type: 'volatility'
+    description: '3个月波动率'
+    params:
+      window: 60
+    fields: ['close']
+
+#todo 成长类因子、 大单、...
+
+# 因子评价设置
+evaluation:
+  n_groups: 5  # 分层回测的分组数
+  forward_periods: [1, 5, 20]  # 未来收益率计算的时间周期列表，单位为交易日
+  ic_threshold: 0.02  # IC均值阈值
+  ir_threshold: 0.3  # IR阈值
+
+# 因子选择设置
+factor_selection:
+  correlation_threshold: 0.5  # 相关性阈值，高于此值的因子对视为高相关
+
+# 因子合成设置
+factor_combination:
+  weight_method: 'equal'  # 权重方法：'equal'(等权重)或'ir'(IR加权) todo 后期改成ir加权
+
+# 其他回测设置
+other_backtest:
+  rebalance_freq: 'week'  # 调仓频率: day, week, month, quarter
+  n_stocks: 50  # 持仓股票数量
+  fee_rate: 0.0016  # 交易费率
+  slippage: 0.0012  # 滑点
+  benchmark: '000300.SH'  # 基准指数
