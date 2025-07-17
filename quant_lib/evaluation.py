@@ -109,7 +109,7 @@ def calculate_ic_vectorized(factor_df: pd.DataFrame,
     ic_series = factor_df.loc[valid_dates].corrwith(
         forward_returns.loc[valid_dates],
         axis=1,
-        method=method.lower()
+        method=method.lower()#这是一种确保 corrwith 函数能正确接收大小写不敏感的计算方法指令的健壮性设计。
     )
 
     logger.info(f"IC计算完成: 均值={ic_series.mean():.4f}, IR={ic_series.mean() / ic_series.std():.4f}")

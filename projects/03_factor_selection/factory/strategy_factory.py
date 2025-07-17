@@ -213,10 +213,11 @@ class StrategyFactory:
         """
         # 初始化单因子测试器（如果还没有）
         if self.single_factor_tester is None:
-            data_dict = self.load_data()
+            raw_data = self.data_manager.raw_data
             self.single_factor_tester = SingleFactorTester(
-                data_dict=data_dict,
-                config=self.config.get('factor_test', {})
+                data_dict=raw_data,
+                price_data= self.data_manager.raw_data['close'],
+                config=self.config.get('factor_test', {})#todo 配置还没有配 反正目前不影响 有默认值
             )
         
         # 自动分类因子
@@ -235,7 +236,7 @@ class StrategyFactory:
         
         # 执行测试
         logger.info(f"开始测试因子: {factor_name}")
-        test_result = self.single_factor_tester.run_comprehensive_test(
+        test_result = self.single_factor_tester.comprehensive_test(
             factor_data=factor_data,
             factor_name=factor_name,
             **test_kwargs

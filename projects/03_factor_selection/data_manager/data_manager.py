@@ -149,8 +149,10 @@ class DataManager:
             print(f"    缺失值比例: {missing_ratio:.2%}")
 
             # 检查异常值
-            if field_name in ['close', 'total_mv']:
+            if field_name in ['close', 'total_mv','pb', 'pe_ttm']:
                 negative_ratio = (df <= 0).sum().sum() / df.notna().sum().sum()
+                print(f"  极值(>99%分位) 占比: {((df > df.quantile(0.99)).sum().sum())/(df.shape[0] * df.shape[1])}")
+
                 if negative_ratio > 0:
                     print(f"    警告: {field_name} 存在 {negative_ratio:.2%} 的非正值")
 
@@ -259,14 +261,14 @@ class DataManager:
                 # 结束日期是下一次名称变更的开始日期，或者是无穷远
                 end = row['end_date'] if pd.notna(row['end_date']) else pd.to_datetime('2200-01-01')
 
-                # 根据is_risk_stock的值，来标记整个区间的状态
+                # 根据is_risk_stock的值，来标记整个区间的状态 为true表示st股票
                 st_matrix.loc[start:end, stock] = is_risk_stock
 
         # 【重要】向前填充，因为namechange只记录变更时点，我们需要填充期间的状态
         st_matrix.ffill(inplace=True)
 
         print("每日风险警示状态矩阵重建完毕。")
-        self.st_matrix = st_matrix  # 可能全是false 没有看到st的！为什么：因为之前进行过对齐。只会剩下有意义的trade_date 和ts_code（比如再对齐每日指标daily_basic)
+        self.st_matrix = st_matrix
 
     def _filter_st_stocks(self, universe_df: pd.DataFrame) -> pd.DataFrame:
         print("    应用ST股票过滤...")
@@ -276,7 +278,7 @@ class DataManager:
 
         # 对齐两个DataFrame的索引和列，确保万无一失
         # join='left' 表示以universe_df的形状为准
-        aligned_universe, aligned_st_status = universe_df.align(self.st_matrix, join='left', fill_value=False)
+        aligned_universe, aligned_st_status = universe_df.align(self.st_matrix, join='left', fill_value=False)#至少做 行列 保持一致的对齐。 下面才做赋值！ #fill_value=False ：st_Df只能对应一部分的股票池_Df.股票池_Df剩余的行列 用false填充！
 
         # 将ST的股票从universe中剔除
         # aligned_st_status为True的地方，在universe中就应该为False
@@ -288,7 +290,7 @@ class DataManager:
         st_filtered_count = original_count - filtered_count
         print(f"      ST股票过滤: 平均每日剔除 {st_filtered_count:.0f} 只ST股票")
 
-        return aligned_universe  # 修复：返回过滤后的结果，而不是原始数据
+        return aligned_universe
 
     def _filter_by_liquidity(self, universe_df: pd.DataFrame,
                              min_percentile: float) -> pd.DataFrame:
@@ -403,7 +405,9 @@ class DataManager:
         components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
 
         # 时间范围过滤
-        mask = (components_df['trade_date'] >= pd.Timestamp(start_date)) & \
+        #大坑啊 ，start_date必须提前6个月！！！ 因为最场6个月才有新的数据！ （新老数据间隔最长可达6个月！）。后面逐日填充成分股信息：原理就是取上次数据进行填充的！
+        extended_start_date = pd.Timestamp(start_date) - pd.DateOffset(months=6)
+        mask = (components_df['trade_date'] >= extended_start_date) & \
                (components_df['trade_date'] <= pd.Timestamp(end_date))
         components_df = components_df[mask]
 

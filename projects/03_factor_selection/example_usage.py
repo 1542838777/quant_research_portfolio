@@ -51,17 +51,23 @@ logger = logging.getLogger(__name__)
 def create_sample_factors(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
     """创建示例因子用于测试"""
     factors = {}
-    
+
     # 价值因子
     if 'pb' in data_dict and 'pe_ttm' in data_dict:
-        factors['PB_factor'] = 1 / data_dict['pb']  # 市净率倒数
-        factors['PE_factor'] = 1 / data_dict['pe_ttm']  # 市盈率倒数
-    
+        # PB因子 - 只过滤明显错误的数据
+        pb_data = data_dict['pb'].copy()
+        pb_data = pb_data.where(pb_data > 0)  # 只过滤<=0的异常值
+        factors['PB_factor'] = 1 / pb_data  # 不在这里去极值
+
+        # PE因子
+        pe_data = data_dict['pe_ttm'].copy()
+        pe_data = pe_data.where(pe_data > 0)  # 只过滤<=0的异常值
+        factors['PE_factor'] = 1 / pe_data  # 不在这里去极值
+
     # 动量因子
-    if 'close_price' in data_dict:
-        price = data_dict['close_price']
-        factors['momentum_20d'] = price / price.shift(20) - 1  # 20日动量
-        factors['momentum_60d'] = price / price.shift(60) - 1  # 60日动量
+    if 'close' in data_dict:
+        price = data_dict['close']
+        factors['momentum_20d'] = price / price.shift(20) - 1
     
     # 质量因子
     if 'roe' in data_dict and 'roa' in data_dict:

@@ -68,7 +68,7 @@ class SingleFactorTester:
         # 处理数据
         if data_dict is not None:
             self.data_dict = data_dict
-            self.price_data = data_dict.get('close_price', data_dict.get('price'))
+            self.price_data = data_dict.get('close', data_dict.get('price'))
         elif price_data is not None:
             self.price_data = price_data
             self.data_dict = {'price': price_data}

@@ -107,6 +107,7 @@ factors:
 # 因子评价设置
 evaluation:
   n_groups: 5  # 分层回测的分组数
+  quantiles: 5  # 分层回测的分组数
   forward_periods: [1, 5, 20]  # 未来收益率计算的时间周期列表，单位为交易日
   ic_threshold: 0.02  # IC均值阈值
   ir_threshold: 0.3  # IR阈值
