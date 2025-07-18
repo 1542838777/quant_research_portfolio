@@ -54,7 +54,7 @@ class DataLoader:
         logger.info("正在初始化DataLoader，开始扫描数据文件...")
         self.field_map = self._build_field_map()
         logger.info(f"字段映射构建完毕，共发现 {len(self.field_map)} 个字段")
-        # 【优化】在初始化时就加载交易日历，因为它是后续操作的基础
+        # 在初始化时就加载交易日历，因为它是后续操作的基础
         self.trade_cal = self._load_trade_cal()
 
     def _load_trade_cal(self) -> pd.DataFrame:
@@ -101,6 +101,9 @@ class DataLoader:
                 for col in columns:
                     if (col == 'name') & (
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
+                        continue
+                    if (col == 'close') & ((logical_name == 'daily') | (
+                            logical_name == 'daily_basic')):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
                         continue
                     if col not in field_to_file_map:
                         field_to_file_map[col] = logical_name
@@ -185,7 +188,6 @@ class DataLoader:
                 raise ValueError(f"处理数据集 {logical_name} 失败: {e}")
 
         # --- 3. 将所有数据处理成统一的面板宽表格式 ---
-        panel_dfs = {}
         trading_dates = self.get_trading_dates(start_date, end_date)
         for field in fields:
             logical_name = self.field_map.get(field)
@@ -198,23 +200,39 @@ class DataLoader:
                 df = source_df.copy()
                 df['trade_date'] = pd.to_datetime(df['trade_date'])
                 df = df[df['trade_date'].isin(trading_dates)]
-                wide_df = df.pivot_table(index='trade_date', columns='ts_code', values=field)
+
+                # 明确地定义重复的键
+                duplicate_keys = ['trade_date', 'ts_code']
+
+                # 在转换前，先使用 drop_duplicates 进行清洗
+                # keep='last' 是一个重要的选择：我们假定文件末尾的记录是最新的、最准确的
+                unique_long_df = df.drop_duplicates(subset=duplicate_keys, keep='last')
+
+                # 确认没有重复项后，可以安全地进行转换
+                #  此时可以直接使用 pivot()，它比 pivot_table() 略快，且能再次验证唯一性
+                wide_df = unique_long_df.pivot(index='trade_date', columns='ts_code', values=field)
             else:
                 # b) 对于需要“广播”到每日的静态属性数据 (如name, industry)
                 logger.info(f"  正在将静态字段 '{field}' 广播到每日面板...")
                 static_series = source_df.drop_duplicates(subset=['ts_code']).set_index('ts_code')[field]
-                # 使用 reindex 高效地将Series广播到一个以交易日为索引的DataFrame
-                all_stocks = static_series.index
-                # 构造空 DataFrame，行是日期，列是股票代码
-                wide_df = pd.DataFrame(index=pd.DatetimeIndex(trading_dates), columns=static_series.index)
 
-                # 正确填充方式（1）：apply + get
-                # wide_df = wide_df.apply(lambda col: static_series.get(col.name), axis=0)
-
-                # 或者方式（2）：直接广播
+                #  方式（1）：直接广播
                 for ts_code in wide_df.columns:
+                    # 构造空 DataFrame，行是日期，列是股票代码
+                    wide_df = pd.DataFrame(index=pd.DatetimeIndex(trading_dates), columns=static_series.index)
                     wide_df[ts_code] = static_series[ts_code]
-
+                # 方式2 更高效 类似铺砖
+                ##
+                # np.tile(A, (M, 1)) = 把一行数组 A，重复 M 行，不重复列」
+                #
+                # 也就是说：
+                #
+                # M 控制的是“你有多少行”（行方向“铺砖”）
+                #
+                # 1 表示“列不要扩展”（只保留原来的股票维度）#
+                wide_df = pd.DataFrame(np.tile(static_series, (len(static_series), 1)),
+                                       index=trading_dates, columns=static_series.index
+                                       )
             raw_wide_dfs[field] = wide_df
 
         # 对齐数据
@@ -266,6 +284,7 @@ class DataLoader:
         for name, df in dfs.items():
             aligned_df = df.reindex(index=common_dates, columns=common_stocks)
             aligned_df = aligned_df.sort_index()
+            self
             aligned_df = aligned_df.ffill()  # 前向填充
             aligned_data[name] = aligned_df
 
@@ -316,7 +335,7 @@ class DataLoader:
         #     result_df = pd.merge(dates_df, long_df, on='ts_code', how='left')
         #     return result_df
 
-        return long_df  # 如果没有日期列，返回原始数据
+        return long_df  # 如果没有日期列，返回原始数据 反正后面有 对齐！
 
 
 class DataProcessor:

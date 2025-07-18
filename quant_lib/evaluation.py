@@ -74,7 +74,7 @@ def calculate_ic(factor_df: pd.DataFrame,
 
 def calculate_ic_vectorized(factor_df: pd.DataFrame,
                             forward_returns: pd.DataFrame,
-                            method: str = 'pearson',
+                            method: str = 'spearman',
                             min_stocks: int = 10) -> pd.Series:
     """
     向量化计算因子IC值，效率更高

@@ -1,0 +1,13 @@
+{
+  "timestamp": "20250717_194252",
+  "intra_method": "ic_weighted",
+  "cross_method": "max_diversification",
+  "factors": [
+    "PB_factor",
+    "PE_factor",
+    "momentum_20d"
+  ],
+  "categories": [
+    "价值"
+  ]
+}
