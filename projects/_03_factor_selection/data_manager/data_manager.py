@@ -425,20 +425,35 @@ class DataManager:
         # 获取交易日序列
         trading_dates = self.data_loader.get_trading_dates(start_date, end_date)
 
+        # 🔧 修复：创建新的DataFrame，而不是修改原有的
+        index_universe_df = universe_df.copy()
 
         # 逐日填充成分股信息
         for date in trading_dates:
+            if date not in index_universe_df.index:
+                continue
+
             # 获取当日成分股
             daily_components = components_df[
                 components_df['trade_date'] == date
                 ]['con_code'].tolist()
 
             if daily_components:
-                # 当日有成分股数据
-                valid_stocks = universe_df.columns.intersection(daily_components)
-                # 正确做法：先清零，再设置
-                universe_df.loc[date, :] = False  # 先把当日所有股票设为False
-                universe_df.loc[date, valid_stocks] = True  # 再把成分股设为True
+                # 🔧 修复：在基础股票池的基础上，进一步筛选指数成分股
+                valid_stocks = index_universe_df.columns.intersection(daily_components)
+
+                # 只保留既在基础股票池中，又是指数成分股的股票
+                current_universe = index_universe_df.loc[date]  # 当前基础股票池
+                index_universe_df.loc[date, :] = False  # 先清零
+
+                # 同时满足两个条件：1)在基础股票池中 2)是指数成分股
+                final_valid_stocks = []
+                for stock in valid_stocks:
+                    if current_universe[stock]:  # 在基础股票池中
+                        final_valid_stocks.append(stock)
+
+                index_universe_df.loc[date, final_valid_stocks] = True #以上 强行保证了 一定是有close（即current_universe[stock]为true） 还保证一定是目标成分股
+
             else:
                 # 当日无成分股数据，使用最近一次的成分股
                 recent_components = components_df[
@@ -450,17 +465,20 @@ class DataManager:
                         recent_components['trade_date'] == latest_date
                         ]['con_code'].tolist()
 
-                    valid_stocks = universe_df.columns.intersection(latest_components)
-                    universe_df.loc[date, :] = False  # 先把当日所有股票设为False
-                    universe_df.loc[date, valid_stocks] = True  # 再把成分股设为True
+                    valid_stocks = index_universe_df.columns.intersection(latest_components)
+                    current_universe = index_universe_df.loc[date]
 
-        daily_count = universe_df.sum(axis=1)
+                    index_universe_df.loc[date, :] = False
+                    final_valid_stocks = [stock for stock in valid_stocks if current_universe[stock]]
+                    index_universe_df.loc[date, final_valid_stocks] = True
+
+        daily_count = index_universe_df.sum(axis=1)
         print(f"    动态指数股票池构建完成:")
         print(f"      平均每日股票数: {daily_count.mean():.0f}")
         print(f"      最少每日股票数: {daily_count.min():.0f}")
         print(f"      最多每日股票数: {daily_count.max():.0f}")
 
-        return universe_df
+        return index_universe_df
 
     def _apply_universe_filter(self):
         """将股票池过滤应用到所有数据"""
