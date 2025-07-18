@@ -199,7 +199,6 @@ class StrategyFactory:
             raw_data = self.data_manager.raw_data
             self.single_factor_tester = SingleFactorTester(
                 data_dict=raw_data,
-                price_data= self.data_manager.raw_data['close'],
                 config=self.config
             )
         
@@ -218,7 +217,6 @@ class StrategyFactory:
             )
         
         # 执行测试
-        logger.info(f"开始测试因子: {factor_name}")
         test_result = self.single_factor_tester.comprehensive_test(
             factor_data=factor_data,
             factor_name=factor_name,

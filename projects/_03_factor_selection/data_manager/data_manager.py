@@ -26,9 +26,6 @@ from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 warnings.filterwarnings('ignore')
 
 
-
-
-
 class DataManager:
     """
     数据管理器 - 负责数据加载和股票池构建
@@ -172,8 +169,9 @@ class DataManager:
 
             # 步骤2: 根据数据类型应用不同的填充策略
             if name in HIGH_FREQ_FIELDS:
-                # 高频数据：只在股票池内填充0，股票池外保持NaN
-                aligned_df = aligned_df.where(universe_df).fillna(0)
+                # 高频数据：只在股票池内填充0，股票池外保持NaN todo remain 暂时不填0 任由NAN
+                # aligned_df = aligned_df.where(universe_df).fillna(0)
+                aligned_df = aligned_df.where(universe_df)
                 print(f"     -> 高频数据，股票池内用0填充")
 
             elif name in SLOW_MOVING_FIELDS:
@@ -648,6 +646,7 @@ class DataManager:
         print(f"      平均每日股票数: {daily_count.mean():.0f}")
         print(f"      最少每日股票数: {daily_count.min():.0f}")
         print(f"      最多每日股票数: {daily_count.max():.0f}")
+
 
 def create_data_manager(config_path: str) -> DataManager:
     """

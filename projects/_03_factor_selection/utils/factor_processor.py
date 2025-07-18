@@ -60,9 +60,7 @@ class FactorProcessor:
         Returns:
             预处理后的因子数据
         """
-        print("\n" + "=" * 60)
-        print("第三阶段：因子预处理流水线")
-        print("=" * 60)
+        print("\t第三阶段：因子预处理流水线")
 
         processed_factor = factor_data.copy()
 
@@ -111,27 +109,25 @@ class FactorProcessor:
             threshold = winsorization_config.get('mad_threshold', 5)
             print(f"  使用MAD方法，阈值倍数: {threshold}")
 
-            for date in processed_factor.index:
-                values = processed_factor.loc[date].dropna()
-                if len(values) > 10:
-                    median = values.median()
-                    mad = (values - median).abs().median()
-                    upper_bound = median + threshold * mad
-                    lower_bound = median - threshold * mad
-                    # 使用clip替换极值，不设为NaN ✓
-                    processed_factor.loc[date] = values.clip(lower_bound, upper_bound)
+            # 向量化计算每日的中位数和MAD
+            median = factor_data.median(axis=1)
+            mad = (factor_data.sub(median, axis=0)).abs().median(axis=1)
 
+            # 向量化计算每日的上下边界
+            upper_bound = median + threshold * mad
+            lower_bound = median - threshold * mad
+
+            # 向量化clip，axis=0确保按行广播边界
+            return factor_data.clip(lower_bound, upper_bound, axis=0)
         elif method == 'quantile':
             # 分位数法
             quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
             print(f"  使用分位数方法，范围: {quantile_range}")
-
-            for date in processed_factor.index:
-                values = processed_factor.loc[date].dropna()
-                if len(values) > 10:
-                    lower_bound = values.quantile(quantile_range[0])
-                    upper_bound = values.quantile(quantile_range[1])
-                    processed_factor.loc[date] = values.clip(lower_bound, upper_bound)
+            # 向量化计算每日的分位数边界
+            bounds = factor_data.quantile(q=quantile_range, axis=1).T  # .T转置是为了方便后续clip
+            lower_bound = bounds.iloc[:, 0]
+            upper_bound = bounds.iloc[:, 1]
+            return factor_data.clip(lower_bound, upper_bound, axis=0)
 
         return processed_factor
 
@@ -228,8 +224,7 @@ class FactorProcessor:
                             processed_factor.loc[date, residuals.index] = residuals
 
                 except Exception as e:
-                    print(f"  警告: 日期 {date} 中性化失败: {e}")
-                    continue
+                    raise RuntimeError(f"  警告: 日期 {date} 中性化失败: {e}")
 
         print(f"  中性化完成，处理因子: {factors_to_neutralize}")
         return processed_factor
@@ -251,22 +246,20 @@ class FactorProcessor:
 
         if method == 'zscore':
             print("  使用Z-Score标准化")
-            for date in processed_factor.index:
-                values = processed_factor.loc[date].dropna()
-                if len(values) > 1 and values.std() > 0:
-                    mean_val = values.mean()
-                    std_val = values.std()
-                    processed_factor.loc[date, values.index] = (values - mean_val) / std_val
+            # 向量化计算每日的均值和标准差
+            mean = factor_data.mean(axis=1)
+            std = factor_data.std(axis=1)
+
+            # 向量化Z-Score，sub是减法，div是除法，axis=0确保按行广播
+            return factor_data.sub(mean, axis=0).div(std, axis=0)
 
         elif method == 'rank':
             print("  使用排序标准化")
-            for date in processed_factor.index:
-                values = processed_factor.loc[date].dropna()
-                if len(values) > 1:
-                    # 排序并标准化到[-1, 1]
-                    ranks = values.rank()
-                    normalized_ranks = 2 * (ranks - 1) / (len(ranks) - 1) - 1
-                    processed_factor.loc[date, values.index] = normalized_ranks
+            # 向量化计算排名
+            ranks = factor_data.rank(axis=1, pct=True)  # pct=True直接得到百分比排名
+
+            # 将百分比排名转换到[-1, 1]区间
+            return 2 * ranks - 1
 
         return processed_factor
 

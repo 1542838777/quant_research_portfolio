@@ -70,7 +70,7 @@ class SingleFactorTester:
         # 初始化因子预处理器
         self.factor_processor = FactorProcessor(self.config)
 
-        # 处理数据
+        # 初始化数据
         if data_dict is not None:
             self.data_dict = data_dict
             self.price_data = data_dict.get('close', data_dict.get('price'))
@@ -248,26 +248,24 @@ class SingleFactorTester:
         Returns:
             综合测试结果字典
         """
-        print(f"\n{'=' * 80}")
         print(f"开始测试因子: {factor_name}")
-        print(f"{'=' * 80}")
 
         # 1. 因子预处理
-        print("1. 因子预处理...")
+        print("\t1. 因子预处理...")
         factor_processed = self.factor_processor.process_factor(
             factor_data=factor_data,
             auxiliary_data=self.auxiliary_data
         )
         # 2. IC值分析
-        print("2. IC值分析...")
+        print("\t2. IC值分析...")
         ic_results = self.test_ic_analysis(factor_processed, factor_name)
 
         # 3. 分层回测
-        print("3. 分层回测...")
+        print("\t3. 分层回测...")
         quantile_results = self.test_quantile_backtest(factor_processed, factor_name)
 
         # 4. Fama-MacBeth回归
-        print("4. Fama-MacBeth回归...")
+        print("\t4. Fama-MacBeth回归...")
         fm_results = self.test_fama_macbeth(factor_processed, factor_name)
 
         # 5. 综合评价

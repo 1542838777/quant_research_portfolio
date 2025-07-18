@@ -33,7 +33,6 @@ sys.path.insert(0, str(current_project))
 from projects._03_factor_selection.factory.strategy_factory import StrategyFactory
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 
-
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,7 +52,7 @@ def create_sample_factors(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.Da
         # PE因子
         pe_data = data_dict['pe_ttm'].copy()
         pe_data = pe_data.where(pe_data > 0)  # 只过滤<=0的异常值
-        factors['PE_factor'] = 1/pe_data  # 不在这里去极值
+        factors['PE_factor'] = 1 / pe_data  # 不在这里去极值
 
     # 动量因子
     if 'close' in data_dict:
