@@ -112,11 +112,11 @@ class DataLoader:
 
         return field_to_file_map
 
-    def load_data(self,
-                  fields: List[str],
-                  start_date: str,
-                  end_date: str,
-                  universe: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
+    def get_raw_dfs_by_require_fields(self,
+                                      fields: List[str],
+                                      start_date: str,
+                                      end_date: str,
+                                      universe: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
         """
         加载数据
         
@@ -281,16 +281,16 @@ class DataLoader:
                 common_dates = common_dates.intersection(df.index)
                 common_stocks = common_stocks.intersection(df.columns)
 
-        # 对齐并填充缺失值
+        # 对齐数据（不进行填充，保持原始缺失值）
         aligned_data = {}
         for name, df in dfs.items():
             aligned_df = df.reindex(index=common_dates, columns=common_stocks)
             aligned_df = aligned_df.sort_index()
-            self
-            aligned_df = aligned_df.ffill()  # 前向填充
+            # 不进行填充，保持原始缺失值，上层DataManager配合universe决定填充策略
             aligned_data[name] = aligned_df
 
         logger.info(f"数据对齐完成: {len(common_dates)}个交易日, {len(common_stocks)}只股票")
+        logger.info("注意：未进行缺失值填充，保持原始数据状态")
         return aligned_data
 
     def clear_cache(self):

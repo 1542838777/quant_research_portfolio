@@ -72,25 +72,25 @@
 ```python
 # 初始化策略工厂
 factory = StrategyFactory(
-    config_path="factory/config.yaml",
-    workspace_dir="workspace"
+   config_path="factory/config.yaml",
+   workspace_dir="workspace"
 )
 
 # 加载数据
-data_dict = factory.load_data()
+data_dict = factory.get_raw_dfs_by_require_fields(,,
 
 # 测试单个因子
 result = factory.test_single_factor(
-    factor_data=factor_data,
-    factor_name="PE_factor",
-    category=FactorCategory.VALUE
+   factor_data=factor_data,
+   factor_name="PE_factor",
+   category=FactorCategory.VALUE
 )
 
 # 批量测试因子
 batch_results = factory.batch_test_factors(
-    factor_data_dict=factor_data_dict,
-    auto_register=True,
-    category_mapping=factor_category_mapping
+   factor_data_dict=factor_data_dict,
+   auto_register=True,
+   category_mapping=factor_category_mapping
 )
 
 # 获取因子性能汇总
@@ -98,9 +98,9 @@ performance_summary = factory.get_factor_performance_summary()
 
 # 多因子优化
 optimized_factor = factory.optimize_factors(
-    factor_data_dict=factor_data_dict,
-    intra_method='ic_weighted',
-    cross_method='max_diversification'
+   factor_data_dict=factor_data_dict,
+   intra_method='ic_weighted',
+   cross_method='max_diversification'
 )
 
 # 导出结果

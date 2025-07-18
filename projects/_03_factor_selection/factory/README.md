@@ -35,19 +35,19 @@ from factor_manager import FactorCategory
 
 # 初始化策略工厂
 factory = StrategyFactory(
-    config_path="config.yaml",
-    workspace_dir="my_research"
+   config_path="config.yaml",
+   workspace_dir="my_research"
 )
 
 # 加载数据
-data_dict = factory.load_data()
+data_dict = factory.get_raw_dfs_by_require_fields(,,
 
-# 测试单个因子
-factor_data = data_dict['pb'].apply(lambda x: 1/x)  # PB倒数
+   # 测试单个因子
+factor_data = data_dict['pb'].apply(lambda x: 1 / x)  # PB倒数
 result = factory.test_single_factor(
-    factor_data=factor_data,
-    factor_name="PB_factor",
-    category=FactorCategory.VALUE
+   factor_data=factor_data,
+   factor_name="PB_factor",
+   category=FactorCategory.VALUE
 )
 
 print(f"因子评分: {result['evaluation']['total_score']:.2f}")

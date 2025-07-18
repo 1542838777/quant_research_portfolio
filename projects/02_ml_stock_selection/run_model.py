@@ -86,11 +86,8 @@ def load_data(config: dict) -> dict:
     fields.extend(config['features']['fundamental_features'])
     
     # 加载数据
-    data_dict = data_loader.load_data(
-        fields=fields,
-        start_date=config['start_date'],
-        end_date=config['end_date']
-    )
+    data_dict = data_loader.get_raw_dfs_by_require_fields(fields=fields, start_date=config['start_date'],
+                                                          end_date=config['end_date'])
     
     logger.info(f"数据加载完成，共加载 {len(data_dict)} 个字段")
     return data_dict

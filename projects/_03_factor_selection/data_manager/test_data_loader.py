@@ -26,11 +26,8 @@ def test_data_loader():
         print(f"尝试加载字段: {test_fields}")
         
         # 加载数据
-        data_dict = data_loader.load_data(
-            fields=test_fields,
-            start_date='2023-01-01',
-            end_date='2023-01-31'
-        )
+        data_dict = data_loader.get_raw_dfs_by_require_fields(fields=test_fields, start_date='2023-01-01',
+                                                              end_date='2023-01-31')
         
         print(f"成功加载 {len(data_dict)} 个字段:")
         for field_name, df in data_dict.items():

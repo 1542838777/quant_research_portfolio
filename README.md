@@ -97,11 +97,8 @@ from quant_lib.data_loader import DataLoader
 loader = DataLoader()
 
 # 加载数据
-data_dict = loader.load_data(
-    fields=['close', 'pe_ttm', 'pb'],
-    start_date='2020-01-01',
-    end_date='2023-12-31'
-)
+data_dict = loader.get_raw_dfs_by_require_fields(fields=['close', 'pe_ttm', 'pb'], start_date='2020-01-01',
+                                                 end_date='2023-12-31')
 ```
 
 ## 配置
