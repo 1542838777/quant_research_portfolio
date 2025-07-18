@@ -382,34 +382,7 @@ class DataManager:
 
         return universe_df
 
-    def _filter_by_index_components(self, universe_df: pd.DataFrame,
-                                    index_code: str) -> pd.DataFrame:
-        """根据指数成分股过滤"""
-        try:
-            # 加载指数成分股数据
-            index_components = self._load_index_components(index_code)
 
-            # 只保留成分股
-            valid_stocks = universe_df.columns.intersection(index_components)
-            filtered_universe = universe_df[valid_stocks].copy()
-
-            print(f"    指数 {index_code} 成分股过滤完成，保留 {len(valid_stocks)} 只股票")
-            return filtered_universe
-
-        except Exception as e:
-            print(f"    指数成分股过滤失败: {e}，使用原始股票池")
-            return universe_df
-
-    ## return ts_code list
-    def _load_index_components(self, index_code: str) -> list:
-        """加载指数成分股列表"""
-        # 方案1：从本地文件加载
-        components_file = LOCAL_PARQUET_DATA_DIR / 'index_weights' / f"{index_code.replace('.', '_')}"
-        if components_file.exists():
-            df = pd.read_parquet(components_file)
-            return df['con_code'].unique().tolist()
-
-        raise ValueError(f"未找到指数 {index_code} 的成分股数据")
 
     def _load_dynamic_index_components(self, index_code: str,
                                        start_date: str, end_date: str) -> pd.DataFrame:
