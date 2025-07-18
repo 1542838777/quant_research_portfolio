@@ -245,23 +245,37 @@ class FactorProcessor:
         processed_factor = factor_data.copy()
 
         if method == 'zscore':
-            print("  使用Z-Score标准化")
-            # 向量化计算每日的均值和标准差
-            mean = factor_data.mean(axis=1)
-            std = factor_data.std(axis=1)
+            print("  使用Z-Score标准化 (健壮版)")
+            mean = processed_factor.mean(axis=1)
+            std = processed_factor.std(axis=1)
 
-            # 向量化Z-Score，sub是减法，div是除法，axis=0确保按行广播
-            return factor_data.sub(mean, axis=0).div(std, axis=0)
+            # 识别std=0的安全隐患
+            std_is_zero_mask = (std == 0)
+
+            # 先进行标准化（会产生inf）
+            processed_factor = processed_factor.sub(mean, axis=0).div(std, axis=0)
+
+            # 将std=0的行，结果安全地设为0
+            processed_factor[std_is_zero_mask] = 0.0
+
+            return processed_factor
 
         elif method == 'rank':
-            print("  使用排序标准化")
-            # 向量化计算排名
-            ranks = factor_data.rank(axis=1, pct=True)  # pct=True直接得到百分比排名
+            print("  使用排序标准化 (健壮版)")
 
-            # 将百分比排名转换到[-1, 1]区间
-            return 2 * ranks - 1
+            # 识别只有一个有效值的边界情况
+            valid_counts = processed_factor.notna().sum(axis=1)
+            single_value_mask = (valid_counts == 1)
 
-        return processed_factor
+            # 正常计算排名
+            ranks = processed_factor.rank(axis=1, pct=True)
+            processed_factor = 2 * ranks - 1
+
+            # 将只有一个有效值的行，结果安全地设为0
+            processed_factor[single_value_mask] = 0.0
+            return processed_factor
+
+        raise  RuntimeError("请指定标准化方式")
 
     def _print_processing_stats(self,
                                 original_factor: pd.DataFrame,
