@@ -265,7 +265,7 @@ class DataManager:
                 st_matrix.loc[start:end, stock] = is_risk_stock
 
         # 【重要】向前填充，因为namechange只记录变更时点，我们需要填充期间的状态
-        st_matrix.ffill(inplace=True)
+        st_matrix.ffill(inplace=True)#ok 没问题
 
         print("每日风险警示状态矩阵重建完毕。")
         self.st_matrix = st_matrix
@@ -292,71 +292,93 @@ class DataManager:
 
         return aligned_universe
 
-    def _filter_by_liquidity(self, universe_df: pd.DataFrame,
-                             min_percentile: float) -> pd.DataFrame:
-        """按流动性过滤"""
+    def _filter_by_liquidity(self, universe_df: pd.DataFrame, min_percentile: float) -> pd.DataFrame:
+        """按流动性过滤 """
         if 'turnover_rate' not in self.raw_data:
-            print("    警告: 缺少换手率数据，无法进行流动性过滤")
-            return universe_df
+            raise RuntimeError("缺少换手率数据，无法进行流动性过滤")
 
         turnover_df = self.raw_data['turnover_rate']
 
-        for date in universe_df.index:
-            if date in turnover_df.index:
-                turnover_values = turnover_df.loc[date]
-                valid_turnover = turnover_values[universe_df.loc[date]]
+        # 1. 【确定样本】只保留 universe_df 中为 True 的换手率数据
+        # “只对当前股票池计算”
+        valid_turnover = turnover_df.where(universe_df)
 
-                if len(valid_turnover) > 10:
-                    threshold = valid_turnover.quantile(min_percentile)  # 从小到大val 排在20%位置的阈值
-                    low_liquidity_mask = turnover_values < threshold  # 比阈值还小！ 果然不要！
-                    universe_df.loc[date, low_liquidity_mask] = False
+        # 2. 【计算标准】沿行（axis=1）一次性计算出每日的分位数阈值
+        thresholds = valid_turnover.quantile(min_percentile, axis=1)
+
+        # 3. 【应用标准】将原始换手率与每日阈值进行比较，生成过滤掩码
+        low_liquidity_mask = turnover_df.lt(thresholds, axis=0)
+
+        # 4. 将需要剔除的股票在 universe_df 中设为 False
+        universe_df[low_liquidity_mask] = False
 
         return universe_df
 
-    def _filter_by_market_cap(self, universe_df: pd.DataFrame,
-                              min_percentile: float) -> pd.DataFrame:
-        """按市值过滤"""
+    def _filter_by_market_cap(self,
+                                         universe_df: pd.DataFrame,
+                                         min_percentile: float) -> pd.DataFrame:
+        """
+        按市值过滤 -
+
+        Args:
+            universe_df: 动态股票池
+            min_percentile: 市值最低百分位阈值
+
+        Returns:
+            过滤后的动态股票池
+        """
         if 'total_mv' not in self.raw_data:
-            print("    警告: 缺少市值数据，无法进行市值过滤")
-            return universe_df
+            raise RuntimeError("缺少市值数据，无法进行市值过滤")
 
         mv_df = self.raw_data['total_mv']
 
-        for date in universe_df.index:
-            if date in mv_df.index:
-                mv_values = mv_df.loc[date]
-                valid_mv = mv_values[universe_df.loc[date]]
+        # 1. 【屏蔽】只保留在当前股票池(universe_df)中的股票市值，其余设为NaN
+        valid_mv = mv_df.where(universe_df)
 
-                if len(valid_mv) > 10:
-                    threshold = valid_mv.quantile(min_percentile)
-                    small_cap_mask = mv_values < threshold
-                    universe_df.loc[date, small_cap_mask] = False
+        # 2. 【计算标准】向量化计算每日的市值分位数阈值
+        # axis=1 确保了我们是按行（每日）计算分位数
+        thresholds = valid_mv.quantile(min_percentile, axis=1)
+
+        # 3. 【生成掩码】将原始市值与每日阈值进行比较
+        # .lt() 是“小于”操作，axis=0 确保了 thresholds 这个Series能按行正确地广播
+        small_cap_mask = mv_df.lt(thresholds, axis=0)
+
+        # 4. 【应用过滤】将所有市值小于当日阈值的股票，在股票池中标记为False
+        # 这是一个跨越整个DataFrame的布尔运算，极其高效
+        universe_df[small_cap_mask] = False
 
         return universe_df
 
     def _filter_next_day_suspended(self, universe_df: pd.DataFrame) -> pd.DataFrame:
-        """剔除次日停牌股票"""
+        """
+          剔除次日停牌股票 -
+
+          Args:
+              universe_df: 动态股票池DataFrame
+
+          Returns:
+              过滤后的动态股票池DataFrame
+          """
         if 'close' not in self.raw_data:
-            print("    警告: 缺少价格数据，无法过滤次日停牌股票")
-            return universe_df
+            raise RuntimeError(" 缺少价格数据，无法过滤次日停牌股票")
 
         close_df = self.raw_data['close']
 
-        # 获取所有交易日
-        trading_dates = universe_df.index.tolist()
+        # 1. 创建一个代表“当日有价格”的布尔矩阵
+        today_has_price = close_df.notna()
 
-        for i, date in enumerate(trading_dates[:-1]):  # 排除最后一天
-            next_date = trading_dates[i + 1]
+        # 2. 创建一个代表“次日有价格”的布尔矩阵
+        #    shift(-1) 将 T+1 日的数据，移动到 T 日的行。这就在一瞬间完成了所有“next_date”的查找
+        #    fill_value=True 优雅地处理了最后一天，我们假设最后一天之后不会停牌
+        tomorrow_has_price = close_df.notna().shift(-1, fill_value=True)
 
-            # 今日有价格但明日无价格的股票，认为明日停牌
-            today_has_price = close_df.loc[date].notna()
-            tomorrow_has_price = close_df.loc[next_date].notna()
+        # 3. 计算出所有“次日停牌”的掩码 (Mask)
+        #    次日停牌 = 今日有价 & 明日无价
+        next_day_suspended_mask = today_has_price & (~tomorrow_has_price)
 
-            # 明日停牌的股票：今日有价格但明日无价格
-            next_day_suspended = today_has_price & (~tomorrow_has_price)
-
-            # 从今日股票池中剔除明日停牌的股票
-            universe_df.loc[date, next_day_suspended] = False
+        # 4. 一次性从股票池中剔除所有被标记的股票
+        #    这个布尔运算会自动按索引对齐，应用到整个DataFrame
+        universe_df[next_day_suspended_mask] = False
 
         return universe_df
 

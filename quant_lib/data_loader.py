@@ -216,11 +216,11 @@ class DataLoader:
                 logger.info(f"  正在将静态字段 '{field}' 广播到每日面板...")
                 static_series = source_df.drop_duplicates(subset=['ts_code']).set_index('ts_code')[field]
 
-                #  方式（1）：直接广播
-                for ts_code in wide_df.columns:
-                    # 构造空 DataFrame，行是日期，列是股票代码
-                    wide_df = pd.DataFrame(index=pd.DatetimeIndex(trading_dates), columns=static_series.index)
-                    wide_df[ts_code] = static_series[ts_code]
+                # #  方式（1）：直接广播
+                # for ts_code in wide_df.columns:
+                #     # 构造空 DataFrame，行是日期，列是股票代码
+                #     wide_df = pd.DataFrame(index=pd.DatetimeIndex(trading_dates), columns=static_series.index)
+                #     wide_df[ts_code] = static_series[ts_code]
                 # 方式2 更高效 类似铺砖
                 ##
                 # np.tile(A, (M, 1)) = 把一行数组 A，重复 M 行，不重复列」
@@ -230,9 +230,11 @@ class DataLoader:
                 # M 控制的是“你有多少行”（行方向“铺砖”）
                 #
                 # 1 表示“列不要扩展”（只保留原来的股票维度）#
-                wide_df = pd.DataFrame(np.tile(static_series, (len(static_series), 1)),
-                                       index=trading_dates, columns=static_series.index
-                                       )
+                wide_df = pd.DataFrame(
+                    data=np.tile(static_series.values, (len(trading_dates), 1)),  # 使用numpy.tile高效复制数据
+                    index=trading_dates,
+                    columns=static_series.index
+                )
             raw_wide_dfs[field] = wide_df
 
         # 对齐数据
