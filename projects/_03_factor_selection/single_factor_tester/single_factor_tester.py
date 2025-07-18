@@ -130,11 +130,36 @@ class SingleFactorTester:
                 'ic_std': ic_std,
                 'ic_ir': ic_ir,
                 'ic_positive_ratio': ic_positive_ratio,
-                'ic_abs_mean': ic_series.abs().mean()
+                'ic_abs_mean': ic_series.abs().mean(),
+                'significance_level': self._get_ic_significance_level(ic_ir),
+                'significance_desc': self._get_ic_significance_desc(ic_ir)
             }
+
+            print(f"      IC均值: {ic_mean:.4f}, IR: {ic_ir:.4f}")
 
         return ic_results
 
+    def _get_ic_significance_level(self, ic_ir):
+        """获取IC显著性等级"""
+        if abs(ic_ir) > 0.5:
+            return "***"
+        elif abs(ic_ir) > 0.3:
+            return "**"
+        elif abs(ic_ir) > 0.1:
+            return "*"
+        else:
+            return ""
+
+    def _get_ic_significance_desc(self, ic_ir):
+        """获取IC显著性描述"""
+        if abs(ic_ir) > 0.5:
+            return "高度显著"
+        elif abs(ic_ir) > 0.3:
+            return "显著"
+        elif abs(ic_ir) > 0.1:
+            return "弱显著"
+        else:
+            return "不显著"
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
                                factor_name: str) -> Dict[str, Any]:
