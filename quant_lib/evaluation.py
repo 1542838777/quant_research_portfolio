@@ -1,4 +1,7 @@
 import vectorbt as vbt
+
+from quant_lib.utils.dataFrame_utils import align_dataframes
+
 """
 评估模块
 
@@ -483,71 +486,138 @@ def run_fama_macbeth_regression(
 
     # 使用vectorbt的align功能可以高效地对齐所有DataFrame
     try:
-        aligned_dfs = vbt.base.align_many(list(all_dfs_dict.values()), join='inner')
-        # 将对齐后的DataFrame重新放回字典
-        aligned_dfs_dict = {k: v for k, v in zip(all_dfs_dict.keys(), aligned_dfs)}
+        aligned_dfs = align_dataframes(all_dfs_dict)
+
     except Exception as e:
         print(f"警告：数据对齐失败: {e}。请确保vectorbt已安装。")
         # 此处可以添加手动的pandas对齐逻辑作为备用方案
         return {}
 
     # 提取出对齐后的核心数据
-    aligned_factor = aligned_dfs_dict['factor']
-    aligned_returns = aligned_dfs_dict['returns']
+    aligned_factor = aligned_dfs['factor']
+    aligned_returns = aligned_dfs['returns']
 
     # --- 2. 逐日进行截面回归 ---
     factor_returns = []
     valid_dates = []
+    # 在函数开始处添加诊断信息
+    print(f"=== 因子收益率回归诊断 ===")
+    print(f"因子数据形状: {factor_df_shifted.shape}")
+    print(f"收益率数据形状: {forward_returns.shape}")
+    print(f"因子数据时间范围: {factor_df_shifted.index.min()} 至 {factor_df_shifted.index.max()}")
+    print(f"收益率数据时间范围: {forward_returns.index.min()} 至 {forward_returns.index.max()}")
+    print(f"因子数据非空比例: {factor_df_shifted.notna().sum().sum() / factor_df_shifted.size:.2%}")
+    print(f"收益率数据非空比例: {forward_returns.notna().sum().sum() / forward_returns.size:.2%}")
 
+    # 检查对齐后的数据
+    print(f"对齐后因子数据形状: {aligned_factor.shape}")
+    print(f"对齐后收益率数据形状: {aligned_returns.shape}")
+    print(f"共同日期数量: {len(aligned_factor.index)}")
+    # 在循环中添加计数器
+    total_dates = 0
+    skipped_dates = 0
+    failed_dates = 0
     for date in aligned_factor.index:
         try:
-            # a) 准备因变量 y (未来收益)
-            y = aligned_returns.loc[date]
 
-            # b) 准备自变量 X (待测因子 + 所有中性化控制因子)
-            X = pd.DataFrame({'factor': aligned_factor.loc[date]})
+            # a) 准备所有可能用到的数据Series
+            y = aligned_returns.loc[date].rename('returns')
+            X_df = pd.DataFrame({'factor': aligned_factor.loc[date]})
             if neutral_factors is not None:
                 for name in neutral_factors.keys():
-                    X[name] = aligned_dfs_dict[name].loc[date]
+                    X_df[name] = neutral_factors[name].loc[date]
 
-            # c) 将 y 和 X 合并，并剔除任何一行中存在NaN的数据点
-            combined = pd.concat([y, X], axis=1).dropna()
+            # b) 【数据类型检查和转换】
+            # 确保y是数值类型
+            y = pd.to_numeric(y, errors='raise')
 
-            # d) 数据质量检查
-            if len(combined) < X.shape[1] + 5:  # 样本点过少，回归无意义
+            # 确保X_df所有列都是数值类型
+            for col in X_df.columns:
+                X_df[col] = pd.to_numeric(X_df[col], errors='raise')
+
+            # c) 将所有数据（包括权重）一次性放入一个列表
+            all_data_list = [y, X_df]
+            if weights_df is not None:
+                weights = np.sqrt(aligned_dfs['weights'].loc[date]).rename('weights')
+                # 确保权重也是数值类型
+                weights = pd.to_numeric(weights, errors='coerce')
+                weights = weights.where(weights > 0)
+                all_data_list.append(weights)
+
+            # d) 将所有数据横向合并
+            combined_df = pd.concat(all_data_list, axis=1)
+
+            # e) 进行dropna，并额外检查是否有无穷大值
+            final_regression_sample = combined_df.dropna()
+
+            # 【关键】检查并移除无穷大值
+            final_regression_sample = final_regression_sample.replace([np.inf, -np.inf], np.nan).dropna()
+            # 增加下面的诊断打印
+            num_regressors = X_df.shape[1]
+            min_samples_needed = num_regressors + 5
+            print(f"--- 日期: {date.date()} ---")
+            print(f"    最终回归样本数: {len(final_regression_sample)}")
+            print(f"    需要的自变量数: {num_regressors}")
+            print(f"    需要的最小样本数: {min_samples_needed}")
+            # f) 数据质量检查
+            if len(final_regression_sample) < X_df.shape[1] + 5:
+                print("    >>> 样本数不足，跳过当天回归 <<<")
                 continue
 
-            y_final = combined.iloc[:, 0]
-            X_final = sm.add_constant(combined.iloc[:, 1:]) if HAS_STATSMODELS else combined.iloc[:, 1:]
+            # g) 从"最终样本"中分离出 y, X, w
+            y_final = final_regression_sample['returns']
+            x_columns = list(X_df.columns)
+            X_final = final_regression_sample[x_columns]
 
-            # --- 【核心实现】根据是否有权重，选择OLS或WLS ---
-            if weights_df is not None and HAS_STATSMODELS:
-                # 获取当天的权重数据
-                w = aligned_dfs_dict['weights'].loc[date]
-                # Barra建议使用市值的平方根作为权重
-                w = np.sqrt(w.dropna())
-
-                # 再次对齐，确保权重和最终的回归样本能匹配上
-                common_idx = w.index.intersection(X_final.index)
-                if len(common_idx) < X_final.shape[1] + 1: continue
-
-                # 执行加权最小二乘回归
-                model = sm.WLS(y_final.loc[common_idx], X_final.loc[common_idx], weights=w.loc[common_idx]).fit()
-
-            elif HAS_STATSMODELS:  # 如果没有权重，执行普通的OLS回归
-                model = sm.OLS(y_final, X_final).fit()
-
-            else:  # 如果没有安装statsmodels，使用numpy作为备用（不支持WLS和中性化）
-                # ... (你之前的numpy备用逻辑) ...
+            # 【关键】最后一次数据类型确认
+            if not np.issubdtype(y_final.dtype, np.number):
+                print(f"警告: 日期 {date} y_final数据类型异常: {y_final.dtype}")
                 continue
 
-            # e) 提取我们最关心的、待测因子'factor'的回归系数
+            for col in X_final.columns:
+                if not np.issubdtype(X_final[col].dtype, np.number):
+                    print(f"警告: 日期 {date} X_final[{col}]数据类型异常: {X_final[col].dtype}")
+                    continue
+
+            # h) 执行回归
+            if HAS_STATSMODELS:
+                X_final = sm.add_constant(X_final)
+
+                if weights_df is not None:
+                    w_final = final_regression_sample['weights']
+                    if not np.issubdtype(w_final.dtype, np.number):
+                        print(f"警告: 日期 {date} 权重数据类型异常: {w_final.dtype}")
+                        continue
+                    model = sm.WLS(y_final, X_final, weights=w_final).fit()
+                else:
+                    model = sm.OLS(y_final, X_final).fit()
+            else:
+                continue
+
+            # i) 提取结果
             factor_return_t = model.params['factor']
             factor_returns.append(factor_return_t)
             valid_dates.append(date)
+            # 在各个continue点添加计数和原因
+            if len(final_regression_sample) < X_df.shape[1] + 5:
+                skipped_dates += 1
+                if total_dates <= 5:  # 只打印前5个日期的详细信息
+                    print(f"日期 {date}: 样本不足 ({len(final_regression_sample)} < {X_df.shape[1] + 5})")
+                continue
 
         except Exception as e:
             print(f"警告: 日期 {date} 回归失败: {e}")
+            # 【调试信息】打印更多详细信息
+            try:
+                print(f"  调试信息:")
+                print(f"    y数据类型: {y.dtype if 'y' in locals() else 'N/A'}")
+                if 'X_df' in locals():
+                    print(f"    X_df数据类型: {dict(X_df.dtypes)}")
+                if 'final_regression_sample' in locals():
+                    print(f"    最终样本形状: {final_regression_sample.shape}")
+                    print(f"    最终样本数据类型: {dict(final_regression_sample.dtypes)}")
+            except:
+                pass
             continue
 
     # --- 3. 分析与报告 ---

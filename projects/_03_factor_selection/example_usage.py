@@ -94,7 +94,7 @@ def main():
 
     # 2. 加载数据
     print("\n2. 加载数据...")
-    data_dict = factory.load_data()
+    data_dict = factory.load_all_data_be_universe()
     # print(f"✓ 数据加载成功，包含 {len(data_dict)} 个数据集")
 
     # 3. 创建示例因子

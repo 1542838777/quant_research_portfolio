@@ -94,6 +94,7 @@ class DataManager:
 
         # 使用权威股票池对齐和清洗数据
         self.processed_data = self._align_and_clean_all_data(self.raw_data, self.universe_df)
+        self.raw_data = self.processed_data  # 强行替换吧， 反正也不需要保留原来的未处理过的数据了，直接覆盖！
 
         return self.processed_data
 
@@ -150,6 +151,9 @@ class DataManager:
             对齐和清洗后的数据字典
         """
         print("1. 定义数据分类和填充策略...")
+        # 不做任何基于未来信息的“列修剪”
+        master_index = universe_df.index
+        master_columns = universe_df.columns
 
         # 定义不同类型数据的填充策略
         HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate']  # 高频数据，用0填充
@@ -163,13 +167,13 @@ class DataManager:
         for name, df in raw_dfs.items():
             print(f"   处理字段: {name}")
 
-            # 步骤1: 对齐到主模板（universe_df的形状）
-            aligned_df = df.reindex(index=universe_df.index, columns=universe_df.columns)
+            # 步骤1: 对齐到修剪后的股票池 对齐到主模板（universe_df的形状）
+            aligned_df = df.reindex(index=master_index, columns=master_columns)
             aligned_df = aligned_df.sort_index()
 
             # 步骤2: 根据数据类型应用不同的填充策略
             if name in HIGH_FREQ_FIELDS:
-                # 高频数据：只在股票池内填充0，股票池外保持NaN todo remain 暂时不填0 任由NAN
+                # 高频数据：只在股票池内填充0，股票池外保持NaN todo remain 暂时不填0 任由NAN 作为数据源头，必须要真实
                 # aligned_df = aligned_df.where(universe_df).fillna(0)
                 aligned_df = aligned_df.where(universe_df)
                 print(f"     -> 高频数据，股票池内用0填充")
@@ -195,9 +199,6 @@ class DataManager:
                 raise RuntimeError(f"此因子{name}没有指明频率，无法进行填充")
 
             aligned_data[name] = aligned_df
-
-        print(f"\n数据对齐和清洗完成！")
-        print(f"   处理后数据形状统一为: {universe_df.shape}")
 
         return aligned_data
 
@@ -266,14 +267,17 @@ class DataManager:
         if 'close' not in self.raw_data:
             raise ValueError("缺少价格数据，无法构建股票池")
 
-        close_df = self.raw_data['close']
-        universe_df = close_df.notna()
+        universe_df = self.raw_data['close'].notna()
         self.show_stock_nums_for_per_day('根据收盘价notna生成的最原始的股票池', universe_df)
         # 第二步：指数成分股过滤（如果启用）
         index_config = self.config['universe'].get('index_filter', {})
         if index_config.get('enable', False):
             print(f"    应用指数过滤: {index_config['index_code']}")
             universe_df = self._build_dynamic_index_universe(universe_df, index_config['index_code'])
+            # ✅ 在这里进行列修剪是合理的！
+            # 因为中证800成分股是基于外部规则，不是基于未来数据表现
+            valid_stocks = universe_df.columns[universe_df.any(axis=0)]
+            universe_df = universe_df[valid_stocks]
 
         # 应用各种过滤条件
         universe_filters = self.config['universe']['filters']

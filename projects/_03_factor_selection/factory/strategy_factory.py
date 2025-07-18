@@ -170,8 +170,9 @@ class StrategyFactory:
             data_requirements=data_requirements,
             **kwargs
         )
-    
-    def load_data(self) -> Dict[str, pd.DataFrame]:
+
+    #return with动态股票池处理好的数据
+    def load_all_data_be_universe(self) -> Dict[str, pd.DataFrame]:
         """加载数据"""
         logger.info("开始加载数据...")
         data_dict = self.data_manager.load_all_data()
@@ -196,9 +197,8 @@ class StrategyFactory:
         """
         # 初始化单因子测试器（如果还没有）
         if self.single_factor_tester is None:
-            raw_data = self.data_manager.raw_data
             self.single_factor_tester = SingleFactorTester(
-                data_dict=raw_data,
+                data_dict=self.data_manager.raw_data,
                 config=self.config
             )
         
@@ -251,7 +251,7 @@ class StrategyFactory:
         
         # 初始化单因子测试器
         if self.single_factor_tester is None:
-            data_dict = self.load_data()
+            data_dict = self.load_all_data_be_universe()
             self.single_factor_tester = SingleFactorTester(
                 data_dict=data_dict,
                 config=self.config.get('factor_test', {})
@@ -511,7 +511,7 @@ class FactorPipeline:
         results = {}
         
         # 1. 加载数据
-        data_dict = self.factory.load_data()
+        data_dict = self.factory.load_all_data_be_universe()
         
         # 2. 创建因子
         factor_dict = {}

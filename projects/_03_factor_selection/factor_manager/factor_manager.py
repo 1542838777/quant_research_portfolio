@@ -390,7 +390,7 @@ class FactorManager:
             turnover=layered_test.get('turnover'),
             t_stat=regression.get('t_statistic'),
             p_value=regression.get('p_value'),
-            overall_score=evaluation.get('total_score'),
+            overall_score=evaluation.get('score'),
             grade=evaluation.get('grade'),
             # 添加原始测试结果
             raw_result=test_result,

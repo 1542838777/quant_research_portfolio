@@ -308,15 +308,41 @@ class SingleFactorTester:
 
     def _prepare_neutral_data(self) -> Dict[str, pd.DataFrame]:
         """准备辅助数据（市值、行业等）"""
-        auxiliary_data = {}
+        neutral_dict = {}
 
         # 市值数据
         if 'total_mv' in self.data_dict:
-            auxiliary_data['total_mv'] = self.data_dict['total_mv']
+            neutral_dict['total_mv'] = self.data_dict['total_mv']
         # 行业数据
+        # 行业数据 - 向量化版本
         if 'industry' in self.data_dict:
-            auxiliary_data['industry'] = self.data_dict['industry']
-        return auxiliary_data
+            print("  转换行业数据为哑变量...")
+            industry_df = self.data_dict['industry']
+
+            # 获取所有唯一行业
+            all_industries = sorted(industry_df.stack().dropna().unique())
+            print(f"    发现 {len(all_industries)} 个行业: {all_industries}")
+
+            # 删除基准行业
+            if len(all_industries) > 1:
+                base_industry = all_industries[0]
+                industries_to_create = all_industries[1:]
+                print(f"    删除基准行业: {base_industry}")
+            else:
+                industries_to_create = all_industries
+
+            # 向量化创建哑变量
+            for industry_name in industries_to_create:
+                # 使用向量化操作创建哑变量
+                industry_dummy = (industry_df == industry_name).astype(float)
+                # NaN位置保持NaN
+                industry_dummy = industry_dummy.where(industry_df.notna())
+
+                neutral_dict[f'industry_{industry_name}'] = industry_dummy
+
+            print(f"    生成 {len(industries_to_create)} 个行业哑变量")
+
+        return neutral_dict
 
     def _evaluate_factor(self,
                          ic_results: Dict,
