@@ -134,19 +134,17 @@ class SingleFactorTester:
                 'significance_level': self._get_ic_significance_level(ic_ir),
                 'significance_desc': self._get_ic_significance_desc(ic_ir)
             }
-
             print(f"      IC均值: {ic_mean:.4f}, IR: {ic_ir:.4f}")
-
         return ic_results
 
     def _get_ic_significance_level(self, ic_ir):
         """获取IC显著性等级"""
         if abs(ic_ir) > 0.5:
-            return "***"
+            return "⭐⭐⭐"
         elif abs(ic_ir) > 0.3:
-            return "**"
+            return "⭐⭐"
         elif abs(ic_ir) > 0.1:
-            return "*"
+            return "⭐"
         else:
             return ""
 
@@ -237,13 +235,13 @@ class SingleFactorTester:
             # 添加显著性评级
             t_stat = fm_result['t_statistic']
             if abs(t_stat) > 2.58:
-                significance_level = "***"
+                significance_level = "⭐⭐⭐"
                 significance_desc = "1%显著"
             elif abs(t_stat) > 1.96:
-                significance_level = "**"
+                significance_level = "⭐⭐"
                 significance_desc = "5%显著"
             elif abs(t_stat) > 1.64:
-                significance_level = "*"
+                significance_level = "⭐"
                 significance_desc = "10%显著"
             else:
                 significance_level = ""
@@ -305,7 +303,7 @@ class SingleFactorTester:
             'ic_analysis': ic_results,
             'quantile_backtest': quantile_results,
             'fama_macbeth': fm_results,
-            'evaluation': evaluation
+            'evaluation': evaluation#todo 弄成多个5 10 20
         }
 
         # 6. 生成报告和可视化
