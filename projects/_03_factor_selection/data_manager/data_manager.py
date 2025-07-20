@@ -72,9 +72,6 @@ class DataManager:
         print(f"需要加载的所有字段: {all_required_fields}")
 
         # === 一次性加载所有数据 ===
-        print("\n" + "=" * 50)
-        print("一次性加载所有要求的字段数据")
-        print("=" * 50)
 
         self.raw_data = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
                                                                        start_date=start_date, end_date=end_date)

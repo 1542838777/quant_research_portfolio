@@ -58,7 +58,7 @@ class StrategyFactory:
         # 初始化核心组件
         self._initialize_components()
         
-        logger.info("策略工厂初始化完成")
+        logger.info("策略工厂初始化完成（config读取，工作区间准备）")
     
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """加载配置文件"""
@@ -68,7 +68,6 @@ class StrategyFactory:
                 config = yaml.safe_load(f)
             logger.info(f"配置文件加载成功: {config_path}")
         else:
-            logger.warning(f"配置文件不存在，使用默认配置: {config_path}")
             raise RuntimeError("未找到config文件")
         
         return config
@@ -174,7 +173,7 @@ class StrategyFactory:
     #return with动态股票池处理好的数据
     def load_all_data_be_universe(self) -> Dict[str, pd.DataFrame]:
         """加载数据"""
-        logger.info("开始加载数据...")
+        logger.info("开始加载基础必要数据...")
         data_dict = self.data_manager.load_all_data()
         logger.info(f"数据加载完成，包含 {len(data_dict)} 个数据集（data_dict）")
         return data_dict

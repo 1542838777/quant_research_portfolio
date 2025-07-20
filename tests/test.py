@@ -23,5 +23,19 @@ def tesasdadst():
 #                             adjust="hfq")  # adjust="hfq" 表示后复权
 #     print(df[['date', 'close']])
 
+def read_():
+    for name in ['daily_basic', 'daily_hfq', 'adj_factor', 'namechange.parquet', 'stock_basic.parquet']:
+
+        df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/name)
+        print(f"{name}\n")
+        print(f'{df.isna().mean()}')
+        print("---------------------\n")
+
+def api():
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
+    df = df[df['ts_code'] == '002251.SZ']
+
+    df = df[(df['trade_date']=='20230111') & (df['ts_code'] == '002251.SZ')]
+    print(df)
 if __name__ == '__main__':
-    tesasdadst()
+    api()

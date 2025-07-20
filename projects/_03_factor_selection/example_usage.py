@@ -86,14 +86,12 @@ def main():
     print("=" * 80)
 
     # 1. 初始化策略工厂
-    print("\n1. 初始化策略工厂...")
     factory = StrategyFactory(
         config_path="factory/config.yaml",
         workspace_dir="workspace"
     )
 
     # 2. 加载数据
-    print("\n2. 加载数据...")
     data_dict = factory.load_all_data_be_universe()
     # print(f"✓ 数据加载成功，包含 {len(data_dict)} 个数据集")
 

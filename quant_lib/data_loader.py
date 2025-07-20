@@ -51,10 +51,9 @@ class DataLoader:
             os.makedirs(self.data_path, exist_ok=True)
             logger.info(f"已创建数据路径: {self.data_path}")
 
-        logger.info("正在初始化DataLoader，开始扫描数据文件...")
         self.field_map = self._build_field_map()
-        logger.info(f"字段映射构建完毕，共发现 {len(self.field_map)} 个字段")
-        # 在初始化时就加载交易日历，因为它是后续操作的基础
+        logger.info(f"字段->所在文件Name--映射构建完毕，共发现 {len(self.field_map)} 个字段")
+        # 在初始化时就加载交易日历，因为它是后续操作的基础(此处还没区分是否open，是全部
         self.trade_cal = self._load_trade_cal()
 
     def _load_trade_cal(self) -> pd.DataFrame:
@@ -102,8 +101,8 @@ class DataLoader:
                     if (col == 'name') & (
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
                         continue
-                    if (col == 'close') & ((logical_name == 'daily') | (
-                            logical_name == 'daily_basic')):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
+                    if (col in ['close', 'open', 'high', 'low']) & (
+                            logical_name != 'daily_hf'):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
                         continue
                     if col not in field_to_file_map:
                         field_to_file_map[col] = logical_name
@@ -116,7 +115,7 @@ class DataLoader:
                                       fields: List[str],
                                       start_date: str,
                                       end_date: str,
-                                      universe: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
+                                      ts_codes: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
         """
         加载数据
         
@@ -124,7 +123,7 @@ class DataLoader:
             fields: 需要加载的字段列表
             start_date: 开始日期
             end_date: 结束日期
-            universe: 股票代码列表，如果为None则加载所有股票
+            ts_codes: 股票代码列表，如果为None则加载所有股票
             
         Returns:
             字段到DataFrame的映射字典
@@ -150,7 +149,7 @@ class DataLoader:
 
         # 加载和处理数据
         raw_wide_dfs = {}  # 装 宽化的df
-        raw_long_dfs = {}  # 原生的 从本地拿到的
+        raw_long_dfs = {}  # 原生的 从本地拿到的 key :文件，value：df（所有列！）
         for logical_name, columns_to_load in file_to_fields.items():
             try:
                 file_path = self.data_path / logical_name
@@ -178,8 +177,8 @@ class DataLoader:
                 long_df = self.extract_during_period(long_df, logical_name, start_date, end_date)
 
                 # 股票池筛选
-                if universe is not None and 'ts_code' in long_df.columns:
-                    long_df = long_df[long_df['ts_code'].isin(universe)]
+                if ts_codes is not None and 'ts_code' in long_df.columns:
+                    long_df = long_df[long_df['ts_code'].isin(ts_codes)]
 
                 raw_long_dfs[logical_name] = long_df
 
@@ -246,14 +245,7 @@ class DataLoader:
 
         return aligned_data
 
-    def broadcast_with_pandas(self, trading_dates, series):
-        """使用纯Pandas进行广播"""
-        # 构造一个空的DataFrame，其索引为日期，列为股票代码
-        df = pd.DataFrame(index=trading_dates, columns=series.index)
 
-        # 直接赋值，Pandas会自动按列名对齐并广播
-        df.loc[:] = series
-        return df
 
     def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         """
