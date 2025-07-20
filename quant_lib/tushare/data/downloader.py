@@ -24,7 +24,8 @@ def get_year_end(year):
     if year == END_YEAR:
         beijing_now = datetime.utcnow() + timedelta(hours=8)
         beijing_yesterday = beijing_now - timedelta(days=1)
-        return beijing_yesterday.strftime('%Y%m%d')
+        # return beijing_yesterday.strftime('%Y%m%d')
+        return '20250711'
     return f'{year}1231'
 
 
@@ -96,10 +97,12 @@ def download_index_weights():
             else:
                 print(f"{year} 年的 {index_code} 成分股数据已存在，跳过下载")
 
+
 def download_stock_info(stock_basic_path):
     if not stock_basic_path.exists():
         print("--- 正在下载股票基本信息 ---")
-        stock_basic =   TushareClient.get_pro().stock_basic( list_status = 'L,D,P', fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type')
+        stock_basic = TushareClient.get_pro().stock_basic(list_status='L,D,P',
+                                                          fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type')
         if not stock_basic.empty:
             stock_basic.to_parquet(stock_basic_path)
     else:
@@ -114,15 +117,15 @@ def download_stock_change_name_details():
         print("--- 正在下载股票名称变更历史 ---")
         # Tushare的namechange接口可能需要循环获取，因为它有单次返回限制
         # 一个稳健的做法是获取所有股票列表，然后逐个调用
-        stock_list = call_pro_tushare_api("stock_basic", list_status = 'L,D,P',fields='ts_code')['ts_code'].tolist()
+        stock_list = call_pro_tushare_api("stock_basic", list_status='L,D,P', fields='ts_code')['ts_code'].tolist()
         all_changes = []
-        startIdx=0
+        startIdx = 0
         for stock in stock_list:
-            print(f"开始处理第{startIdx+1}/{len(stock_list)}只股票")
+            print(f"开始处理第{startIdx + 1}/{len(stock_list)}只股票")
             df = call_pro_tushare_api("namechange", ts_code=stock)
             df.drop_duplicates(inplace=True)
             all_changes.append(df)
-            startIdx+=1
+            startIdx += 1
 
         namechange_df = pd.concat(all_changes)
         if not namechange_df.empty:
@@ -232,6 +235,6 @@ if __name__ == '__main__':
                 print(f"{year} 年的 {name} 数据已存在，跳过下载。")
 
     print("\n===== 所有数据下载任务完成！ =====")
-#todo 注意 股票状态 需要每天刷新！
-#todo trade_date 每天刷新！
-#也就是每天重新下载download_stock_info ，更新股票状态1
+# todo 注意 股票状态 需要每天刷新！
+# todo trade_date 每天刷新！
+# 也就是每天重新下载download_stock_info ，更新股票状态1

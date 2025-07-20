@@ -55,7 +55,7 @@ backtest:
   fee_rate: 0.0003  # 交易费率
   slippage: 0.0002  # 滑点
   benchmark: '000300.SH'  # 基准指数
-  capital: 10000000.0  # 初始资金
+  capital: 100000.0  # 初始资金
 
 # 因子处理设置
 factor_processing:

@@ -26,6 +26,30 @@ from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 warnings.filterwarnings('ignore')
 
 
+def check_field_level_completeness(processed_data_dict):
+    for item_name, df in processed_data_dict.items():
+        missing_rates = df.isna().mean().sort_values(ascending=False)
+        print("字段缺失率体检报告:")
+        for field, rate in missing_rates.items():
+            if rate > 0:
+                # 增加一个辅助函数来提供“专家意见”
+                comment = _get_nan_comment(field, rate)
+                print(f"  - {field:20s}: {rate:.2%}{comment}")
+    pass
+
+def _get_nan_comment(self, field: str, rate: float) -> str:
+    """根据字段名称和缺失率，提供专家诊断意见"""
+    if field in ['pe_ttm', 'pe']:
+        return " (正常现象: 主要代表公司亏损)"
+    if field in ['dv_ttm', 'dv_ratio']:
+        return " (正常现象: 主要代表公司不分红, 后续应填充为0)"
+    if field in ['pb'] and rate < 0.01:
+        return " (基本正常: 通常为极端财务状况或数据问题)"
+    if field in ['total_mv', 'circ_mv', 'close', 'turnover_rate'] and rate > 0.001:  # 核心行情数据缺失率应极低
+        raise ValueError("(🚨 警告: 核心行情数据不应有显著缺失!)")
+    raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!)")
+
+
 class DataManager:
     """
     数据管理器 - 负责数据加载和股票池构建
@@ -92,6 +116,8 @@ class DataManager:
         # 使用权威股票池对齐和清洗数据
         self.processed_data = self._align_and_clean_all_data(self.raw_data, self.universe_df)
         self.raw_data = self.processed_data  # 强行替换吧， 反正也不需要保留原来的未处理过的数据了，直接覆盖！
+        # 强行检查一下数据！完整率！
+        check_field_level_completeness(self.processed_data)
 
         return self.processed_data
 

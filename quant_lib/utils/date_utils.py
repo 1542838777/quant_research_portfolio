@@ -247,4 +247,6 @@ def get_month_end_dates(start_date: str, end_date: str) -> List[str]:
         if i == len(dates) - 1 or dates[i].month != dates[i+1].month:
             month_end_dates.append(trading_dates[i])
     
-    return month_end_dates 
+    return month_end_dates
+
+

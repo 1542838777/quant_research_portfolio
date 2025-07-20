@@ -40,13 +40,13 @@ shared_rate_limiter = RateLimiter(calls_per_minute=380)
 
 # 你之前写的 reach_limit 和 is_token_invalid_error 函数
 def reach_limit(df):
-    # Tushare pro接口单次最大返回8000条，我们用一个稍小的值作为警戒线
-    return len(df) == 8000
+    # Tushare pro接口单次最大返回8000条
+    return len(df) == 8000 | len(df) == 6000
 
 
 def is_token_invalid_error(error_message):
     # 根据你的实现来判断
-    return 'token' in error_message or '权限' in error_message
+    return 'token' in error_message or '权限' in error_message or 'ERROR.' in error_message
 
 
 def call_pro_tushare_api(func_name: str, max_retries=3, **kwargs):
