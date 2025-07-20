@@ -102,7 +102,7 @@ class DataLoader:
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
                         continue
                     if (col in ['close', 'open', 'high', 'low']) & (
-                            logical_name != 'daily_hf'):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
+                            logical_name != 'daily_hfq'):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
                         continue
                     if col not in field_to_file_map:
                         field_to_file_map[col] = logical_name
@@ -188,7 +188,7 @@ class DataLoader:
 
         # --- 3. 将所有数据处理成统一的面板宽表格式 ---
         trading_dates = self.get_trading_dates(start_date, end_date)
-        for field in fields:
+        for field in sorted(fields):
             logical_name = self.field_map.get(field)
             if not logical_name or logical_name not in raw_long_dfs:
                 logger.warning(f"未找到或加载失败: 字段 '{field}' 的数据源 '{logical_name}'")
