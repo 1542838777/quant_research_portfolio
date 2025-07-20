@@ -62,7 +62,7 @@ def compare_local_and_net():
     daily_df = daily_df[daily_df['ts_code'] == '000806.SZ ']
     local_hfq_ret = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
     daily_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic')
-    local_daily_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stk_limit')
+    local_daily_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
 
     for miss_ts_code in miss_ts_codes:
         net_ret = call_ts_tushare_api("pro_bar", ts_code=miss_ts_code, start_date='20180101', end_date='20250711', adj='hfq')

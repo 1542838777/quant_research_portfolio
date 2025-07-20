@@ -37,10 +37,10 @@ def check_field_level_completeness(processed_data_dict):
 
         print(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}",missing_rate_daily.sort_values(ascending=False).head(10))#其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
 
-        # # 计算每只股票（每一列）的缺失率(相当于看这股票 在这一段时间的完整率！---》推导：最后一天才上市！，那么缺失率可能高达99.99% 所以不需要看重这个！)  注释掉
-        # missing_rate_per_stock = df.isna().mean(axis=0)
-        #
-        # print(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}",missing_rate_per_stock.sort_values(ascending=False).head(10))
+        # 计算每只股票（每一列）的缺失率(相当于看这股票 在这一段时间的完整率！---》推导：最后一天才上市！，那么缺失率可能高达99.99% 所以不需要看重这个！)  注释掉
+        missing_rate_per_stock = df.isna().mean(axis=0)
+
+        print(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}",missing_rate_per_stock.sort_values(ascending=False).head(10))
 
         # 计算整个DataFrame的缺失率
         total_cells = df.size
@@ -61,9 +61,14 @@ def _get_nan_comment( field: str, rate: float) -> str:
     #     raise ValueError("(🚨 警告: 核心行情数据不应有显著缺失!)")
     if field in ['industry']:#亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
         return "正常现象：不需要care 多少缺失率"
-    if field in ['circ_mv'] and rate <0.03: #亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+    if field in ['circ_mv','close'] and rate <0.03: #亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
-    raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!)")
+    if field in ['close'] and rate <0.03: #亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+        return "正常现象：不需要care 多少缺失率"
+    if field in ['list_date']:
+        raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!)")
+
+    raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!) 请自行配置通过ratio")
 
 
 class DataManager:
