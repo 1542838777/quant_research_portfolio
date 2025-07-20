@@ -28,16 +28,28 @@ warnings.filterwarnings('ignore')
 
 def check_field_level_completeness(processed_data_dict):
     for item_name, df in processed_data_dict.items():
-        missing_rates = df.isna().mean().sort_values(ascending=False)
         print("字段缺失率体检报告:")
-        for field, rate in missing_rates.items():
-            if rate > 0:
-                # 增加一个辅助函数来提供“专家意见”
-                comment = _get_nan_comment(field, rate)
-                print(f"  - {field:20s}: {rate:.2%}{comment}")
+        first_date = df.index[0]
+        end_date = df.index[-1]
+        # 计算每一天（每一行）的缺失率
+
+        missing_rate_daily = df.isna().mean(axis=1)
+
+        print(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}",missing_rate_daily.sort_values(ascending=False).head(10))#其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
+
+        # # 计算每只股票（每一列）的缺失率(相当于看这股票 在这一段时间的完整率！---》推导：最后一天才上市！，那么缺失率可能高达99.99% 所以不需要看重这个！)  注释掉
+        # missing_rate_per_stock = df.isna().mean(axis=0)
+        #
+        # print(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}",missing_rate_per_stock.sort_values(ascending=False).head(10))
+
+        # 计算整个DataFrame的缺失率
+        total_cells = df.size
+        df_all_cells = df.isna().sum().sum()
+        global_na_ratio = df_all_cells / total_cells
+        print(_get_nan_comment(item_name, global_na_ratio))
     pass
 
-def _get_nan_comment(self, field: str, rate: float) -> str:
+def _get_nan_comment( field: str, rate: float) -> str:
     """根据字段名称和缺失率，提供专家诊断意见"""
     if field in ['pe_ttm', 'pe']:
         return " (正常现象: 主要代表公司亏损)"
@@ -45,8 +57,12 @@ def _get_nan_comment(self, field: str, rate: float) -> str:
         return " (正常现象: 主要代表公司不分红, 后续应填充为0)"
     if field in ['pb'] and rate < 0.01:
         return " (基本正常: 通常为极端财务状况或数据问题)"
-    if field in ['total_mv', 'circ_mv', 'close', 'turnover_rate'] and rate > 0.001:  # 核心行情数据缺失率应极低
-        raise ValueError("(🚨 警告: 核心行情数据不应有显著缺失!)")
+    # if field in ['total_mv', 'circ_mv', 'close', 'turnover_rate'] and rate > 0.001:  # 核心行情数据缺失率应极低
+    #     raise ValueError("(🚨 警告: 核心行情数据不应有显著缺失!)")
+    if field in ['industry']:#亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
+        return "正常现象：不需要care 多少缺失率"
+    if field in ['circ_mv'] and rate <0.03: #亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+        return "正常现象：不需要care 多少缺失率"
     raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!)")
 
 
@@ -99,6 +115,8 @@ class DataManager:
 
         self.raw_data = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
                                                                        start_date=start_date, end_date=end_date)
+
+        check_field_level_completeness(self.raw_data)
         print(f"数据加载完成，共加载 {len(self.raw_data)} 个字段")
 
         # === 第一阶段：基于已加载数据构建权威股票池 ===
@@ -116,8 +134,7 @@ class DataManager:
         # 使用权威股票池对齐和清洗数据
         self.processed_data = self._align_and_clean_all_data(self.raw_data, self.universe_df)
         self.raw_data = self.processed_data  # 强行替换吧， 反正也不需要保留原来的未处理过的数据了，直接覆盖！
-        # 强行检查一下数据！完整率！
-        check_field_level_completeness(self.processed_data)
+        # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被universe_df 动了手脚了（低市值的会被置为nan，
 
         return self.processed_data
 
