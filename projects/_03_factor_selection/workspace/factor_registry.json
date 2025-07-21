@@ -7,8 +7,10 @@
       "price",
       "returns"
     ],
-    "created_at": "2025-07-19T09:56:09.575189",
-    "updated_at": "2025-07-19T09:56:09.575189",
-    "test_results": {}
-  }
-}
+    "created_at": "2025-07-21T19:29:30.705049",
+    "updated_at": "2025-07-21T19:30:07.266237",
+    "test_results": {
+      "ic_mean": null,
+      "ic_ir": null,
+      "sharpe_ratio": null,
+      "overall_score": 

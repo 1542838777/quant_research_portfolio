@@ -35,12 +35,14 @@ def check_field_level_completeness(processed_data_dict):
 
         missing_rate_daily = df.isna().mean(axis=1)
 
-        print(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}",missing_rate_daily.sort_values(ascending=False).head(10))#其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
+        print(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}",
+              missing_rate_daily.sort_values(ascending=False).head(10))  # 其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
 
         # 计算每只股票（每一列）的缺失率(相当于看这股票 在这一段时间的完整率！---》推导：最后一天才上市！，那么缺失率可能高达99.99% 所以不需要看重这个！)  注释掉
         missing_rate_per_stock = df.isna().mean(axis=0)
 
-        print(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}",missing_rate_per_stock.sort_values(ascending=False).head(10))
+        print(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}",
+              missing_rate_per_stock.sort_values(ascending=False).head(10))
 
         # 计算整个DataFrame的缺失率
         total_cells = df.size
@@ -49,26 +51,22 @@ def check_field_level_completeness(processed_data_dict):
         print(_get_nan_comment(item_name, global_na_ratio))
     pass
 
-def _get_nan_comment( field: str, rate: float) -> str:
+
+def _get_nan_comment(field: str, rate: float) -> str:
     """根据字段名称和缺失率，提供专家诊断意见"""
-    if field in ['pe_ttm', 'pe']:
+    if field in ['pe_ttm', 'pe' ,'pb','pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
         return " (正常现象: 主要代表公司亏损)"
+
     if field in ['dv_ttm', 'dv_ratio']:
         return " (正常现象: 主要代表公司不分红, 后续应填充为0)"
-    if field in ['pb'] and rate < 0.01:
-        return " (基本正常: 通常为极端财务状况或数据问题)"
-    # if field in ['total_mv', 'circ_mv', 'close', 'turnover_rate'] and rate > 0.001:  # 核心行情数据缺失率应极低
-    #     raise ValueError("(🚨 警告: 核心行情数据不应有显著缺失!)")
-    if field in ['industry']:#亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
-        return "正常现象：不需要care 多少缺失率"
-    if field in ['circ_mv','close'] and rate <0.03: #亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
-        return "正常现象：不需要care 多少缺失率"
-    if field in ['close'] and rate <0.03: #亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
-        return "正常现象：不需要care 多少缺失率"
-    if field in ['list_date']:
-        raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!)")
 
-    raise ValueError(f"(🚨 警告: 此字段_{field}缺失ratio_{rate}!) 请自行配置通过ratio")
+    if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
+        return "正常现象：不需要care 多少缺失率"
+    if field in ['circ_mv', 'close','total_mv','turnover_rate'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+        return "正常现象：不需要care 多少缺失率"
+    if field in ['list_date'] and rate == 0.0:
+        return "正常现象：不需要care 多少缺失率"
+    raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio_{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
 
 class DataManager:
@@ -424,7 +422,7 @@ class DataManager:
         filtered_count = aligned_universe.sum(axis=1).mean()
         st_filtered_count = original_count - filtered_count
         print(f"      ST股票过滤: 平均每日剔除 {st_filtered_count:.0f} 只ST股票")
-        self.show_stock_nums_for_per_day(f'by_{'ST状态(判定来自于name的变化历史)'}_filter', aligned_universe)
+        self.show_stock_nums_for_per_day(f'by_ST状态(判定来自于name的变化历史)_filter', aligned_universe)
 
         return aligned_universe
 
@@ -447,7 +445,7 @@ class DataManager:
 
         # 4. 将需要剔除的股票在 universe_df 中设为 False
         universe_df[low_liquidity_mask] = False
-        self.show_stock_nums_for_per_day(f'by_{'剔除流动性低的'}_filter', universe_df)
+        self.show_stock_nums_for_per_day(f'by_剔除流动性低的_filter', universe_df)
 
         return universe_df
 
@@ -483,7 +481,7 @@ class DataManager:
         # 4. 【应用过滤】将所有市值小于当日阈值的股票，在股票池中标记为False
         # 这是一个跨越整个DataFrame的布尔运算，极其高效
         universe_df[small_cap_mask] = False
-        self.show_stock_nums_for_per_day(f'by_{'剔除市值低的'}_filter', universe_df)
+        self.show_stock_nums_for_per_day(f'by_剔除市值低的_filter', universe_df)
 
         return universe_df
 
@@ -603,7 +601,7 @@ class DataManager:
                     index_universe_df.loc[date, :] = False
                     final_valid_stocks = [stock for stock in valid_stocks if current_universe[stock]]
                     index_universe_df.loc[date, final_valid_stocks] = True
-        self.show_stock_nums_for_per_day(f'by_{'成分股指数'}_filter', index_universe_df)
+        self.show_stock_nums_for_per_day(f'by_成分股指数_filter', index_universe_df)
 
         return index_universe_df
 

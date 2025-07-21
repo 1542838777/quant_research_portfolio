@@ -22,16 +22,15 @@ import matplotlib.pyplot as plt
 from projects._03_factor_selection.factor_manager.registry.factor_registry import FactorCategory
 
 # 添加项目根目录到路径
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.append(str(project_root))
-
-# 添加当前项目目录到路径，以支持相对导入
-current_project = Path(__file__).parent
-sys.path.insert(0, str(current_project))
+# project_root = Path(__file__).parent.parent.parent.parent
+# sys.path.append(str(project_root))
+#
+# # 添加当前项目目录到路径，以支持相对导入
+# current_project = Path(__file__).parent
+# sys.path.insert(0, str(current_project))
 
 # 导入重构后的模块 - 使用绝对导入
 from projects._03_factor_selection.factory.strategy_factory import StrategyFactory
-from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
