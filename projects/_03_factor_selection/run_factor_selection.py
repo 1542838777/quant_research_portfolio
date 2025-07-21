@@ -48,13 +48,10 @@ from quant_lib.evaluation import (
     calculate_ic_vectorized,
     calculate_turnover_vectorized
 )
+from quant_lib.config.logger_config import setup_logger
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def load_config(config_path: str) -> dict:

@@ -22,7 +22,12 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
+from quant_lib.config.logger_config import setup_logger
+
 warnings.filterwarnings('ignore')
+
+# 配置日志
+logger = setup_logger(__name__)
 
 
 class FactorProcessor:
@@ -282,7 +287,7 @@ class FactorProcessor:
                                 processed_factor: pd.DataFrame,
                                 universe_df: pd.DataFrame):
         """打印处理统计信息"""
-        print("\n因子预处理统计:")
+        logger.info("因子预处理统计:")
 
         # 原始因子统计
         orig_valid = original_factor.notna().sum().sum()
@@ -295,16 +300,16 @@ class FactorProcessor:
         if universe_df:
             universe_valid = universe_df.sum().sum()
 
-            print(f"  原始因子有效值: {orig_valid:,} / {orig_total:,} ({orig_valid / orig_total:.1%})")
-            print(f"  处理后有效值: {proc_valid:,} / {universe_valid:,} ({proc_valid / universe_valid:.1%})")
+            logger.info(f"  原始因子有效值: {orig_valid:,} / {orig_total:,} ({orig_valid / orig_total:.1%})")
+            logger.info(f"  处理后有效值: {proc_valid:,} / {universe_valid:,} ({proc_valid / universe_valid:.1%})")
 
         # 分布统计
         all_values = processed_factor.values.flatten()
         all_values = all_values[~np.isnan(all_values)]
 
         if len(all_values) > 0:
-            print(f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f}")
-            print(f"  分位数: 1%={np.percentile(all_values, 1):.3f}, "
+            logger.info(f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f}")
+            logger.info(f"  分位数: 1%={np.percentile(all_values, 1):.3f}, "
                   f"99%={np.percentile(all_values, 99):.3f}")
 
 

@@ -2,6 +2,10 @@ import time
 import pandas as pd
 
 from quant_lib.tushare.tushare_client import TushareClient
+from quant_lib.config.logger_config import setup_logger
+
+# 配置日志
+logger = setup_logger(__name__)
 
 # --- 1. 中央速率控制器 ---
 ##
@@ -70,19 +74,19 @@ def call_pro_tushare_api(func_name: str, max_retries=3, **kwargs):
         except Exception as e:
             # ... (错误处理和Token刷新逻辑保持不变) ...
             error_message = str(e)
-            print(f"API调用'{func_name}'失败: {error_message}")
+            logger.error(f"API调用'{func_name}'失败: {error_message}")
             if is_token_invalid_error(error_message):
                 if TushareClient.refresh_pro():  # 假设已有refresh_apis可以同时刷新pro和ts
-                    print("Token已刷新，正在立即重试...")
+                    logger.info("Token已刷新，正在立即重试...")
                     continue
                 else:
-                    print("Token刷新失败，终止此API调用。")
+                    logger.error("Token刷新失败，终止此API调用。")
                     break
             if i < max_retries - 1:
-                print(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
+                logger.warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
                 time.sleep(60)
 
-    print(f"API调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
+    logger.error(f"API调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
     raise ValueError("访问api重度异常！！！！立即停止")
 
 
@@ -103,17 +107,17 @@ def call_ts_tushare_api(func_name: str, max_retries=3, **kwargs):
         except Exception as e:
             # ... (错误处理和Token刷新逻辑保持不变) ...
             error_message = str(e)
-            print(f"API调用'{func_name}'失败: {error_message}")
+            logger.error(f"API调用'{func_name}'失败: {error_message}")
             if is_token_invalid_error(error_message):
                 if TushareClient.refresh_pro():
-                    print("Token已刷新，正在立即重试...")
+                    logger.info("Token已刷新，正在立即重试...")
                     continue
                 else:
-                    print("Token刷新失败，终止此API调用。")
+                    logger.error("Token刷新失败，终止此API调用。")
                     break
             if i < max_retries - 1:
-                print(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
+                logger.warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
                 time.sleep(60)
 
-    print(f"API调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
+    logger.error(f"API调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
     return pd.DataFrame()

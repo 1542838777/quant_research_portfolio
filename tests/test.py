@@ -2,11 +2,15 @@ import pandas as pd
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, parquet_file_names, every_day_parquet_file_names, \
     need_fix
+from quant_lib.config.logger_config import setup_logger
 
 import akshare as ak
 
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
+
+# 配置日志
+logger = setup_logger(__name__)
 
 
 def tesasdadst():
@@ -15,7 +19,7 @@ def tesasdadst():
     daily_basic_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic' / 'year=2025' / 'data.parquet')
     hfq_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq' / 'year=2025' / 'data.parquet')
 
-    print()
+    logger.info("测试完成")
 
 
 # def testAK():

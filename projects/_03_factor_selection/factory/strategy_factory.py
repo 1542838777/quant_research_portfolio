@@ -22,9 +22,14 @@ from ..data_manager.data_manager import DataManager
 from ..utils.factor_processor import FactorProcessor
 from ..visualization_manager.visualization_manager import  VisualizationManager
 
+# 添加项目根目录到路径
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.append(str(project_root))
+
+from quant_lib.config.logger_config import setup_logger
+
 # 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class StrategyFactory:

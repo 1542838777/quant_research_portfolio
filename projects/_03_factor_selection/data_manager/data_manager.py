@@ -22,33 +22,37 @@ sys.path.append(str(project_root))
 
 from quant_lib.data_loader import DataLoader, logger
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
+from quant_lib.config.logger_config import setup_logger
 
 warnings.filterwarnings('ignore')
+
+# 配置日志
+logger = setup_logger(__name__)
 
 
 def check_field_level_completeness(processed_data_dict):
     for item_name, df in processed_data_dict.items():
-        print("字段缺失率体检报告:")
+        logger.info("字段缺失率体检报告:")
         first_date = df.index[0]
         end_date = df.index[-1]
         # 计算每一天（每一行）的缺失率
 
         missing_rate_daily = df.isna().mean(axis=1)
 
-        print(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}",
-              missing_rate_daily.sort_values(ascending=False).head(10))  # 其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
+        logger.info(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}")
+        logger.info(f"{missing_rate_daily.sort_values(ascending=False).head(10)}")  # 其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
 
         # 计算每只股票（每一列）的缺失率(相当于看这股票 在这一段时间的完整率！---》推导：最后一天才上市！，那么缺失率可能高达99.99% 所以不需要看重这个！)  注释掉
         missing_rate_per_stock = df.isna().mean(axis=0)
 
-        print(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}",
-              missing_rate_per_stock.sort_values(ascending=False).head(10))
+        logger.info(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}")
+        logger.info(f"{missing_rate_per_stock.sort_values(ascending=False).head(10)}")
 
         # 计算整个DataFrame的缺失率
         total_cells = df.size
         df_all_cells = df.isna().sum().sum()
         global_na_ratio = df_all_cells / total_cells
-        print(_get_nan_comment(item_name, global_na_ratio))
+        logger.info(_get_nan_comment(item_name, global_na_ratio))
     pass
 
 
@@ -112,7 +116,7 @@ class DataManager:
 
         # 确定所有需要的字段（一次性确定）
         all_required_fields = self._get_required_fields()
-        print(f"需要加载的所有字段: {all_required_fields}")
+        logger.info(f"需要加载的所有字段: {all_required_fields}")
 
         # === 一次性加载所有数据 ===
 
@@ -120,19 +124,19 @@ class DataManager:
                                                                        start_date=start_date, end_date=end_date)
 
         check_field_level_completeness(self.raw_data)
-        print(f"数据加载完成，共加载 {len(self.raw_data)} 个字段")
+        logger.info(f"数据加载完成，共加载 {len(self.raw_data)} 个字段")
 
         # === 第一阶段：基于已加载数据构建权威股票池 ===
-        print("\n" + "=" * 50)
-        print("第一阶段：构建权威股票池（各种过滤！）")
-        print("=" * 50)
+        logger.info("=" * 50)
+        logger.info("第一阶段：构建权威股票池（各种过滤！）")
+        logger.info("=" * 50)
 
         self.universe_df = self._build_universe_from_loaded_data(start_date, end_date)
 
         # === 第二阶段：基于股票池对齐和清洗所有数据 ===
-        print("\n" + "=" * 50)
-        print("第二阶段：对齐和填充所有因子数据")
-        print("=" * 50)
+        logger.info("=" * 50)
+        logger.info("第二阶段：对齐和填充所有因子数据")
+        logger.info("=" * 50)
 
         # 使用权威股票池对齐和清洗数据
         self.processed_data = self._align_and_clean_all_data(self.raw_data, self.universe_df)

@@ -18,11 +18,8 @@ from quant_lib.evaluation import (
 )
 
 # 设置日志
-import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from quant_lib.config.logger_config import setup_logger
+logger = setup_logger('quant_lib')
 
 # 版本信息
 __all__ = [

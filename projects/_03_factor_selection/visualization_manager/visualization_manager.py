@@ -24,6 +24,13 @@ from pathlib import Path
 import logging
 from datetime import datetime
 import warnings
+import sys
+
+# 添加项目根目录到路径
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.append(str(project_root))
+
+from quant_lib.config.logger_config import setup_logger
 
 warnings.filterwarnings('ignore')
 
@@ -32,8 +39,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class VisualizationManager:

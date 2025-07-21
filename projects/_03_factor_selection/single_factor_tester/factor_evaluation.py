@@ -38,13 +38,10 @@ from quant_lib.config.constant_config import (
     LOCAL_PARQUET_DATA_DIR,
     RESULT_DIR
 )
+from quant_lib.config.logger_config import setup_logger
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class FactorEvaluator:
