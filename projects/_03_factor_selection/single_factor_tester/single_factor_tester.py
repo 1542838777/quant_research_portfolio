@@ -339,7 +339,7 @@ class SingleFactorTester:
         # 行业数据
         # 行业数据 - 向量化版本
         if 'industry' in self.data_dict:
-            print("  转换行业数据为哑变量...")
+            # print("  转换行业数据为哑变量...")
             industry_df = self.data_dict['industry']
 
             # 获取所有唯一行业

@@ -112,7 +112,7 @@ def main():
     }
 
     # 5. 测试单个因子
-    print("\n4. 测试单个因子...")
+    # print("\n4. 测试单个因子...")
     try:
         single_result = factory.test_single_factor(
             factor_data=factor_data_dict['PE_factor'],
@@ -124,9 +124,9 @@ def main():
         # 获取测试结果
         test_result = factory.factor_manager.get_test_result('PE_factor')
         if test_result:
-            logger.info(f"  - IC均值: {test_result.ic_mean:.4f}")
-            logger.info(f"  - IC IR: {test_result.ic_ir:.4f}")
-            logger.info(f"  - 评分: {test_result.overall_score:.2f} ({test_result.grade})")
+            logger.info(f"  - IC均值: {test_result.ic_mean}")
+            logger.info(f"  - IC IR: {test_result.ic_ir}")
+            logger.info(f"  - 评分: {test_result.overall_score} ({test_result.grade})")
     except Exception as e:
         logger.error(f"✗ 单因子测试失败: {e}")
         raise RuntimeError(f"处理失败: {e}")  # 抛出新异常

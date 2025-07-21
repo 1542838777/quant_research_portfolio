@@ -39,14 +39,14 @@ def check_field_level_completeness(processed_data_dict):
 
         missing_rate_daily = df.isna().mean(axis=1)
 
-        logger.info(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}")
-        logger.info(f"{missing_rate_daily.sort_values(ascending=False).head(10)}")  # 其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
+        # logger.info(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}")
+        # logger.info(f"{missing_rate_daily.sort_values(ascending=False).head(10)}")  # 其实也不需要太看重，只能说是辅助日志，如果总缺失率高 可以看看整个辅助排查而已！
 
         # 计算每只股票（每一列）的缺失率(相当于看这股票 在这一段时间的完整率！---》推导：最后一天才上市！，那么缺失率可能高达99.99% 所以不需要看重这个！)  注释掉
         missing_rate_per_stock = df.isna().mean(axis=0)
-
-        logger.info(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}")
-        logger.info(f"{missing_rate_per_stock.sort_values(ascending=False).head(10)}")
+        #
+        # logger.info(f"{item_name}（不是很重要）因子缺失率最高的10只股票 between {first_date} and {end_date}")
+        # logger.info(f"{missing_rate_per_stock.sort_values(ascending=False).head(10)}")
 
         # 计算整个DataFrame的缺失率
         total_cells = df.size
@@ -134,9 +134,9 @@ class DataManager:
         self.universe_df = self._build_universe_from_loaded_data(start_date, end_date)
 
         # === 第二阶段：基于股票池对齐和清洗所有数据 ===
-        logger.info("=" * 50)
+        # logger.info("=" * 50)
         logger.info("第二阶段：对齐和填充所有因子数据")
-        logger.info("=" * 50)
+        # logger.info("=" * 50)
 
         # 使用权威股票池对齐和清洗数据
         self.processed_data = self._align_and_clean_all_data(self.raw_data, self.universe_df)

@@ -247,7 +247,7 @@ class DataLoader:
 
 
 
-    def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+    def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:#ok
         """
         对齐多个DataFrame
         
