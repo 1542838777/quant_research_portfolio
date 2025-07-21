@@ -81,7 +81,6 @@ def main():
     logger.info("=" * 80)
 
     # 1. 初始化策略工厂
-    logger.info("1. 初始化策略工厂...")
     factory = StrategyFactory(
         config_path="factory/config.yaml",
         workspace_dir="workspace"

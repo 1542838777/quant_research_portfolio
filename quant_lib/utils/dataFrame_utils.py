@@ -20,7 +20,7 @@ def align_dataframes(all_dfs_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
         common_columns = None
 
         for name, df in all_dfs_dict.items():
-            print(f"处理DataFrame: {name}, 形状: {df.shape}")
+            # print(f"处理DataFrame: {name}, 形状: {df.shape}")
 
             if common_index is None:
                 common_index = df.index

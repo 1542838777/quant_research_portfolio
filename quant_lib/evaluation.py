@@ -463,12 +463,12 @@ def run_fama_macbeth_regression(
 
     # 打印本次运行的模式
     if weights_df is not None:
-        print("模式: 加权最小二乘 (WLS)")
+        logger.info("模式: 加权最小二乘 (WLS)")
     else:
-        print("模式: 普通最小二乘 (OLS)")
+        logger.info("模式: 普通最小二乘 (OLS)")
     if neutral_factors:
-        print(f"中性化控制变量: {list(neutral_factors.keys())}")
-    print("-" * 60)
+        # print(f"中性化控制变量: {list(neutral_factors.keys())}")
+        print("-" * 60)
 
     # --- 1. 数据准备 ---
     # 计算未来收益率
@@ -555,13 +555,13 @@ def run_fama_macbeth_regression(
             # 增加下面的诊断打印
             num_regressors = X_df.shape[1]
             min_samples_needed = num_regressors + 5
-            print(f"--- 日期: {date.date()} ---")
-            print(f"    最终回归样本数: {len(final_regression_sample)}")
-            print(f"    需要的自变量数: {num_regressors}")
-            print(f"    需要的最小样本数: {min_samples_needed}")
+            # print(f"--- 日期: {date.date()} ---")
+            # print(f"    最终回归样本数: {len(final_regression_sample)}")
+            # print(f"    需要的自变量数: {num_regressors}")
+            # print(f"    需要的最小样本数: {min_samples_needed}")
             # f) 数据质量检查
             if len(final_regression_sample) < X_df.shape[1] + 5:
-                print("    >>> 样本数不足，跳过当天回归 <<<")
+                # print(f"    >>> 样本数不足，跳过当天回归日期: {date.date()} <<<")
                 continue
 
             # g) 从"最终样本"中分离出 y, X, w

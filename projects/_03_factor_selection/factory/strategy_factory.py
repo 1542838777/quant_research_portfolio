@@ -4,6 +4,7 @@
 整合因子管理器、单因子测试器、多因子优化器和可视化管理器，
 提供一站式量化研究解决方案。
 """
+import sys
 
 import pandas as pd
 import numpy as np
