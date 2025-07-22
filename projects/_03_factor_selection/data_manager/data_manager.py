@@ -177,12 +177,12 @@ class DataManager:
         # 构建ST矩阵
         self.build_st_period_from_namechange(ts_codes, namechange, trading_dates)
 
-        print("\n3. 执行股票池构建...")
+        # print("\n3. 执行股票池构建...")
         universe_df = self._build_universe()
 
-        print(f"\n权威股票池构建完成！")
-        print(f"   平均每日股票数: {universe_df.sum(axis=1).mean():.0f}")
-        print(f"   股票池形状: {universe_df.shape}")
+        # print(f"\n权威股票池构建完成！")
+        print(f"\t权威股票池构建完成 \t 平均每日股票数: {universe_df.sum(axis=1).mean():.0f} \t 股票池形状: {universe_df.shape}")
+        # print(f"   ")
 
         return universe_df
 
@@ -230,18 +230,18 @@ class DataManager:
                 # 缓变数据：先限制前向填充，再应用股票池过滤
                 aligned_df = aligned_df.ffill(limit=2)  # 最多前向填充2天
                 aligned_df = aligned_df.where(universe_df)
-                print(f"     -> 缓变数据，限制前向填充2天")
+                # logger.info(f"     -> 缓变数据，限制前向填充2天")
 
             elif name in STATIC_FIELDS:
                 # 静态数据：无限前向填充，再应用股票池过滤
                 aligned_df = aligned_df.ffill()
                 aligned_df = aligned_df.where(universe_df)
-                print(f"     -> 静态数据，无限前向填充")
+                # logger.info(f"     -> 静态数据，无限前向填充")
 
             elif name in PRICE_FIELDS:
                 # 价格数据：只保留股票池内的数据，不填充
                 aligned_df = aligned_df.where(universe_df)
-                print(f"     -> 价格数据，仅保留股票池内数据")
+                # logger.info(f"     -> 价格数据，仅保留股票池内数据")
 
             else:
                 raise RuntimeError(f"此因子{name}没有指明频率，无法进行填充")
@@ -320,7 +320,7 @@ class DataManager:
         # 第二步：指数成分股过滤（如果启用）
         index_config = self.config['universe'].get('index_filter', {})
         if index_config.get('enable', False):
-            print(f"    应用指数过滤: {index_config['index_code']}")
+            # print(f"    应用指数过滤: {index_config['index_code']}")
             universe_df = self._build_dynamic_index_universe(universe_df, index_config['index_code'])
             # ✅ 在这里进行列修剪是合理的！
             # 因为中证800成分股是基于外部规则，不是基于未来数据表现
@@ -357,11 +357,8 @@ class DataManager:
             universe_df = self._filter_next_day_suspended(universe_df)
 
         # 统计股票池信息
-        daily_count = universe_df.sum(axis=1)
-        print(f"    过滤后（市值、换手率...)股票池统计:")
-        print(f"      平均每日股票数: {daily_count.mean():.0f}")
-        print(f"      最少每日股票数: {daily_count.min():.0f}")
-        print(f"      最多每日股票数: {daily_count.max():.0f}")
+        self.show_stock_nums_for_per_day('总过滤后（市值、换手率...)股票池统计', universe_df)
+
 
         return universe_df
 
@@ -526,7 +523,7 @@ class DataManager:
     def _load_dynamic_index_components(self, index_code: str,
                                        start_date: str, end_date: str) -> pd.DataFrame:
         """加载动态指数成分股数据"""
-        print(f"    加载 {index_code} 动态成分股数据...")
+        # print(f"    加载 {index_code} 动态成分股数据...")
 
         index_file_name = index_code.replace('.', '_')
         index_data_path = LOCAL_PARQUET_DATA_DIR / 'index_weights' / index_file_name
@@ -545,7 +542,7 @@ class DataManager:
                (components_df['trade_date'] <= pd.Timestamp(end_date))
         components_df = components_df[mask]
 
-        print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
+        # print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
         return components_df
 
     def _build_dynamic_index_universe(self, universe_df, index_code: str) -> pd.DataFrame:
@@ -694,10 +691,10 @@ class DataManager:
 
     def show_stock_nums_for_per_day(self, describe_text, index_universe_df):
         daily_count = index_universe_df.sum(axis=1)
-        print(f"    {describe_text}动态股票池构建完成:")
-        print(f"      平均每日股票数: {daily_count.mean():.0f}")
-        print(f"      最少每日股票数: {daily_count.min():.0f}")
-        print(f"      最多每日股票数: {daily_count.max():.0f}")
+        logger.info(f"    {describe_text}动态股票池构建完成:")
+        logger.info(f"      平均每日股票数: {daily_count.mean():.0f}")
+        logger.info(f"      最少每日股票数: {daily_count.min():.0f}")
+        logger.info(f"      最多每日股票数: {daily_count.max():.0f}")
 
 
 def create_data_manager(config_path: str) -> DataManager:

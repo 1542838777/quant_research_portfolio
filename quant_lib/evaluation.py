@@ -26,8 +26,6 @@ except ImportError:
     HAS_STATSMODELS = False
     print("警告: statsmodels未安装，将使用简化版本的回归分析")
 
-# 获取模块级别的logger
-
 
 def calculate_ic(factor_df: pd.DataFrame,
                  forward_returns: pd.DataFrame,
@@ -73,7 +71,8 @@ def calculate_ic(factor_df: pd.DataFrame,
     logger.info(f"IC计算完成: 均值={ic_series.mean():.4f}, IR={ic_series.mean() / ic_series.std():.4f}")
     return ic_series
 
-#ok
+
+# ok
 def calculate_ic_vectorized(
         factor_df: pd.DataFrame,
         forward_returns: pd.DataFrame,
@@ -210,12 +209,41 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
 
 
 # ok
+def stats_result(results,n_quantiles):
+    stats = {}
+    for period,result in results.items():
+
+        retrun_data = results[period]
+        mean_returns = retrun_data.mean()
+
+        # 计算统计指标
+        tmb_series = retrun_data['TopMinusBottom']
+        tmb_sharpe = tmb_series.mean() / tmb_series.std() * np.sqrt(252) if tmb_series.std() > 0 else 0
+        tmb_win_rate = (tmb_series > 0).mean()
+
+        # 单调性检验
+        quantile_means = [mean_returns[f'Q{i + 1}'] for i in range( n_quantiles)]
+        is_monotonic = all(quantile_means[i] <= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
+
+        stats[f'{period}d'] =  {
+            'returns_data': retrun_data,
+            'mean_returns': mean_returns,
+            'tmb_return': mean_returns['TopMinusBottom'],
+            'tmb_sharpe': tmb_sharpe,  # 大于0.7 良好。大于1 非常好
+            'tmb_win_rate': tmb_win_rate,
+            'is_monotonic': is_monotonic,  # 单调性
+            'quantile_means': quantile_means
+        }
+
+    return stats
+
+
 def calculate_quantile_returns(
         factor_df: pd.DataFrame,
         price_df: pd.DataFrame,
         n_quantiles: int = 5,
         forward_periods: List[int] = [1, 5, 20]
-) -> Dict[int, pd.DataFrame]:
+) -> (Dict[int, pd.DataFrame],Dict[str, pd.DataFrame]):
     """
     【最终版】计算因子分位数的未来收益率。
     该版本采用向量化实现，并使用rank()进行稳健分组，同时采纳了防御性编程建议。
@@ -289,9 +317,10 @@ def calculate_quantile_returns(
 
         # 8. 存储结果
         results[period] = quantile_returns_wide.sort_index(axis=1)
+    stats = stats_result(results,n_quantiles)
 
-    logger.info("所有周期的分位数收益计算完成。")
-    return results
+
+    return results, stats
 
 
 def plot_ic_series(ic_series: pd.Series, title: str = 'IC时间序列', figsize: Tuple[int, int] = (12, 6)):
@@ -513,8 +542,6 @@ def run_fama_macbeth_regression(
     Returns:
         dict: 包含回归结果的字典。
     """
-    print("\n" + "=" * 60)
-    print(f"开始执行 Fama-MacBeth 回归分析 (预测周期: {forward_returns_period}天)")
 
     # 打印本次运行的模式
     if weights_df is not None:
@@ -556,18 +583,13 @@ def run_fama_macbeth_regression(
     factor_returns = []
     valid_dates = []
     # 在函数开始处添加诊断信息
-    print(f"=== 因子收益率回归诊断 ===")
-    print(f"因子数据形状: {factor_df_shifted.shape}")
-    print(f"收益率数据形状: {forward_returns.shape}")
-    print(f"因子数据时间范围: {factor_df_shifted.index.min()} 至 {factor_df_shifted.index.max()}")
-    print(f"收益率数据时间范围: {forward_returns.index.min()} 至 {forward_returns.index.max()}")
-    print(f"因子数据非空比例: {factor_df_shifted.notna().sum().sum() / factor_df_shifted.size:.2%}")
-    print(f"收益率数据非空比例: {forward_returns.notna().sum().sum() / forward_returns.size:.2%}")
-
+    logger.info(f"=== 因子收益率回归诊断 ===")
+    logger.info(f"\t因子数据形状: {factor_df_shifted.shape} \t 收益率数据形状: {forward_returns.shape} ")
+    logger.info(f"\t因子数据时间范围: {factor_df_shifted.index.min()} 至 {factor_df_shifted.index.max() } \t 收益率数据时间范围: {forward_returns.index.min()} 至 {forward_returns.index.max()}")
+    logger.info(f"\t因子数据非空比例: {factor_df_shifted.notna().sum().sum() / factor_df_shifted.size:.2%} \t收益率数据非空比例: {forward_returns.notna().sum().sum() / forward_returns.size:.2%} ")
     # 检查对齐后的数据
-    print(f"对齐后因子数据形状: {aligned_factor.shape}")
-    print(f"对齐后收益率数据形状: {aligned_returns.shape}")
-    print(f"共同日期数量: {len(aligned_factor.index)}")
+    logger.info(f"\t对齐后因子数据形状: {aligned_factor.shape} \t对齐后收益率数据形状: {aligned_returns.shape}")
+    logger.info(f"\t共同日期数量: {len(aligned_factor.index)}")
     # 在循环中添加计数器
     total_dates = 0
     skipped_dates = 0
@@ -684,17 +706,11 @@ def run_fama_macbeth_regression(
     mean_factor_return = factor_returns_series.mean()
     t_stat, p_value = ttest_1samp(factor_returns_series.dropna(), 0)
 
-    print(f"回归期数: {len(factor_returns_series)}")
-    print(f"因子平均收益率 (Mean Lambda): {mean_factor_return:.6f}")
-    print(f"因子收益率 t值 (t-statistic): {t_stat:.4f}")
-    print(f"因子收益率 p值 (p-value)    : {p_value:.4f}")
-
+    logger.info(f"回归期数: {len(factor_returns_series)} \t 因子平均收益率: {mean_factor_return:.6f} \t 因子收益率 t值:{t_stat:.4f}\t因子收益率 p值: {p_value:.4f} ")
     if abs(t_stat) > 2:
-        print("结论: ✓ 因子有效性得到验证！")
+        logger.info("结论: ✓ 因子有效性得到验证！")
     else:
-        print("结论: ✗ 无法在统计上拒绝“因子无效”的原假设。")
-    print("=" * 60)
-
+        logger.info("结论: ✗ 无法在统计上拒绝“因子无效”的原假设。")
     return {
         'mean_factor_return': mean_factor_return,
         't_statistic': t_stat,

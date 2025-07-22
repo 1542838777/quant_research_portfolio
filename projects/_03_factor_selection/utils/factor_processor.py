@@ -308,7 +308,7 @@ class FactorProcessor:
         all_values = all_values[~np.isnan(all_values)]
 
         if len(all_values) > 0:
-            logger.info(f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f}")
+            logger.info(f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f} （z标准化，均值一定是0）")
             logger.info(f"  分位数: 1%={np.percentile(all_values, 1):.3f}, "
                   f"99%={np.percentile(all_values, 99):.3f}")
 

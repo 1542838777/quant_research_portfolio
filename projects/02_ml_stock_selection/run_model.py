@@ -235,7 +235,7 @@ def run_backtest(config: dict, data_dict: dict, model, X: pd.DataFrame, result_d
     Returns:
         回测结果
     """
-    logger.info("开始执行回测...")
+    # logger.info("开始执行回测...")
     
     # 获取回测参数
     backtest_config = config['backtest']

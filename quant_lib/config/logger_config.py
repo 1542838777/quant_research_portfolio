@@ -1,55 +1,29 @@
 import logging
-from logging.handlers import TimedRotatingFileHandler
-from pathlib import Path
 
-def setup_logger(
-    name: str = "",
-    log_dir: Path = Path("workspace/logs"),
-    level: int = logging.INFO,
-    when: str = "midnight",   # 每天凌晨切分
-    backup_count: int = 7     # 保留最近7天日志
-):
-    """
-    初始化并返回一个带时间戳、控制台与文件输出的 Logger 实例。
+def setup_logger(name: str = None, level: str = 'INFO') -> logging.Logger:
+    """设置日志配置，避免重复配置"""
+    logger_name = name or 'quant_lib'
+    logger = logging.getLogger(logger_name)
 
-    Parameters:
-    - name: logger 名称（模块名）
-    - log_dir: 日志输出目录
-    - level: logging 级别
-    - when: 切分周期，默认按天
-    - backup_count: 保留的历史文件数量
+    # 如果logger已经有handlers，直接返回
+    if logger.handlers:
+        return logger
 
-    Returns:
-    - logging.Logger 对象
-    """
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"{name if name else 'app'}.log"
+    # 设置日志级别
+    logger.setLevel(getattr(logging, level.upper()))
 
-    # 日志格式
-    log_format = logging.Formatter(
-        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+    # 创建handler
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
+    handler.setFormatter(formatter)
 
-    # 获取 logger
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
+    # 添加handler
+    logger.addHandler(handler)
 
-    # 避免重复添加 handler
-    if not logger.handlers:
-        # 控制台输出
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(log_format)
-        logger.addHandler(console_handler)
-
-        # 文件输出 + 按时间滚动
-        file_handler = TimedRotatingFileHandler(
-            filename=str(log_file),
-            when=when,
-            backupCount=backup_count,
-            encoding="utf-8"
-        )
-        file_handler.setFormatter(log_format)
-        logger.addHandler(file_handler)
+    # 防止向上传播（避免重复输出）
+    logger.propagate = False
 
     return logger

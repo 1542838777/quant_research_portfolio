@@ -8,6 +8,7 @@
 
 支持批量测试、结果可视化和报告生成
 """
+from quant_lib import logger
 from ..utils.factor_processor import FactorProcessor
 
 import pandas as pd
@@ -135,40 +136,14 @@ class SingleFactorTester:
         Returns:
             分层回测结果字典
         """
-        quantile_results = {}
+        backtest_results, stats = calculate_quantile_returns(
+            factor_data,
+            self.price_data,
+            n_quantiles=self.n_quantiles,
+            forward_periods=self.test_common_periods
+        )
 
-        for period in self.test_common_periods:
-            # 进行分层回测
-            backtest_results = calculate_quantile_returns(
-                factor_data,
-                self.price_data,
-                n_quantiles=self.n_quantiles,
-                forward_periods=[period]
-            )
-            # 分析结果
-            returns_data = backtest_results[period]
-            mean_returns = returns_data.mean()
-
-            # 计算统计指标
-            tmb_series = returns_data['TopMinusBottom']
-            tmb_sharpe = tmb_series.mean() / tmb_series.std() * np.sqrt(252) if tmb_series.std() > 0 else 0
-            tmb_win_rate = (tmb_series > 0).mean()
-
-            # 单调性检验
-            quantile_means = [mean_returns[f'Q{i + 1}'] for i in range(self.n_quantiles)]
-            is_monotonic = all(quantile_means[i] <= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
-
-            quantile_results[f'{period}d'] = {
-                'returns_data': returns_data,
-                'mean_returns': mean_returns,
-                'tmb_return': mean_returns['TopMinusBottom'],
-                'tmb_sharpe': tmb_sharpe,#大于0.7 良好。大于1 非常好
-                'tmb_win_rate': tmb_win_rate,
-                'is_monotonic': is_monotonic,#单调性
-                'quantile_means': quantile_means
-            }
-
-        return quantile_results
+        return stats
 
     def test_fama_macbeth(self,
                           factor_data: pd.DataFrame,
@@ -243,19 +218,19 @@ class SingleFactorTester:
             auxiliary_data=self.auxiliary_data
         )
         # 2. IC值分析
-        print("\t2. IC值分析...")
+        logger.info("\t2. 正式测试 之 IC值分析...")
         ic_results = self.test_ic_analysis(factor_processed, factor_name)
 
         # 3. 分层回测
-        print("\t3. 分层回测...")
+        logger.info("\t3.  正式测试 之 分层回测...")
         quantile_results = self.test_quantile_backtest(factor_processed, factor_name)
 
         # 4. Fama-MacBeth回归
-        print("\t4. Fama-MacBeth回归...")
+        logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
         fm_results = self.test_fama_macbeth(factor_processed, factor_name)
 
         # 5. 综合评价
-        print("5. 综合评价...")
+        logger.info("5. 综合评价...")
         evaluation = self.evaluation_dict(ic_results, quantile_results, fm_results)
 
         # 整合结果

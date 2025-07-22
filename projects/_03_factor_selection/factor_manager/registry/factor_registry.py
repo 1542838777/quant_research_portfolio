@@ -12,8 +12,10 @@ import logging
 from enum import Enum
 from datetime import datetime
 
+from quant_lib import logger
+
+
 # 配置日志
-logger = logging.getLogger(__name__)
 
 
 class FactorCategory(Enum):
