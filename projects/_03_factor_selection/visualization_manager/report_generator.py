@@ -245,7 +245,7 @@ class ReportGenerator:
             if 'error' not in result:
                 ic_mean = result.get('ic_mean', 0)
                 ic_ir = result.get('ic_ir', 0)
-                ic_win_rate = result.get('ic_positive_ratio', 0)
+                ic_win_rate = result.get('ic_win_rate', 0)
                 is_significant = result.get('is_significant', False)
                 
                 lines.append(
@@ -368,7 +368,7 @@ class ReportGenerator:
                     'IC均值': result.get('ic_mean', 0),
                     'IC标准差': result.get('ic_std', 0),
                     'IC_IR': result.get('ic_ir', 0),
-                    'IC胜率': result.get('ic_positive_ratio', 0),
+                    'IC胜率': result.get('ic_win_rate', 0),
                     'IC绝对值均值': result.get('ic_abs_mean', 0),
                     't统计量': result.get('t_statistic', 0),
                     'p值': result.get('p_value', 1),

@@ -223,7 +223,7 @@ class DataManager:
                 # 高频数据：只在股票池内填充0，股票池外保持NaN todo remain 暂时不填0 任由NAN 作为数据源头，必须要真实
                 # aligned_df = aligned_df.where(universe_df).fillna(0)
                 aligned_df = aligned_df.where(universe_df)
-                print(f"     -> 高频数据，股票池内用0填充")
+                # print(f"     -> 高频数据，股票池内用0填充")
 
             elif name in SLOW_MOVING_FIELDS:
                 # 缓变数据：先限制前向填充，再应用股票池过滤

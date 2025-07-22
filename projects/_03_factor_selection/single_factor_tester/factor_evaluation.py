@@ -165,7 +165,8 @@ class FactorEvaluator:
             ic_mean = ic_series.mean()
             ic_std = ic_series.std()
             ic_ir = ic_mean / ic_std if ic_std != 0 else 0
-            ic_positive_ratio = (ic_series > 0).mean()
+            #胜率！。（表示正确出现的次数/总次数） 何为正确出现：均值为负，表示负相关，我们只考虑ic里面为负的才是正确预测
+            ic_win_rate = ((ic_series * ic_mean) > 0).mean() #这个就是计算胜率，简化版！
             ic_t_stat, ic_p_value = stats.ttest_1samp(ic_series, 0)
             
             # 存储IC统计指标
@@ -173,7 +174,7 @@ class FactorEvaluator:
                 'mean': ic_mean,
                 'std': ic_std,
                 'ir': ic_ir,
-                'positive_ratio': ic_positive_ratio,
+                'positive_ratio': ic_win_rate,
                 't_stat': ic_t_stat,
                 'p_value': ic_p_value,
                 'significant': ic_p_value < 0.05

@@ -64,7 +64,7 @@ class SingleFactorTester:
             raise RuntimeError("config 没有传递过来！")
 
         self.config = config
-        self.test_periods = config.get('forward_periods', [5, 10, 20])
+        self.test_common_periods = config.get('forward_periods', [5, 10, 20])
         self.n_quantiles = config.get('quantiles', 5)
         self.output_dir = output_dir
         # 初始化因子预处理器
@@ -111,7 +111,7 @@ class SingleFactorTester:
         """
         ic_results = {}
 
-        for period in self.test_periods:
+        for period in self.test_common_periods:
             # 计算未来收益
             forward_returns = self.price_data.shift(-period) / self.price_data - 1
 
@@ -122,14 +122,15 @@ class SingleFactorTester:
             ic_mean = ic_series.mean()
             ic_std = ic_series.std()
             ic_ir = ic_mean / ic_std if ic_std > 0 else 0
-            ic_positive_ratio = (ic_series > 0).mean()
+            # 胜率！。（表示正确出现的次数/总次数） 何为正确出现：均值为负，表示负相关，我们只考虑ic里面为负的才是正确预测
+            ic_win_rate = ((ic_series * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！
 
             ic_results[f'{period}d'] = {
                 'ic_series': ic_series,
                 'ic_mean': ic_mean,
                 'ic_std': ic_std,
                 'ic_ir': ic_ir,
-                'ic_positive_ratio': ic_positive_ratio,
+                'ic_win_rate': ic_win_rate,
                 'ic_abs_mean': ic_series.abs().mean(),
                 'significance_level': self._get_ic_significance_level(ic_ir),
                 'significance_desc': self._get_ic_significance_desc(ic_ir)
@@ -158,6 +159,7 @@ class SingleFactorTester:
             return "弱显著"
         else:
             return "不显著"
+
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
                                factor_name: str) -> Dict[str, Any]:
@@ -173,7 +175,7 @@ class SingleFactorTester:
         """
         quantile_results = {}
 
-        for period in self.test_periods:
+        for period in self.test_common_periods:
             # 进行分层回测
             backtest_results = calculate_quantile_returns(
                 factor_data,
@@ -222,14 +224,14 @@ class SingleFactorTester:
         """
         fm_results = {}
 
-        for period in self.test_periods:
+        for period in self.test_common_periods:
             # 运行Fama-MacBeth回归
             fm_result = run_fama_macbeth_regression(
                 factor_df=factor_data,
                 price_df=self.price_data,
                 forward_returns_period=period,
                 weights_df=self.circ_mv_data,  # <-- 传入 流通市值作为权重，执行WLS
-                neutral_factors= self.neutral_dict_data  # <-- 传入市值和行业作为控制变量
+                neutral_factors=self.neutral_dict_data  # <-- 传入市值和行业作为控制变量
             )
 
             # 添加显著性评级
@@ -293,7 +295,7 @@ class SingleFactorTester:
 
         # 5. 综合评价
         print("5. 综合评价...")
-        evaluation = self._evaluate_factor(ic_results, quantile_results, fm_results)
+        evaluation = self.evaluation_dict(ic_results, quantile_results, fm_results)
 
         # 整合结果
         comprehensive_results = {
@@ -303,7 +305,7 @@ class SingleFactorTester:
             'ic_analysis': ic_results,
             'quantile_backtest': quantile_results,
             'fama_macbeth': fm_results,
-            'evaluation': evaluation#todo 弄成多个5 10 20
+            'evaluation': evaluation  # todo 弄成多个5 10 20
         }
 
         # 6. 生成报告和可视化
@@ -367,15 +369,24 @@ class SingleFactorTester:
 
         return neutral_dict
 
+    def evaluation_dict(self,
+                        ic_results: Dict,
+                        quantile_results: Dict,
+                        fm_results: Dict) -> Dict[str, Any]:
+
+        ret = {}
+        for period in self.test_common_periods:
+            ret[f'{period}d'] = self._evaluate_factor(f'{period}d', ic_results, quantile_results, fm_results)
+        return ret
+
     def _evaluate_factor(self,
+                         main_period: str,
                          ic_results: Dict,
                          quantile_results: Dict,
                          fm_results: Dict) -> Dict[str, Any]:
         """
         综合评价因子表现
         """
-        # 以20日为主要评价周期
-        main_period = '20d'
 
         # IC评价
         ic_main = ic_results.get(main_period, {})
@@ -444,7 +455,7 @@ class SingleFactorTester:
         print(f"  FM t值: {evaluation['t_statistic']:.4f} ({'✓' if evaluation['fm_significant'] else '✗'})")
 
         print(f"\n各周期IC_IR:")
-        for period in self.test_periods:
+        for period in self.test_common_periods:
             period_key = f'{period}d'
             ic_ir = results['ic_analysis'].get(period_key, {}).get('ic_ir', 0)
             print(f"  {period}日: {ic_ir:.4f}")
@@ -459,7 +470,7 @@ class SingleFactorTester:
 
         # 1. IC时间序列图
         ax1 = axes[0, 0]
-        for period in self.test_periods:
+        for period in self.test_common_periods:
             period_key = f'{period}d'
             ic_series = results['ic_analysis'].get(period_key, {}).get('ic_series', pd.Series())
             if not ic_series.empty:
@@ -471,7 +482,7 @@ class SingleFactorTester:
 
         # 2. IC统计指标柱状图
         ax2 = axes[0, 1]
-        periods = [f'{p}d' for p in self.test_periods]
+        periods = [f'{p}d' for p in self.test_common_periods]
         ic_means = [results['ic_analysis'].get(p, {}).get('ic_mean', 0) for p in periods]
         ic_irs = [results['ic_analysis'].get(p, {}).get('ic_ir', 0) for p in periods]
 
@@ -501,7 +512,7 @@ class SingleFactorTester:
 
         # 4. 多空组合净值曲线
         ax4 = axes[1, 0]
-        for period in self.test_periods:
+        for period in self.test_common_periods:
             period_key = f'{period}d'
             quantile_data = results['quantile_backtest'].get(period_key, {})
             if quantile_data:
@@ -518,7 +529,7 @@ class SingleFactorTester:
 
         # 5. Fama-MacBeth t值图
         ax5 = axes[1, 1]
-        periods = [f'{p}d' for p in self.test_periods]
+        periods = [f'{p}d' for p in self.test_common_periods]
         t_stats = [results['fama_macbeth'].get(p, {}).get('t_statistic', 0) for p in periods]
         colors = ['red' if abs(t) > 2 else 'orange' if abs(t) > 1.64 else 'gray' for t in t_stats]
 
@@ -645,7 +656,7 @@ class SingleFactorTester:
 
             # 2. IC分析结果表
             ic_data = []
-            for period in self.test_periods:
+            for period in self.test_common_periods:
                 period_key = f'{period}d'
                 ic_result = results['ic_analysis'].get(period_key, {})
                 ic_data.append({
@@ -653,7 +664,7 @@ class SingleFactorTester:
                     'IC均值': f"{ic_result.get('ic_mean', 0):.4f}",
                     'IC标准差': f"{ic_result.get('ic_std', 0):.4f}",
                     'IC_IR': f"{ic_result.get('ic_ir', 0):.4f}",
-                    'IC胜率': f"{ic_result.get('ic_positive_ratio', 0):.2%}",
+                    'IC胜率': f"{ic_result.get('ic_win_rate', 0):.2%}",
                     'IC绝对值均值': f"{ic_result.get('ic_abs_mean', 0):.4f}"
                 })
             ic_df = pd.DataFrame(ic_data)
@@ -661,7 +672,7 @@ class SingleFactorTester:
 
             # 3. 分层回测结果表
             quantile_data = []
-            for period in self.test_periods:
+            for period in self.test_common_periods:
                 period_key = f'{period}d'
                 quantile_result = results['quantile_backtest'].get(period_key, {})
                 quantile_data.append({
@@ -676,7 +687,7 @@ class SingleFactorTester:
 
             # 4. Fama-MacBeth回归结果表
             fm_data = []
-            for period in self.test_periods:
+            for period in self.test_common_periods:
                 period_key = f'{period}d'
                 fm_result = results['fama_macbeth'].get(period_key, {})
                 fm_data.append({
@@ -701,7 +712,7 @@ class SingleFactorTester:
             f.write(f"因子名称: {results['factor_name']}\n")
             f.write(f"测试日期: {results['test_date']}\n")
             f.write(f"预处理方法: {results['preprocess_method']}\n")
-            f.write(f"测试周期: {', '.join([f'{p}日' for p in self.test_periods])}\n\n")
+            f.write(f"测试周期: {', '.join([f'{p}日' for p in self.test_common_periods])}\n\n")
 
             # 综合评价
             evaluation = results['evaluation']
@@ -717,15 +728,15 @@ class SingleFactorTester:
 
             # IC分析
             f.write(f"1. IC值分析法\n")
-            for period in self.test_periods:
+            for period in self.test_common_periods:
                 period_key = f'{period}d'
                 ic_result = results['ic_analysis'].get(period_key, {})
                 f.write(f"   {period}日: IC_IR={ic_result.get('ic_ir', 0):.4f}, ")
-                f.write(f"IC胜率={ic_result.get('ic_positive_ratio', 0):.2%}\n")
+                f.write(f"IC胜率={ic_result.get('ic_win_rate', 0):.2%}\n")
 
             # 分层回测
             f.write(f"\n2. 分层回测法\n")
-            for period in self.test_periods:
+            for period in self.test_common_periods:
                 period_key = f'{period}d'
                 quantile_result = results['quantile_backtest'].get(period_key, {})
                 f.write(f"   {period}日: 多空收益={quantile_result.get('tmb_return', 0):.4f}, ")
@@ -734,7 +745,7 @@ class SingleFactorTester:
 
             # Fama-MacBeth回归
             f.write(f"\n3. Fama-MacBeth回归法\n")
-            for period in self.test_periods:
+            for period in self.test_common_periods:
                 period_key = f'{period}d'
                 fm_result = results['fama_macbeth'].get(period_key, {})
                 f.write(f"   {period}日: t值={fm_result.get('t_statistic', 0):.4f}, ")

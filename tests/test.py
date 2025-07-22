@@ -66,6 +66,7 @@ def compare_local_and_net():
     daily_df = daily_df[daily_df['ts_code'] == '000806.SZ ']
     local_hfq_ret = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
     daily_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic')
+    namechange = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'namechange.parquet')
     stock_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
 
     for miss_ts_code in miss_ts_codes:
