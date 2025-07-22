@@ -12,14 +12,13 @@ import pyarrow.parquet as pq
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Tuple
 from collections import defaultdict
-import logging
 
+from quant_lib import setup_logger
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.utils import get_trading_dates
 
 # 获取模块级别的logger
-logger = logging.getLogger(__name__)
-
+logger = setup_logger(__name__)
 
 class DataLoader:
     """

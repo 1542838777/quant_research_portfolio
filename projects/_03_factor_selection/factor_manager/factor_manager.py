@@ -13,13 +13,12 @@ import json
 import os
 from datetime import datetime
 
+from quant_lib import setup_logger
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .classifier.factor_classifier import FactorClassifier
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class FactorTestResult:

@@ -21,6 +21,8 @@ import json
 from datetime import datetime
 import sys
 
+from scipy import stats
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
@@ -106,6 +108,7 @@ class SingleFactorTester:
             factor_data: 预处理后的因子数据
             factor_name: 因子名称
             
+
         Returns:
             IC分析结果字典
         """
@@ -116,49 +119,8 @@ class SingleFactorTester:
             forward_returns = self.price_data.shift(-period) / self.price_data - 1
 
             # 计算IC序列（使用Spearman相关系数）
-            ic_series = calculate_ic_vectorized(factor_data, forward_returns, method='spearman')
-
-            # 计算IC统计指标
-            ic_mean = ic_series.mean()
-            ic_std = ic_series.std()
-            ic_ir = ic_mean / ic_std if ic_std > 0 else 0
-            # 胜率！。（表示正确出现的次数/总次数） 何为正确出现：均值为负，表示负相关，我们只考虑ic里面为负的才是正确预测
-            ic_win_rate = ((ic_series * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！
-
-            ic_results[f'{period}d'] = {
-                'ic_series': ic_series,
-                'ic_mean': ic_mean,
-                'ic_std': ic_std,
-                'ic_ir': ic_ir,
-                'ic_win_rate': ic_win_rate,
-                'ic_abs_mean': ic_series.abs().mean(),
-                'significance_level': self._get_ic_significance_level(ic_ir),
-                'significance_desc': self._get_ic_significance_desc(ic_ir)
-            }
-            print(f"      IC均值: {ic_mean:.4f}, IR: {ic_ir:.4f}")
-        return ic_results
-
-    def _get_ic_significance_level(self, ic_ir):
-        """获取IC显著性等级"""
-        if abs(ic_ir) > 0.5:
-            return "⭐⭐⭐"
-        elif abs(ic_ir) > 0.3:
-            return "⭐⭐"
-        elif abs(ic_ir) > 0.1:
-            return "⭐"
-        else:
-            return ""
-
-    def _get_ic_significance_desc(self, ic_ir):
-        """获取IC显著性描述"""
-        if abs(ic_ir) > 0.5:
-            return "高度显著"
-        elif abs(ic_ir) > 0.3:
-            return "显著"
-        elif abs(ic_ir) > 0.1:
-            return "弱显著"
-        else:
-            return "不显著"
+            ic_series, stats_dict = calculate_ic_vectorized(factor_data, forward_returns, method='spearman')
+        return stats_dict
 
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
@@ -183,7 +145,6 @@ class SingleFactorTester:
                 n_quantiles=self.n_quantiles,
                 forward_periods=[period]
             )
-
             # 分析结果
             returns_data = backtest_results[period]
             mean_returns = returns_data.mean()
@@ -194,16 +155,16 @@ class SingleFactorTester:
             tmb_win_rate = (tmb_series > 0).mean()
 
             # 单调性检验
-            quantile_means = [mean_returns[f'Q{i}'] for i in range(1, self.n_quantiles + 1)]
+            quantile_means = [mean_returns[f'Q{i + 1}'] for i in range(self.n_quantiles)]
             is_monotonic = all(quantile_means[i] <= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
 
             quantile_results[f'{period}d'] = {
                 'returns_data': returns_data,
                 'mean_returns': mean_returns,
                 'tmb_return': mean_returns['TopMinusBottom'],
-                'tmb_sharpe': tmb_sharpe,
+                'tmb_sharpe': tmb_sharpe,#大于0.7 良好。大于1 非常好
                 'tmb_win_rate': tmb_win_rate,
-                'is_monotonic': is_monotonic,
+                'is_monotonic': is_monotonic,#单调性
                 'quantile_means': quantile_means
             }
 
@@ -346,7 +307,7 @@ class SingleFactorTester:
 
             # 获取所有唯一行业
             all_industries = sorted(industry_df.stack().dropna().unique())
-            print(f"    发现 {len(all_industries)} 个行业: {all_industries}")
+            # print(f"    发现 {len(all_industries)} 个行业: {all_industries}")
 
             # 删除基准行业
             if len(all_industries) > 1:

@@ -116,7 +116,7 @@ class FactorEvaluator:
             (self.price_df.index <= extended_end_date)
         ]
     
-    def run_evaluation(self):
+    def comprehensive_evaluation(self):
         """
         运行因子评价
         
@@ -569,7 +569,7 @@ def evaluate_factor(
     )
     
     # 运行评价
-    results = evaluator.run_evaluation()
+    results = evaluator.comprehensive_evaluation()
     
     # 绘制结果图表
     if plot_results:

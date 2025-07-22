@@ -16,11 +16,12 @@ import os
 
 from pandas import DatetimeIndex
 
+from quant_lib.data_loader import DataLoader
+
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from quant_lib.data_loader import DataLoader, logger
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.config.logger_config import setup_logger
 

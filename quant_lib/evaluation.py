@@ -1,5 +1,6 @@
 import vectorbt as vbt
 
+from quant_lib import logger
 from quant_lib.utils.dataFrame_utils import align_dataframes
 
 """
@@ -11,7 +12,6 @@ from quant_lib.utils.dataFrame_utils import align_dataframes
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Union, Tuple
-import logging
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -27,7 +27,6 @@ except ImportError:
     print("警告: statsmodels未安装，将使用简化版本的回归分析")
 
 # 获取模块级别的logger
-logger = logging.getLogger(__name__)
 
 
 def calculate_ic(factor_df: pd.DataFrame,
@@ -74,49 +73,94 @@ def calculate_ic(factor_df: pd.DataFrame,
     logger.info(f"IC计算完成: 均值={ic_series.mean():.4f}, IR={ic_series.mean() / ic_series.std():.4f}")
     return ic_series
 
-
-def calculate_ic_vectorized(factor_df: pd.DataFrame,
-                            forward_returns: pd.DataFrame,
-                            method: str = 'spearman',
-                            min_stocks: int = 10) -> pd.Series:
+#ok
+def calculate_ic_vectorized(
+        factor_df: pd.DataFrame,
+        forward_returns: pd.DataFrame,
+        method: str = 'spearman',
+        min_stocks: int = 10
+) -> Tuple[pd.Series, Dict[str, float]]:
     """
-    向量化计算因子IC值，效率更高
-    
+    【生产级版本】向量化计算因子IC值及相关统计指标。
+    此版本逻辑严密，接口清晰，返回纯粹的IC序列和独立的统计数据。
+
     Args:
-        factor_df: 因子值DataFrame，index为日期，columns为股票代码
-        forward_returns: 未来收益率DataFrame，index为日期，columns为股票代码
-        method: 相关系数计算方法，'pearson'或'spearman'
-        min_stocks: 每个日期至少需要的股票数量
-        
+        factor_df: 因子值DataFrame
+        forward_returns: 未来收益率DataFrame
+        method: 相关系数计算方法, 'pearson'或'spearman'
+        min_stocks: 每个日期至少需要的【有效配对】股票数量
+
     Returns:
-        IC值序列，index为日期
+        一个元组 (ic_series, stats_dict):
+        - ic_series (pd.Series): IC时间序列，索引为满足条件的有效日期。
+        - stats_dict (Dict): 包含IC均值、ICIR、t值、p值等核心统计指标的字典。
     """
-    logger.info(f"向量化计算{method}类型IC...")
+    logger.info(f"向量化计算 {method.capitalize()} 类型IC (生产级版本)...")
 
-    # 确保两个DataFrame的索引对齐
-    common_dates = factor_df.index.intersection(forward_returns.index)
-    factor_df = factor_df.loc[common_dates]
-    forward_returns = forward_returns.loc[common_dates]
+    # --- 1. 数据验证与对齐 ---
+    if factor_df.empty or forward_returns.empty:
+        logger.warning("输入数据为空，无法计算IC。")
+        return pd.Series(dtype='float64', name='IC'), {}
 
-    # 计算每个日期的有效股票数量
-    valid_counts = pd.DataFrame({
-        'factor': factor_df.notna().sum(axis=1),
-        'returns': forward_returns.notna().sum(axis=1)
-    })
+    common_idx = factor_df.index.intersection(forward_returns.index)
+    common_cols = factor_df.columns.intersection(forward_returns.columns)
 
-    # 筛选出有足够股票的日期
-    valid_dates = valid_counts[(valid_counts['factor'] >= min_stocks) &
-                               (valid_counts['returns'] >= min_stocks)].index
+    if len(common_idx) == 0 or len(common_cols) == 0:
+        logger.warning("因子数据和收益数据没有重叠的日期或股票，无法计算IC。")
+        return pd.Series(dtype='float64', name='IC'), {}
 
-    # 使用corrwith向量化计算IC
-    ic_series = factor_df.loc[valid_dates].corrwith(
-        forward_returns.loc[valid_dates],
+    factor_aligned = factor_df.loc[common_idx, common_cols]
+    returns_aligned = forward_returns.loc[common_idx, common_cols]
+
+    # --- 2. 计算有效配对数并筛选日期 ---
+    paired_valid_counts = (factor_aligned.notna() & returns_aligned.notna()).sum(axis=1)
+    valid_dates = paired_valid_counts[paired_valid_counts >= min_stocks].index
+
+    if valid_dates.empty:
+        logger.warning(f"没有任何日期满足最小股票数量({min_stocks})要求，无法计算IC。")
+        return pd.Series(dtype='float64', name='IC'), {}
+
+    # --- 3. 核心计算 ---
+    ic_series = factor_aligned.loc[valid_dates].corrwith(
+        returns_aligned.loc[valid_dates],
         axis=1,
-        method=method.lower()#这是一种确保 corrwith 函数能正确接收大小写不敏感的计算方法指令的健壮性设计。
-    )
+        method=method.lower()
+    ).rename("IC")  # 给Series命名是一个好习惯
 
-    logger.info(f"IC计算完成: 均值={ic_series.mean():.4f}, IR={ic_series.mean() / ic_series.std():.4f}")
-    return ic_series
+    # --- 4. 计算统计指标 (只在有效IC序列上计算) ---
+    ic_series_cleaned = ic_series.dropna()
+    if len(ic_series_cleaned) < 2:  # t检验至少需要2个样本
+        logger.warning(f"有效IC值数量过少({len(ic_series_cleaned)})，无法计算统计指标。")
+        return ic_series, {}
+
+    # 修正胜率计算和添加更多统计指标
+    ic_mean = ic_series_cleaned.mean()
+    ic_std = ic_series_cleaned.std()
+    ic_ir = ic_mean / ic_std if ic_std > 0 else np.nan
+    ic_t_stat, ic_p_value = stats.ttest_1samp(ic_series_cleaned, 0)
+
+    # 胜率！。（表示正确出现的次数/总次数） 何为正确出现：均值为负，表示负相关，我们只考虑ic里面为负的才是正确预测
+    ic_win_rate = ((ic_series * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！
+    # 方向性检查
+    if abs(ic_mean) > 1e-10 and np.sign(ic_t_stat) != np.sign(ic_mean):
+        raise ValueError("严重错误：t统计量与IC均值方向不一致！")
+
+    stats_dict = {
+        'ic_series': ic_series,
+        'ic_mean': ic_mean,  # >=0.02 及格 。超过0.04良好 超过0.06 超级好
+        'ic_std': ic_std,  # 标准差，波动情况
+        'ic_ir': ic_ir,  # 稳定性。>0.3才行 >0.5非常稳定优秀！
+        'ic_win_rate': ic_win_rate,  # 胜率，在均值决定的方向上，正确出现的次数 >0.55才行
+        'ic_abs_mean': ic_series.abs().mean(),  # 不是很重要，这个值大的话，才有研究意义，能说明 在方向上有效果，而不是趋于0， 个人推荐>0.03
+        't_stat': ic_t_stat,  # 大于2才有意义
+        'p_value': ic_p_value,  # <0.05 说明因子真的有效果
+        'significant': ic_p_value < 0.05,
+
+        'Valid Days': len(ic_series_cleaned),
+        'Total Days': len(common_idx),
+        'Coverage Rate': len(ic_series_cleaned) / len(common_idx)
+    }
+    return ic_series, stats_dict
 
 
 def calculate_ic_decay(factor_df: pd.DataFrame,
@@ -165,77 +209,88 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
     return result_df
 
 
-def calculate_quantile_returns(factor_df: pd.DataFrame,
-                               price_df: pd.DataFrame,
-                               n_quantiles: int = 5,
-                               forward_periods: List[int] = [1, 5, 20]) -> Dict[int, pd.DataFrame]:
+# ok
+def calculate_quantile_returns(
+        factor_df: pd.DataFrame,
+        price_df: pd.DataFrame,
+        n_quantiles: int = 5,
+        forward_periods: List[int] = [1, 5, 20]
+) -> Dict[int, pd.DataFrame]:
     """
-    计算分位数收益
-    
-    Args:
-        factor_df: 因子值DataFrame
-        price_df: 价格DataFrame
-        n_quantiles: 分位数数量
-        forward_periods: 未来时间周期列表
-        
-    Returns:
-        不同时间周期的分位数收益字典
-    """
-    logger.info(f"计算{n_quantiles}分位数收益...")
+    【最终版】计算因子分位数的未来收益率。
+    该版本采用向量化实现，并使用rank()进行稳健分组，同时采纳了防御性编程建议。
 
+    Args:
+        factor_df (pd.DataFrame): 因子值DataFrame (index=date, columns=stock)
+        price_df: pd.DataFrame: 价格DataFrame (index=date, columns=stock)
+        n_quantiles (int): 要划分的分位数数量，默认为5
+        forward_periods (List[int]): 未来时间周期列表，如[1, 5, 20]
+
+    Returns:
+        Dict[int, pd.DataFrame]: 一个字典，键是未来时间周期(period)，
+                                 值是对应的分位数收益DataFrame。
+                                 每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
+    """
     results = {}
+    logger.info(f"开始计算分位数收益，分位数为: {n_quantiles}, "
+                f"向前看周期: {forward_periods}")
 
     for period in forward_periods:
-        # 计算未来收益率
-        forward_returns = price_df.shift(-period) / price_df - 1
+        logger.info(f"  > 正在处理向前看 {period} 周期...")
 
-        # 初始化结果DataFrame
-        quantile_returns = pd.DataFrame(
-            index=factor_df.index,
-            columns=[f'Q{i + 1}' for i in range(n_quantiles)] + ['TopMinusBottom']
-        )
+        # 1. 计算未来收益率 (向量化)
+        forward_returns = price_df.pct_change(periods=period).shift(-period)
 
-        # 对每个日期进行分组计算
-        for date in factor_df.index:
-            if date not in forward_returns.index:
-                continue
+        # 2. 数据转换与对齐：从“宽表”到“长表”
+        factor_long = factor_df.stack().rename('factor')
+        returns_long = forward_returns.stack().rename('return')
 
-            # 获取当天的因子值和未来收益率
-            factor_values = factor_df.loc[date].dropna()
-            returns = forward_returns.loc[date].dropna()
+        # 3. 合并因子和收益，并丢弃任何一个为NaN的行
+        merged_df = pd.concat([factor_long, returns_long], axis=1).dropna()
 
-            # 找出共同的股票
-            common_stocks = factor_values.index.intersection(returns.index)
+        if merged_df.empty:
+            logger.warning(f"  > 在周期 {period}，因子和收益数据没有重叠，无法计算。")
+            # 创建一个空的DataFrame以保持输出结构一致性
+            empty_cols = [f'Q{i + 1}' for i in range(n_quantiles)] + ['TopMinusBottom']
+            results[period] = pd.DataFrame(columns=empty_cols, dtype='float64')
+            continue
 
-            if len(common_stocks) < n_quantiles * 5:  # 每组至少需要5只股票
-                continue
+        # 4. 稳健的分组：使用rank()进行等数量分组 (我们坚持的稳健方法)
+        # 按日期(level=0)分(因为是多重索引，这里取第一个索引：时间)组，对每个截面内的因子值进行排名
+        merged_df['rank'] = merged_df.groupby(level=0)['factor'].rank(method='first')
 
-            # 计算分位数
-            factor_quantiles = pd.qcut(
-                factor_values[common_stocks],
-                n_quantiles,
-                labels=[f'Q{i + 1}' for i in range(n_quantiles)],
-                duplicates='drop'  # 处理极端情况下的重复边界
-            )
+        # 根据排名和分组数，计算每个股票属于哪个分位数(quantile) 不用qut，当有重复val，会有bug
+        def rank_to_quantile(group, n=n_quantiles):
+            group_size = len(group) / n
+            # 使用 // 进行整数除法，确保分组的准确性
+            # .clip确保即使有浮点误差，最大值也不会超过n
+            return (group // group_size + 1.0).clip(upper=n)
 
-            # 计算各分位数的平均收益
-            for i in range(n_quantiles):
-                quantile_label = f'Q{i + 1}'
-                stocks_in_quantile = factor_quantiles[factor_quantiles == quantile_label].index
-                if len(stocks_in_quantile) > 0:
-                    quantile_returns.loc[date, quantile_label] = returns[stocks_in_quantile].mean()
+        merged_df['quantile'] = merged_df.groupby(level=0)['rank'].transform(rank_to_quantile)
 
-            # 计算多空组合收益
-            if pd.notna(quantile_returns.loc[date, f'Q{n_quantiles}']) and pd.notna(quantile_returns.loc[date, 'Q1']):
-                quantile_returns.loc[date, 'TopMinusBottom'] = (
-                        quantile_returns.loc[date, f'Q{n_quantiles}'] -
-                        quantile_returns.loc[date, 'Q1']
-                )
+        # 5. 计算各分位数的平均收益 （时间+组别 为一个group。进行求收益率平均）
+        daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])['return'].mean()
 
-        # 存储结果
-        results[period] = quantile_returns
+        # 6. 数据转换：从“长表”恢复到“宽表”
+        quantile_returns_wide = daily_quantile_returns.unstack()
+        # 改个列名
+        quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
 
-    logger.info("分位数收益计算完成")
+        # 7. 计算多空组合收益
+        top_q_col = f'Q{n_quantiles}'
+        bottom_q_col = 'Q1'
+
+        if top_q_col in quantile_returns_wide.columns and bottom_q_col in quantile_returns_wide.columns:
+            quantile_returns_wide['TopMinusBottom'] = quantile_returns_wide[top_q_col] - quantile_returns_wide[
+                bottom_q_col]
+        else:
+            # 确保即使在极端情况下，列也存在，值为NaN，保持DataFrame结构一致
+            quantile_returns_wide['TopMinusBottom'] = np.nan
+
+        # 8. 存储结果
+        results[period] = quantile_returns_wide.sort_index(axis=1)
+
+    logger.info("所有周期的分位数收益计算完成。")
     return results
 
 
