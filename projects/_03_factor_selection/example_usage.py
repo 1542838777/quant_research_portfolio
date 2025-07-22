@@ -76,9 +76,9 @@ def create_sample_factors(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.Da
 def main():
     """主函数 - 演示策略工厂的完整使用流程"""
 
-    logger.info("=" * 80)
+    # logger.info("=" * 80)
     logger.info("重构后的策略工厂演示 - 完整因子研究流程")
-    logger.info("=" * 80)
+    # logger.info("=" * 80)
 
     # 1. 初始化策略工厂
     factory = StrategyFactory(

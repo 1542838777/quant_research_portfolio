@@ -373,7 +373,7 @@ class FactorManager:
         ic_analysis = test_result.get('ic_analysis', {})
         layered_test = test_result.get('layered_test', {})
         regression = test_result.get('regression', {})
-        evaluation = test_result.get('evaluation', {})
+        evaluation = test_result.get('evaluate_factor_score', {})
         
         # 创建测试结果对象
         result = FactorTestResult(

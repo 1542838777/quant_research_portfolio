@@ -283,11 +283,11 @@ class ReportGenerator:
             if 'error' not in result:
                 long_short_return = result.get('long_short_return', 0)
                 long_short_sharpe = result.get('long_short_sharpe', 0)
-                is_monotonic = result.get('is_monotonic', False)
+                is_monotonic_by_group = result.get('is_monotonic_by_group', False)
                 
                 lines.append(
                     f"| {period_key} | {long_short_return:.4f} | {long_short_sharpe:.4f} | "
-                    f"{'是' if is_monotonic else '否'} |\n"
+                    f"{'是' if is_monotonic_by_group else '否'} |\n"
                 )
         
         return lines
@@ -410,7 +410,7 @@ class ReportGenerator:
                     '预测周期': period_key,
                     '多空收益率': result.get('long_short_return', 0),
                     '多空夏普比率': result.get('long_short_sharpe', 0),
-                    '单调性': '是' if result.get('is_monotonic', False) else '否'
+                    '单调性': '是' if result.get('is_monotonic_by_group', False) else '否'
                 })
         
         if qt_data:

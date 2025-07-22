@@ -8,6 +8,7 @@
 
 支持批量测试、结果可视化和报告生成
 """
+
 from quant_lib import logger
 from ..utils.factor_processor import FactorProcessor
 
@@ -113,14 +114,8 @@ class SingleFactorTester:
         Returns:
             IC分析结果字典
         """
-        ic_results = {}
-
-        for period in self.test_common_periods:
-            # 计算未来收益
-            forward_returns = self.price_data.shift(-period) / self.price_data - 1
-
-            # 计算IC序列（使用Spearman相关系数）
-            ic_series, stats_dict = calculate_ic_vectorized(factor_data, forward_returns, method='spearman')
+        _, stats_dict = calculate_ic_vectorized(factor_data, self.price_data, forward_periods=self.test_common_periods,
+                                                method='spearman')
         return stats_dict
 
     def test_quantile_backtest(self,
@@ -159,7 +154,6 @@ class SingleFactorTester:
             Fama-MacBeth回归结果字典
         """
         fm_results = {}
-
         for period in self.test_common_periods:
             # 运行Fama-MacBeth回归
             fm_result = run_fama_macbeth_regression(
@@ -169,27 +163,7 @@ class SingleFactorTester:
                 weights_df=self.circ_mv_data,  # <-- 传入 流通市值作为权重，执行WLS
                 neutral_factors=self.neutral_dict_data  # <-- 传入市值和行业作为控制变量
             )
-
-            # 添加显著性评级
-            t_stat = fm_result['t_statistic']
-            if abs(t_stat) > 2.58:
-                significance_level = "⭐⭐⭐"
-                significance_desc = "1%显著"
-            elif abs(t_stat) > 1.96:
-                significance_level = "⭐⭐"
-                significance_desc = "5%显著"
-            elif abs(t_stat) > 1.64:
-                significance_level = "⭐"
-                significance_desc = "10%显著"
-            else:
-                significance_level = ""
-                significance_desc = "不显著"
-
-            fm_result['significance_level'] = significance_level
-            fm_result['significance_desc'] = significance_desc
-
             fm_results[f'{period}d'] = fm_result
-
         return fm_results
 
     def comprehensive_test(self,
@@ -209,10 +183,10 @@ class SingleFactorTester:
         Returns:
             综合测试结果字典
         """
-        print(f"开始测试因子: {factor_name}")
+        logger.info(f"开始测试因子: {factor_name}")
 
         # 1. 因子预处理
-        print("\t1. 因子预处理...")
+        # print("\t1. 因子预处理...")
         factor_processed = self.factor_processor.process_factor(
             factor_data=factor_data,
             auxiliary_data=self.auxiliary_data
@@ -231,7 +205,7 @@ class SingleFactorTester:
 
         # 5. 综合评价
         logger.info("5. 综合评价...")
-        evaluation = self.evaluation_dict(ic_results, quantile_results, fm_results)
+        evaluation_score_dict = self.evaluation_score_dict(ic_results, quantile_results, fm_results)
 
         # 整合结果
         comprehensive_results = {
@@ -241,9 +215,19 @@ class SingleFactorTester:
             'ic_analysis': ic_results,
             'quantile_backtest': quantile_results,
             'fama_macbeth': fm_results,
-            'evaluation': evaluation  # todo 弄成多个5 10 20
+            'evaluate_factor_score': evaluation_score_dict
         }
-
+        """
+        {
+        'factor_name': factor_name,
+            "comprehensive_test_results":{
+            ""            
+            }
+        }
+        
+        """
+        ret = self.summary(comprehensive_results, factor_name)
+        print()
         # 6. 生成报告和可视化
         if save_results:
             self._save_results(comprehensive_results, factor_name)
@@ -251,7 +235,7 @@ class SingleFactorTester:
             self._generate_report(comprehensive_results, factor_name)
 
         # 7. 打印摘要
-        self._print_summary(comprehensive_results)
+        self._print_summary(comprehensive_results)  # 删掉
 
         return comprehensive_results
 
@@ -288,7 +272,7 @@ class SingleFactorTester:
             if len(all_industries) > 1:
                 base_industry = all_industries[0]
                 industries_to_create = all_industries[1:]
-                print(f"    删除基准行业: {base_industry}")
+                # print(f"    删除基准行业: {base_industry}")
             else:
                 industries_to_create = all_industries
 
@@ -301,78 +285,55 @@ class SingleFactorTester:
 
                 neutral_dict[f'industry_{industry_name}'] = industry_dummy
 
-            print(f"    生成 {len(industries_to_create)} 个行业哑变量")
+            # print(f"    生成 {len(industries_to_create)} 个行业哑变量")
 
         return neutral_dict
 
-    def evaluation_dict(self,
-                        ic_results: Dict,
-                        quantile_results: Dict,
-                        fm_results: Dict) -> Dict[str, Any]:
+    def evaluation_score_dict(self,
+                              ic_results: Dict,
+                              quantile_results: Dict,
+                              fm_results: Dict) -> Dict[str, Any]:
 
         ret = {}
         for period in self.test_common_periods:
-            ret[f'{period}d'] = self._evaluate_factor(f'{period}d', ic_results, quantile_results, fm_results)
+            ret[f'{period}d'] = self._evaluate_factor_score(f'{period}d', ic_results, quantile_results, fm_results)
         return ret
 
-    def _evaluate_factor(self,
-                         main_period: str,
-                         ic_results: Dict,
-                         quantile_results: Dict,
-                         fm_results: Dict) -> Dict[str, Any]:
+    def _evaluate_factor_score(self,
+                               main_period: str,
+                               ic_results: Dict,
+                               quantile_results: Dict,
+                               fm_results: Dict) -> Dict[str, Any]:
         """
         综合评价因子表现
         """
 
         # IC评价
         ic_main = ic_results.get(main_period, {})
-        ic_ir = ic_main.get('ic_ir', 0)
-        ic_good = abs(ic_ir) > 0.3
+        cal_score_ic = self.cal_score_ic(ic_main.get('ic_mean'),
+                                         ic_main.get('ic_ir'),
+                                         ic_main.get('ic_win_rate'),
+                                         ic_main.get('ic_p_value')
+                                         )
 
         # 分层回测评价
         quantile_main = quantile_results.get(main_period, {})
-        is_monotonic = quantile_main.get('is_monotonic', False)
-        tmb_sharpe = quantile_main.get('tmb_sharpe', 0)
+
+        cal_score_quantile = self.cal_score_quantile_performance(quantile_main)
 
         # Fama-MacBeth评价
         fm_main = fm_results.get(main_period, {})
-        fm_significant = fm_main.get('is_significant', False)
-        t_stat = fm_main.get('t_statistic', 0)
+        cal_score_fama_macbeth = self.cal_score_fama_macbeth(fm_main)
 
         # 综合评分
-        score = sum([ic_good, is_monotonic, fm_significant])
-
-        # 评价等级
-        if score >= 3:
-            grade = "A"
-            conclusion = "优秀 - 通过所有检验，具有显著预测能力"
-        elif score >= 2:
-            grade = "B"
-            conclusion = "良好 - 通过部分检验，可考虑使用"
-        elif score >= 1:
-            grade = "C"
-            conclusion = "一般 - 部分指标达标，需要优化"
-        else:
-            grade = "D"
-            conclusion = "较差 - 建议重新设计或放弃"
-
-        return {
-            'main_period': main_period,
-            'ic_ir': ic_ir,
-            'ic_good': ic_good,
-            'is_monotonic': is_monotonic,
-            'tmb_sharpe': tmb_sharpe,
-            'fm_significant': fm_significant,
-            't_statistic': t_stat,
-            'score': score,
-            'grade': grade,
-            'conclusion': conclusion
-        }
+        cal_score_factor_holistically = self.cal_score_factor_holistically(cal_score_ic, cal_score_quantile,
+                                                                           cal_score_fama_macbeth)
+        return cal_score_factor_holistically
 
     def _print_summary(self, results: Dict[str, Any]):
         """打印测试摘要"""
         factor_name = results['factor_name']
-        evaluation = results['evaluation']
+        evaluation = results['evaluate_factor_score']
         main_period = evaluation['main_period']
 
         print(f"\n{'=' * 80}")
@@ -386,9 +347,9 @@ class SingleFactorTester:
 
         print(f"\n详细指标:")
         print(f"  IC_IR: {evaluation['ic_ir']:.4f} ({'✓' if evaluation['ic_good'] else '✗'})")
-        print(f"  分层单调性: {'✓' if evaluation['is_monotonic'] else '✗'}")
+        print(f"  分层单调性: {'✓' if evaluation['is_monotonic_by_group'] else '✗'}")
         print(f"  多空夏普: {evaluation['tmb_sharpe']:.4f}")
-        print(f"  FM t值: {evaluation['t_statistic']:.4f} ({'✓' if evaluation['fm_significant'] else '✗'})")
+        print(f"  FM t值: {evaluation['fama_macbeth_t_stat']:.4f} ({'✓' if evaluation['fm_significant'] else '✗'})")
 
         print(f"\n各周期IC_IR:")
         for period in self.test_common_periods:
@@ -466,7 +427,7 @@ class SingleFactorTester:
         # 5. Fama-MacBeth t值图
         ax5 = axes[1, 1]
         periods = [f'{p}d' for p in self.test_common_periods]
-        t_stats = [results['fama_macbeth'].get(p, {}).get('t_statistic', 0) for p in periods]
+        t_stats = [results['fama_macbeth'].get(p, {}).get('fama_macbeth_t_stat', 0) for p in periods]
         colors = ['red' if abs(t) > 2 else 'orange' if abs(t) > 1.64 else 'gray' for t in t_stats]
 
         ax5.bar(periods, t_stats, color=colors, alpha=0.8)
@@ -479,13 +440,13 @@ class SingleFactorTester:
 
         # 6. 综合评价雷达图
         ax6 = axes[1, 2]
-        evaluation = results['evaluation']
+        evaluation = results['evaluate_factor_score']
 
         # 雷达图数据
         categories = ['IC_IR', '单调性', 'FM显著性', '多空夏普']
         values = [
             min(abs(evaluation['ic_ir']) / 0.5, 1),  # 标准化到0-1
-            1 if evaluation['is_monotonic'] else 0,
+            1 if evaluation['is_monotonic_by_group'] else 0,
             1 if evaluation['fm_significant'] else 0,
             min(abs(evaluation['tmb_sharpe']) / 2, 1)  # 标准化到0-1
         ]
@@ -571,71 +532,33 @@ class SingleFactorTester:
             except:
                 return str(obj)
 
-    def _save_excel_summary(self, results: Dict[str, Any], excel_path: str):
-        """保存Excel格式的摘要报告"""
-        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-            # 1. 综合评价表
-            evaluation = results['evaluation']
-            eval_df = pd.DataFrame([{
+    def summary(self, results: Dict[str, Any], excel_path: str):
+
+        ic_analysis_dict = results['ic_analysis']
+        quantile_backtest_dict = results['quantile_backtest']
+        fama_macbeth_dict = results['fama_macbeth']
+        evaluation_dict = results['evaluate_factor_score']
+        rows = []
+        total_score = []
+        for day, evaluation in evaluation_dict.items():
+            cur_total_score = evaluation['final_score']
+            total_score.append(cur_total_score)
+            row = {
                 '因子名称': results['factor_name'],
                 '测试日期': results['test_date'],
-                '评价等级': evaluation['grade'],
-                '综合评分': f"{evaluation['score']}/3",
-                'IC_IR(20d)': f"{evaluation['ic_ir']:.4f}",
-                '分层单调性': '是' if evaluation['is_monotonic'] else '否',
-                '多空夏普(20d)': f"{evaluation['tmb_sharpe']:.4f}",
-                'FM t值(20d)': f"{evaluation['t_statistic']:.4f}",
-                'FM显著性': '是' if evaluation['fm_significant'] else '否',
-                '结论': evaluation['conclusion']
-            }])
-            eval_df.to_excel(writer, sheet_name='综合评价', index=False)
-
-            # 2. IC分析结果表
-            ic_data = []
-            for period in self.test_common_periods:
-                period_key = f'{period}d'
-                ic_result = results['ic_analysis'].get(period_key, {})
-                ic_data.append({
-                    '预测周期': f'{period}日',
-                    'IC均值': f"{ic_result.get('ic_mean', 0):.4f}",
-                    'IC标准差': f"{ic_result.get('ic_std', 0):.4f}",
-                    'IC_IR': f"{ic_result.get('ic_ir', 0):.4f}",
-                    'IC胜率': f"{ic_result.get('ic_win_rate', 0):.2%}",
-                    'IC绝对值均值': f"{ic_result.get('ic_abs_mean', 0):.4f}"
-                })
-            ic_df = pd.DataFrame(ic_data)
-            ic_df.to_excel(writer, sheet_name='IC分析', index=False)
-
-            # 3. 分层回测结果表
-            quantile_data = []
-            for period in self.test_common_periods:
-                period_key = f'{period}d'
-                quantile_result = results['quantile_backtest'].get(period_key, {})
-                quantile_data.append({
-                    '预测周期': f'{period}日',
-                    '多空收益': f"{quantile_result.get('tmb_return', 0):.4f}",
-                    '多空夏普': f"{quantile_result.get('tmb_sharpe', 0):.4f}",
-                    '多空胜率': f"{quantile_result.get('tmb_win_rate', 0):.2%}",
-                    '单调性': '是' if quantile_result.get('is_monotonic', False) else '否'
-                })
-            quantile_df = pd.DataFrame(quantile_data)
-            quantile_df.to_excel(writer, sheet_name='分层回测', index=False)
-
-            # 4. Fama-MacBeth回归结果表
-            fm_data = []
-            for period in self.test_common_periods:
-                period_key = f'{period}d'
-                fm_result = results['fama_macbeth'].get(period_key, {})
-                fm_data.append({
-                    '预测周期': f'{period}日',
-                    '因子收益率': f"{fm_result.get('mean_factor_return', 0):.6f}",
-                    't统计量': f"{fm_result.get('t_statistic', 0):.4f}",
-                    'p值': f"{fm_result.get('p_value', 1):.4f}",
-                    '回归期数': fm_result.get('num_periods', 0),
-                    '显著性': fm_result.get('significance_desc', '不显著')
-                })
-            fm_df = pd.DataFrame(fm_data)
-            fm_df.to_excel(writer, sheet_name='FM回归', index=False)
+                '持有期': day,
+                '总评分': cur_total_score,
+                '总等级': evaluation['final_grade'],
+                'IC子评分': evaluation['sub_grades']['IC'],
+                'Quantile子评分': evaluation['sub_grades']['Quantile'],
+                'FM子评分': evaluation['sub_grades']['Fama-MacBeth'],
+                '结论': evaluation['conclusion'],
+                'IC分析摘要': ic_analysis_dict[day],
+                'Quantile分析摘要': quantile_backtest_dict[day],
+                'FM分析摘要': fama_macbeth_dict[day]
+            }
+            rows.append(row)
+        return {'field': results['factor_name'], 'best_score': max(total_score), 'diff_day_perform': rows}
 
     def _generate_report(self, results: Dict[str, Any], factor_name: str):
         """生成文字报告"""
@@ -651,7 +574,7 @@ class SingleFactorTester:
             f.write(f"测试周期: {', '.join([f'{p}日' for p in self.test_common_periods])}\n\n")
 
             # 综合评价
-            evaluation = results['evaluation']
+            evaluation = results['evaluate_factor_score']
             f.write(f"综合评价\n")
             f.write(f"{'-' * 30}\n")
             f.write(f"评价等级: {evaluation['grade']}\n")
@@ -677,14 +600,14 @@ class SingleFactorTester:
                 quantile_result = results['quantile_backtest'].get(period_key, {})
                 f.write(f"   {period}日: 多空收益={quantile_result.get('tmb_return', 0):.4f}, ")
                 f.write(f"夏普比率={quantile_result.get('tmb_sharpe', 0):.4f}, ")
-                f.write(f"单调性={'是' if quantile_result.get('is_monotonic', False) else '否'}\n")
+                f.write(f"单调性={'是' if quantile_result.get('is_monotonic_by_group', False) else '否'}\n")
 
             # Fama-MacBeth回归
             f.write(f"\n3. Fama-MacBeth回归法\n")
             for period in self.test_common_periods:
                 period_key = f'{period}d'
                 fm_result = results['fama_macbeth'].get(period_key, {})
-                f.write(f"   {period}日: t值={fm_result.get('t_statistic', 0):.4f}, ")
+                f.write(f"   {period}日: t值={fm_result.get('fama_macbeth_t_stat', 0):.4f}, ")
                 f.write(f"显著性={fm_result.get('significance_desc', '不显著')}\n")
 
             f.write(f"\n测试完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -739,15 +662,15 @@ class SingleFactorTester:
             if 'error' in results:
                 continue
 
-            evaluation = results.get('evaluation', {})
+            evaluation = results.get('evaluate_factor_score', {})
             summary_data.append({
                 '因子名称': factor_name,
                 '评价等级': evaluation.get('grade', 'N/A'),
                 '综合评分': evaluation.get('score', 0),
                 'IC_IR(20d)': evaluation.get('ic_ir', 0),
-                '分层单调性': evaluation.get('is_monotonic', False),
+                '分层单调性': evaluation.get('is_monotonic_by_group', False),
                 '多空夏普(20d)': evaluation.get('tmb_sharpe', 0),
-                'FM t值(20d)': evaluation.get('t_statistic', 0),
+                'FM t值(20d)': evaluation.get('fama_macbeth_t_stat', 0),
                 'FM显著性': evaluation.get('fm_significant', False)
             })
 
@@ -815,3 +738,315 @@ class SingleFactorTester:
         enhanced_results['plot_paths'] = plot_paths
 
         return enhanced_results
+
+    def cal_score_ic(self,
+                     ic_mean: float,
+                     ic_ir: float,
+                     ic_win_rate: float,
+                     ic_p_value: float) -> Dict:
+        """
+        【专业版】对IC进行多维度、分级、加权评分
+        """
+
+        # 1. 科学性检验 (准入门槛)
+        is_significant = ic_p_value < 0.05 if not np.isnan(ic_p_value) else False
+
+        # 2. 分级评分
+        icir_score = 0
+        if abs(ic_ir) > 0.5:
+            icir_score = 2
+        elif abs(ic_ir) > 0.3:
+            icir_score = 1
+
+        mean_score = 1 if abs(ic_mean) > 0.025 else 0
+        win_rate_score = 1 if ic_win_rate > 0.55 else 0
+
+        # 3. 计算总分 (满分4分)
+        total_score = icir_score + mean_score + win_rate_score
+
+        # 4. 生成评级和结论
+        if not is_significant:
+            grade = "D (不显著)"
+            conclusion = "因子未通过显著性检验，结果可能由运气导致，不予采纳。"
+        elif total_score >= 4:
+            grade = "A+ (优秀)"
+            conclusion = "所有指标均表现优异，是顶级的Alpha因子。"
+        elif total_score >= 3:
+            grade = "A (良好)"
+            conclusion = "核心指标表现良好，具备很强的实战价值。"
+        elif total_score >= 2:
+            grade = "B (及格)"
+            conclusion = "部分指标达标，因子具备一定有效性，可作为备选。"
+        else:
+            grade = "C (较差)"
+            conclusion = "核心指标表现不佳，建议优化或放弃。"
+
+        return {
+            'ic_score': f"{total_score}/4",
+            'grade': grade,
+            'is_significant': is_significant,
+            'details': {
+                'ICIR': f"{ic_ir:.2f} (得分:{icir_score})/(共计两分。一分就也很不错了)",
+                'IC Mean': f"{ic_mean:.3f} (得分:{mean_score})",
+                'Win Rate': f"{ic_win_rate:.2%} (得分:{win_rate_score})"
+            },
+            'conclusion': conclusion
+        }
+
+    def cal_score_quantile_performance(self, quantile_main: Dict) -> Dict[str, Any]:
+        """
+        【专业版】对分层回测结果进行多维度、分级、加权评分。
+        """
+        # --- 1. 提取核心指标 ---
+        quantile_means = quantile_main.get('quantile_means', [])
+        tmb_sharpe = quantile_main.get('tmb_sharpe', 0)
+        tmb_annual_return = quantile_main.get('tmb_annual_return', 0)
+        # 最大回撤通常是负数，我们取绝对值
+        max_drawdown = abs(quantile_main.get('max_drawdown', 1.0))
+
+        # --- 2. 分级评分 ---
+
+        # a) TMB夏普评分 (核心指标, 满分2分)
+        sharpe_score = 0
+        if tmb_sharpe > 1.0:
+            sharpe_score = 2
+        elif tmb_sharpe > 0.5:
+            sharpe_score = 1
+
+        # b) 单调性评分 (结构指标, 满分1分)
+        monotonicity_score = 0
+        monotonicity_corr = np.nan
+        if quantile_means and len(quantile_means) > 1:
+            # 使用spearman秩相关系数计算单调程度
+            monotonicity_corr, _ = stats.spearmanr(quantile_means, range(len(quantile_means)))
+            if monotonicity_corr > 0.8:
+                monotonicity_score = 1
+
+        # c) 收益/风控评分 (实战指标, 满分2分)
+        # 计算卡玛比率 (Calmar Ratio)
+        calmar_ratio = tmb_annual_return / max_drawdown if max_drawdown > 0 else 0
+
+        risk_return_score = 0
+        if calmar_ratio > 0.5 and tmb_annual_return > 0.05:
+            risk_return_score = 2
+        elif calmar_ratio > 0.2 and tmb_annual_return > 0.03:
+            risk_return_score = 1
+
+        # --- 3. 汇总与评级 (总分5分) ---
+        total_score = sharpe_score + monotonicity_score + risk_return_score
+
+        if total_score >= 5:
+            grade = "A+ (强烈推荐)"
+        elif total_score >= 4:
+            grade = "A (优秀)"
+        elif total_score >= 3:
+            grade = "B (良好)"
+        else:
+            grade = "C (一般)"
+
+        return {
+            'quantile_score': f"{total_score}/5",
+            'grade': grade,
+            'details': {
+                'TMB Sharpe': f"{tmb_sharpe:.2f} (得分:{sharpe_score})",
+                'Monotonicity Corr': f"{monotonicity_corr:.2f} (得分:{monotonicity_score})",
+                'Calmar Ratio': f"{calmar_ratio:.2f} (得分:{risk_return_score})",
+                'TMB Annual Return': f"{tmb_annual_return:.2%}",
+                'Max Drawdown': f"{max_drawdown:.2%}"
+            }
+        }
+
+    def cal_score_fama_macbeth(self, fm_main: Dict) -> Dict[str, Any]:
+        """
+        【专业版】对Fama-MacBeth回归进行多维度、分离式评分
+        """
+        # --- 1. 提取核心指标 ---
+        t_stat = fm_main.get('t_statistic', 0)
+        mean_return = fm_main.get('mean_factor_return', 0)  # 这是周期平均收益
+        num_periods = fm_main.get('num_valid_periods', 0)
+        success_rate = fm_main.get('success_rate', 0)
+        factor_returns_series = fm_main.get('factor_returns_series', pd.Series(dtype=float))
+
+        # --- 2. 分离式评分 ---
+
+        # a) 测试可信度评分 (满分3分)
+        confidence_score = 0
+        # 完整度评分 (0-1分)
+        if success_rate >= 0.8: confidence_score += 1
+        # 周期长度评分 (0-2分)
+        if num_periods >= 252 * 3:
+            confidence_score += 2
+        elif num_periods >= 252:
+            confidence_score += 1
+
+        # b) 因子有效性评分 (满分5分)
+        performance_score = 0
+        # 显著性评分 (0-3分)
+        if not np.isnan(t_stat):
+            if abs(t_stat) > 2.58:
+                performance_score += 3
+            elif abs(t_stat) > 1.96:
+                performance_score += 2
+            elif abs(t_stat) > 1.64:
+                performance_score += 1
+
+        # 收益稳定性评分 (Lambda胜率, 0-1分)
+        lambda_win_rate = 0
+        if not factor_returns_series.empty:
+            if factor_returns_series.mean() >= 0:
+                lambda_win_rate = (factor_returns_series > 0).mean()
+            else:
+                lambda_win_rate = (factor_returns_series < 0).mean()
+            if lambda_win_rate > 0.55:
+                performance_score += 1
+
+        # 经济意义评分 (年化收益, 0-1分)
+        # 假设 daily period_len = 1, weekly = 5, etc.
+        # 这里我们简单假设一个周期是252/num_periods年
+        annualized_return = mean_return * (252 / self.test_common_periods[0])  # 简化处理，假设周期固定
+        if abs(annualized_return) > 0.03:  # 年化因子收益超过3%
+            performance_score += 1
+
+        final_grade = "D"
+        conclusion = "因子表现不佳。"
+        # 综合评级 - --
+        # a) 设立“一票否决”红线
+        if confidence_score == 0 or success_rate <= 0.75:
+            final_grade = "F (测试不可信)"
+            conclusion = "测试质量完全不达标 (整理数据后 参与回归率过低：maybe：周期过短且数据不完整)。"
+        else:
+            # b) 根据表现分，确定基础评级
+            base_grade = "D"
+            if performance_score >= 4:
+                base_grade = "A"
+                conclusion = "因子表现优秀，具备很强的Alpha。"
+            elif performance_score >= 3:
+                base_grade = "B"
+                conclusion = "因子表现良好，具备一定Alpha。"
+            elif performance_score >= 2:
+                base_grade = "C"
+                conclusion = "因子表现一般，需进一步观察。"
+
+            # c) 根据可信度分，进行调整并加注
+            if confidence_score == 3:
+                final_grade = base_grade + "+" if base_grade in ["A", "B"] else base_grade
+                conclusion += " 测试结果具有极高可信度。"
+            elif confidence_score == 2:
+                final_grade = base_grade
+                conclusion += " 测试结果可信度良好。"
+            elif confidence_score == 1:
+                # 可信度较低，下调评级
+                if base_grade == "A":
+                    final_grade = "B+"
+                elif base_grade == "B":
+                    final_grade = "C+"
+                else:
+                    final_grade = base_grade  # C和D不再下调
+                conclusion += " [警告] 测试可信度较低，可能因周期较短，结论需谨慎对待。"
+
+        return {
+            'confidence_score': f"{confidence_score}/3",
+            'performance_score': f"{performance_score}/5",
+            'grade': final_grade,
+            'details': {
+                't-statistic': f"{t_stat:.2f}",
+                'Annualized Factor Return': f"{annualized_return:.2%}",
+                'Lambda Win Rate': f"{lambda_win_rate:.2%}",
+                'Valid Periods': num_periods,
+                'Regression Success Rate': f"{success_rate:.2%}"
+            }
+        }
+
+    def cal_score_factor_holistically(self,
+                                      score_ic_eval: Dict,
+                                      score_quantile_eval: Dict,
+                                      score_fm_eval: Dict) -> Dict[str, Any]:
+        """
+        【最终投决会】综合IC、分层回测、Fama-MacBeth三大检验结果，对因子进行最终评级。
+        """
+
+        # --- 1. 提取各模块的核心评价结果 ---
+        ic_score_str = score_ic_eval.get('ic_score', '0/4')
+        ic_is_significant = score_ic_eval.get('is_significant', False)
+
+        quantile_score_str = score_quantile_eval.get('quantile_score', '0/5')
+        quantile_grade = score_quantile_eval.get('grade', 'D')
+        tmb_sharpe = score_quantile_eval.get('details', {}).get('TMB Sharpe', '0 (得分:0)').split(' ')[0]
+
+        fm_performance_score_str = score_fm_eval.get('performance_score', '0/5')
+        fm_confidence_score_str = score_fm_eval.get('confidence_score', '0/3')
+        fm_grade = score_fm_eval.get('grade', '')
+
+        # --- 2. 解析数值分数 ---
+        try:
+            ic_score = int(ic_score_str.split('/')[0])
+            quantile_score = int(quantile_score_str.split('/')[0])
+            fm_performance_score = int(fm_performance_score_str.split('/')[0])
+            fm_confidence_score = int(fm_confidence_score_str.split('/')[0])
+            tmb_sharpe = float(tmb_sharpe)
+        except (ValueError, IndexError):
+            # 如果解析失败，说明子报告有问题，直接返回错误
+            return {'final_grade': 'F (错误)', 'conclusion': '一个或多个子评估报告格式错误，无法进行综合评价。'}
+
+        # --- 3. 执行“一票否决”规则 ---
+        deal_breaker_reason = []
+        if not ic_is_significant:
+            deal_breaker_reason.append("IC检验不显著，因子有效性无统计学支持。")
+        elif fm_grade == 'F':  # 最拉跨的分！
+            deal_breaker_reason.append(f"Fama-MacBeth检验可信度低(得分:{fm_confidence_score}/3)，结果不可靠。")
+        elif tmb_sharpe < 0:
+            deal_breaker_reason.append(f"分层回测多空夏普比率为负({tmb_sharpe:.2f})，因子在策略层面无效。")
+
+        if deal_breaker_reason:
+            return {
+                'final_grade': 'F (否决)',
+                'conclusion': f"因子存在致命缺陷: {deal_breaker_reason}",
+                'ic_grade': score_ic_eval.get('grade'),
+                'quantile_grade': quantile_grade,
+                'fm_grade': fm_grade
+            }
+
+        # --- 4. 进行加权评分 (总分100分) ---
+        # 权重分配: 分层回测(40%), F-M(35%), IC(25%)
+        ic_max_score = 4
+        quantile_max_score = 5
+        fm_max_score = 5
+
+        weighted_score = (
+                (ic_score / ic_max_score) * 25 +
+                (quantile_score / quantile_max_score) * 40 +
+                (fm_performance_score / fm_max_score) * 35
+        )
+
+        # --- 5. 给出最终评级和结论 ---
+        final_grade = ""
+        conclusion = ""
+        if weighted_score >= 85:
+            final_grade = "S (旗舰级)"
+            conclusion = "因子在所有维度均表现卓越，是极其罕见的顶级Alpha，应作为策略核心。 "
+        elif weighted_score >= 70:
+            final_grade = "A (核心备选)"
+            conclusion = "因子表现非常优秀且稳健，具备极强的实战价值，可纳入核心多因子模型。"
+        elif weighted_score >= 50:
+            final_grade = "B (值得关注(50%-70%得分率))"
+            conclusion = "因子表现良好，通过了关键考验，具备一定Alpha能力，可纳入备选池持续跟踪。"
+        elif weighted_score >= 35:
+            final_grade = "C (35%的得分率，实在走投无路了，只有看看这类垃圾了)"
+            conclusion = "35%的得分率，实在走投无路了，只有看看这类垃圾了-只有35%~50%的得分率"
+        elif weighted_score >= 20:
+            final_grade = "D (很差很差-只有20%~35%的得分率)"
+            conclusion = "很差很差只有20%~35%的得分率"
+        else:
+            final_grade = "E (建议优化)"
+            conclusion = "因子表现实在平庸，建议优化或仅作为分散化补充。（20%的得分率都没有）"
+
+        return {
+            'final_grade': final_grade,
+            'final_score': f"{weighted_score:.1f}/100",
+            'conclusion': conclusion,
+            'sub_grades': {
+                'IC': score_ic_eval.get('grade'),
+                'Quantile': quantile_grade,
+                'Fama-MacBeth': fm_grade
+            }
+        }

@@ -157,7 +157,7 @@ class DataManager:
         Returns:
             权威股票池DataFrame
         """
-        print("1. 验证股票池构建所需数据...")
+        # print("1. 验证股票池构建所需数据...")
 
         # 验证必需字段是否已加载
         required_fields_for_universe = ['close', 'total_mv', 'turnover_rate', 'industry', 'list_date']
@@ -198,7 +198,6 @@ class DataManager:
         Returns:
             对齐和清洗后的数据字典
         """
-        print("1. 定义数据分类和填充策略...")
         # 不做任何基于未来信息的“列修剪”
         master_index = universe_df.index
         master_columns = universe_df.columns
@@ -209,11 +208,11 @@ class DataManager:
         STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
         PRICE_FIELDS = ['close', 'open', 'high', 'low']  # 价格数据，特殊处理
 
-        print(f"\n2. 开始对齐和清洗 {len(raw_dfs)} 个数据字段...")
+        # print(f"\n2. 开始对齐和清洗 {len(raw_dfs)} 个数据字段...")
 
         aligned_data = {}
         for name, df in raw_dfs.items():
-            print(f"   处理字段: {name}")
+            # print(f"   处理字段: {name}")
 
             # 步骤1: 对齐到修剪后的股票池 对齐到主模板（universe_df的形状）
             aligned_df = df.reindex(index=master_index, columns=master_columns)
@@ -353,7 +352,7 @@ class DataManager:
 
         # 4. 剔除次日停牌股票
         if universe_filters.get('remove_next_day_suspended', False):
-            print("    应用次日停牌股票过滤...")
+            # print("    应用次日停牌股票过滤...")
             universe_df = self._filter_next_day_suspended(universe_df)
 
         # 统计股票池信息

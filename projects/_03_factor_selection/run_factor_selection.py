@@ -157,8 +157,8 @@ def step1_single_factor_test(config: dict, factor_dict: Dict[str, pd.DataFrame],
         price_df=price_df,
         start_date=config['backtest']['start_date'],
         end_date=config['backtest']['end_date'],
-        n_groups=config['evaluation']['n_groups'],
-        forward_periods=config['evaluation']['forward_periods'],
+        n_groups=config['evaluate_factor_score']['n_groups'],
+        forward_periods=config['evaluate_factor_score']['forward_periods'],
         result_dir=step1_dir,
         plot_results=True
     )
@@ -453,8 +453,8 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
         price_df=price_df,
         start_date=config['backtest']['start_date'],
         end_date=config['backtest']['end_date'],
-        n_groups=config['evaluation']['n_groups'],
-        forward_periods=config['evaluation']['forward_periods'],
+        n_groups=config['evaluate_factor_score']['n_groups'],
+        forward_periods=config['evaluate_factor_score']['forward_periods'],
         result_dir=step3_dir,
         plot_results=True
     )
@@ -476,8 +476,8 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
         price_df=price_df,
         start_date=config['backtest']['start_date'],
         end_date=in_sample_end.strftime('%Y-%m-%d'),
-        n_groups=config['evaluation']['n_groups'],
-        forward_periods=config['evaluation']['forward_periods'],
+        n_groups=config['evaluate_factor_score']['n_groups'],
+        forward_periods=config['evaluate_factor_score']['forward_periods'],
         result_dir=step3_dir / 'in_sample',
         plot_results=True
     )
@@ -490,8 +490,8 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
         price_df=price_df,
         start_date=out_sample_start.strftime('%Y-%m-%d'),
         end_date=config['backtest']['end_date'],
-        n_groups=config['evaluation']['n_groups'],
-        forward_periods=config['evaluation']['forward_periods'],
+        n_groups=config['evaluate_factor_score']['n_groups'],
+        forward_periods=config['evaluate_factor_score']['forward_periods'],
         result_dir=step3_dir / 'out_sample',
         plot_results=True
     )
@@ -518,7 +518,7 @@ def step3_factor_combination(config: dict, selected_factor_dict: Dict[str, pd.Da
     return {
         'composite_factor': composite_factor,
         'weights': weights,
-        'evaluation': composite_result,
+        'evaluate_factor_score': composite_result,
         'in_sample': in_sample_result,
         'out_sample': out_sample_result,
         'comparison': comparison

@@ -65,28 +65,28 @@ class FactorProcessor:
         Returns:
             预处理后的因子数据
         """
-        print("\t第三阶段：因子预处理流水线")
+        # logger.info("\t第三阶段：因子预处理流水线")
 
         processed_factor = factor_data.copy()
 
         # 应用股票池过滤
-        print("1. 应用股票池过滤...")
+        # print("1. 应用股票池过滤...")
         if universe_df:
             processed_factor = factor_data.where(universe_df)
 
         # 步骤1：去极值
-        print("2. 去极值处理...")
+        # print("2. 去极值处理...")
         processed_factor = self._winsorize(processed_factor)
 
         # 步骤2：中性化
         if self.preprocessing_config.get('neutralization', {}).get('enable', False):
-            print("3. 中性化处理...")
+            # print("3. 中性化处理...")
             processed_factor = self._neutralize(processed_factor, auxiliary_data)
         else:
             print("3. 跳过中性化处理...")
 
         # 步骤3：标准化
-        print("4. 标准化处理...")
+        # print("4. 标准化处理...")
         processed_factor = self._standardize(processed_factor)
 
         # 统计处理结果
@@ -112,7 +112,7 @@ class FactorProcessor:
         if method == 'mad':
             # 中位数绝对偏差法 (Median Absolute Deviation)
             threshold = winsorization_config.get('mad_threshold', 5)
-            print(f"  使用MAD方法，阈值倍数: {threshold}")
+            # print(f"  使用MAD方法，阈值倍数: {threshold}")
 
             # 向量化计算每日的中位数和MAD
             median = factor_data.median(axis=1)
@@ -231,7 +231,7 @@ class FactorProcessor:
                 except Exception as e:
                     raise RuntimeError(f"  警告: 日期 {date} 中性化失败: {e}")
 
-        print(f"  中性化完成，处理因子: {factors_to_neutralize}")
+        # print(f"  中性化完成，处理因子: {factors_to_neutralize}")
         return processed_factor
 
     def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
@@ -250,7 +250,7 @@ class FactorProcessor:
         processed_factor = factor_data.copy()
 
         if method == 'zscore':
-            print("  使用Z-Score标准化 (健壮版)")
+            # print("  使用Z-Score标准化 (健壮版)")
             mean = processed_factor.mean(axis=1)
             std = processed_factor.std(axis=1)
 

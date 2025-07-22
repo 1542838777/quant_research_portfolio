@@ -29,11 +29,11 @@ def align_dataframes(all_dfs_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
                 common_index = common_index.intersection(df.index)
                 common_columns = common_columns.intersection(df.columns)
 
-        print(f"共同索引数量: {len(common_index)}, 共同列数量: {len(common_columns)}")
+        # print(f"共同索引数量: {len(common_index)}, 共同列数量: {len(common_columns)}")
 
         if len(common_index) == 0 or len(common_columns) == 0:
-            print("警告：没有共同的索引或列，无法对齐")
-            return {}
+            raise ValueError("警告：没有共同的索引或列，无法对齐")
+            # return {}
 
         # 对齐所有DataFrame
         aligned_dfs_dict = {}

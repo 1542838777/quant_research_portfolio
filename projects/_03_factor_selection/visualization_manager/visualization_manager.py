@@ -162,11 +162,11 @@ class VisualizationManager:
             plot_paths['fama_macbeth'] = fm_path
         
         # 4. 综合评价图
-        if 'evaluation' in test_results:
+        if 'evaluate_factor_score' in test_results:
             eval_path = self._plot_evaluation_summary(
-                test_results['evaluation'], factor_name, save_plots
+                test_results['evaluate_factor_score'], factor_name, save_plots
             )
-            plot_paths['evaluation'] = eval_path
+            plot_paths['evaluate_factor_score'] = eval_path
         
         logger.info(f"因子 {factor_name} 图表生成完成")
         return plot_paths
@@ -444,7 +444,7 @@ class VisualizationManager:
             # 提取各项指标
             ic_results = results.get('ic_analysis', {})
             fm_results = results.get('fama_macbeth', {})
-            evaluation = results.get('evaluation', {})
+            evaluation = results.get('evaluate_factor_score', {})
 
             row['ic_mean'] = ic_results.get('IC_Mean', 0)
             row['ic_ir'] = ic_results.get('IC_IR', 0)

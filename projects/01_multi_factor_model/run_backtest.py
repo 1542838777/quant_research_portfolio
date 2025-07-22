@@ -196,14 +196,14 @@ def evaluate_factors(config: dict, factor_df: pd.DataFrame, data_dict: dict, res
     ic_decay = calculate_ic_decay(
         factor_df, 
         data_dict['close'], 
-        periods=config['evaluation']['ic_decay_periods']
+        periods=config['evaluate_factor_score']['ic_decay_periods']
     )
     
     # 计算分位数收益
     quantile_returns = calculate_quantile_returns(
         factor_df, 
         data_dict['close'], 
-        n_quantiles=config['evaluation']['quantile_count']
+        n_quantiles=config['evaluate_factor_score']['quantile_count']
     )
     
     # 保存结果
