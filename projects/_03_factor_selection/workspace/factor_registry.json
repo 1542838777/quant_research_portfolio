@@ -8,7 +8,14 @@
       "returns"
     ],
     "created_at": "2025-07-22T01:26:30.911579",
-    "updated_at": "2025-07-23T21:37:40.426030",
-    "test_results": {}
+    "updated_at": "2025-07-23T22:27:04.204655",
+    "test_results": {
+      "ic_mean": null,
+      "ic_ir": null,
+      "sharpe_ratio": null,
+      "overall_score": null,
+      "grade": null,
+      "test_date": "2025-07-23 21:49:34"
+    }
   }
 }

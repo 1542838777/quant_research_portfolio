@@ -117,13 +117,6 @@ def main():
             category=FactorCategory.VALUE
         )
         logger.info(f"✓ 单因子测试完成: PE_factor")
-
-        # 获取测试结果
-        test_result = factory.factor_manager.get_test_result('PE_factor')
-        if test_result:
-            logger.info(f"  - IC均值: {test_result.ic_mean}")
-            logger.info(f"  - IC IR: {test_result.ic_ir}")
-            logger.info(f"  - 评分: {test_result.overall_score} ({test_result.grade})")
     except Exception as e:
         logger.error(f"✗ 单因子测试失败: {e}")
         raise RuntimeError(f"处理失败: {e}")  # 抛出新异常

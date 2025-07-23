@@ -224,14 +224,7 @@ class StrategyFactory:
             factor_name=factor_name,
             **test_kwargs
         )
-        
-        # 保存结果到因子管理器
-        factor_result = self.factor_manager._convert_test_result(
-            factor_name, test_result, test_kwargs
-        )
-        self.factor_manager.save_test_result(factor_result)
-        
-        logger.info(f"因子测试完成: {factor_name}, 评分: {factor_result.overall_score:.2f}")
+        self.factor_manager._save_results(test_result,factor_name)
         return test_result
     
     def batch_test_factors(self, 

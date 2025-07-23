@@ -151,7 +151,7 @@ def calculate_ic_vectorized(
         dayStr = f'{period}d'
         ic_series_dict[dayStr] = ic_series
         stats_dict[dayStr] = {
-            'ic_series': ic_series,
+            # 'ic_series': ic_series,
             'ic_mean': ic_mean,  # >=0.02 及格 。超过0.04良好 超过0.06 超级好
             'ic_std': ic_std,  # 标准差，波动情况
             'ic_ir': ic_ir,  # 稳定性。>0.3才行 >0.5非常稳定优秀！
@@ -264,7 +264,7 @@ def stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Dict[str
         # --- 存储结果 ---
         # 'period' 变量用于创建描述性的键，如 '5d'
         stats[f'{period}d'] = {
-            'returns_data': result,
+            # 'returns_data': result,
             'mean_returns': mean_returns,
             'tmb_return_period': tmb_mean_period_return,  # 特定周期的平均收益 (例如，5日平均收益)
             'tmb_annual_return': tmb_annual_return,  # **新增**: 年化后的多空组合收益率
@@ -778,7 +778,7 @@ def run_fama_macbeth_regression(
         'num_total_periods': total_dates_to_run,
         'num_valid_periods': num_success_dates,
         'success_rate': num_success_dates / total_dates_to_run if total_dates_to_run > 0 else 0,#有多大比例的交易日成功地完成了回归
-        'factor_returns_series': factor_returns_series,
+        # 'factor_returns_series': factor_returns_series,
         'skipped_dates': num_skipped_dates,
     }
 

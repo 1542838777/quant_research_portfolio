@@ -223,7 +223,7 @@ class SingleFactorTester:
             'evaluate_factor_score': evaluation_score_dict
         }
         ret = self.summary(comprehensive_results, factor_name)
-        self._save_results(ret, factor_name)
+
         # self._create_visualizations(ret, factor_name)
         return ret
 
@@ -432,62 +432,8 @@ class SingleFactorTester:
 
         print(f"可视化图表已保存: {chart_path}")
 
-    def _save_results(self, results: Dict[str, Any], factor_name: str):
-        """保存测试结果"""
-        # 准备可序列化的结果
-        serializable_results = self._make_serializable(results)
 
-        # 保存JSON格式
-        json_path = os.path.join(self.output_dir, f'{factor_name}_results.json')
-        add_single_factor_test_result(json_path, serializable_results)
-        # # 保存Excel格式的摘要
-        # excel_path = os.path.join(self.output_dir, f'{factor_name}_summary.xlsx')
-        # # self._save_excel_summary(results, excel_path)
-        #
-        # print(f"测试结果已保存:")
-        # print(f"  JSON: {json_path}")
-        # print(f"  Excel: {excel_path}")
 
-    def _make_serializable(self, obj):
-        """将结果转换为可序列化格式"""
-        if isinstance(obj, dict):
-            return {str(k): self._make_serializable(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._make_serializable(v) for v in obj]
-        elif isinstance(obj, pd.Series):
-            # 将索引转换为字符串
-            series_dict = {}
-            for k, v in obj.items():
-                key = str(k) if hasattr(k, '__str__') else k
-                series_dict[key] = self._make_serializable(v)
-            return series_dict
-        elif isinstance(obj, pd.DataFrame):
-            # 将索引和列名都转换为字符串
-            df_dict = {}
-            for idx, row in obj.iterrows():
-                row_dict = {}
-                for col, val in row.items():
-                    col_key = str(col) if hasattr(col, '__str__') else col
-                    row_dict[col_key] = self._make_serializable(val)
-                idx_key = str(idx) if hasattr(idx, '__str__') else idx
-                df_dict[idx_key] = row_dict
-            return df_dict
-        elif isinstance(obj, (np.integer, np.floating)):
-            return float(obj)
-        elif isinstance(obj, (np.bool_, bool)):
-            return bool(obj)
-        elif isinstance(obj, pd.Timestamp):
-            return str(obj)
-        elif pd.isna(obj):
-            return None
-        else:
-            try:
-                # 尝试转换为基本Python类型
-                if hasattr(obj, 'item'):  # numpy标量
-                    return obj.item()
-                return obj
-            except:
-                return str(obj)
 
     def summary(self, results: Dict[str, Any], excel_path: str):
 
