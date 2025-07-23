@@ -230,7 +230,7 @@ class SingleFactorTester:
         print()
         # 6. 生成报告和可视化
         if save_results:
-            self._save_results(comprehensive_results, factor_name)
+            self._save_results(ret, factor_name)
             self._create_visualizations(comprehensive_results, factor_name)
             self._generate_report(comprehensive_results, factor_name)
 
@@ -483,13 +483,13 @@ class SingleFactorTester:
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(serializable_results, f, ensure_ascii=False, indent=2)
 
-        # 保存Excel格式的摘要
-        excel_path = os.path.join(self.output_dir, f'{factor_name}_summary.xlsx')
-        self._save_excel_summary(results, excel_path)
-
-        print(f"测试结果已保存:")
-        print(f"  JSON: {json_path}")
-        print(f"  Excel: {excel_path}")
+        # # 保存Excel格式的摘要
+        # excel_path = os.path.join(self.output_dir, f'{factor_name}_summary.xlsx')
+        # # self._save_excel_summary(results, excel_path)
+        #
+        # print(f"测试结果已保存:")
+        # print(f"  JSON: {json_path}")
+        # print(f"  Excel: {excel_path}")
 
     def _make_serializable(self, obj):
         """将结果转换为可序列化格式"""
