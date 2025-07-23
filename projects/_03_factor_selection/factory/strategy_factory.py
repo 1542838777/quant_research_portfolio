@@ -226,7 +226,7 @@ class StrategyFactory:
         )
         self.factor_manager._save_results(test_result,factor_name)
         return test_result
-    
+    #批量测试！起始。先配置 基础底层target因子，比如价格，。。 然后自己换算出目标因子，然后为给这个factor_data_dict todo
     def batch_test_factors(self, 
                           factor_data_dict: Dict[str, pd.DataFrame],
                           auto_register: bool = True,
@@ -283,6 +283,7 @@ class StrategyFactory:
                     auto_register=False,  # 已经注册过了
                     **test_kwargs
                 )
+                self.factor_manager._save_results(results[factor_name], factor_name)
                 results[factor_name] = result
             except Exception as e:
                 logger.error(f"因子 {factor_name} 测试失败: {e}")

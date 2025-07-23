@@ -10,6 +10,9 @@
 """
 
 from quant_lib import logger
+from ..factor_manager.factor_manager import FactorManager
+from ..factor_manager.registry.factor_registry import FactorCategory
+
 from ..factor_manager.storage.single_storage import add_single_factor_test_result
 from ..utils.factor_processor import FactorProcessor
 
@@ -92,14 +95,6 @@ class SingleFactorTester:
 
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
-
-        # 初始化可视化管理器
-        if VisualizationManager is not None:
-            self.viz_manager = VisualizationManager(
-                output_dir=os.path.join(output_dir, "visualizations")
-            )
-        else:
-            self.viz_manager = None
 
         # 设置中文字体
         plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
@@ -493,9 +488,7 @@ class SingleFactorTester:
         Returns:
             批量测试结果字典
         """
-        print(f"\n{'=' * 80}")
-        print(f"开始批量测试 {len(factors_dict)} 个因子")
-        print(f"{'=' * 80}")
+        logger.info(f"开始批量测试 {len(factors_dict)} 个因子")
 
         batch_results = {}
 
@@ -509,6 +502,8 @@ class SingleFactorTester:
                     preprocess_method=preprocess_method,
                     save_results=True
                 )
+                # self.factor_manager._save_results(results, factor_name)
+
                 batch_results[factor_name] = results
 
             except Exception as e:

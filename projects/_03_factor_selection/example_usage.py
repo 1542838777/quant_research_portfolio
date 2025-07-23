@@ -108,18 +108,18 @@ def main():
         'volatility_60d': FactorCategory.VOLATILITY
     }
 
-    # 5. 测试单个因子
-    # print("\n4. 测试单个因子...")
-    try:
-        single_result = factory.test_single_factor(
-            factor_data=factor_data_dict['PE_factor'],
-            factor_name='PE_factor',
-            category=FactorCategory.VALUE
-        )
-        logger.info(f"✓ 单因子测试完成: PE_factor")
-    except Exception as e:
-        logger.error(f"✗ 单因子测试失败: {e}")
-        raise RuntimeError(f"处理失败: {e}")  # 抛出新异常
+    # # 5. 测试单个因子
+    # # print("\n4. 测试单个因子...")
+    # try:
+    #     single_result = factory.test_single_factor(
+    #         factor_data=factor_data_dict['PE_factor'],
+    #         factor_name='PE_factor',
+    #         category=FactorCategory.VALUE
+    #     )
+    #     logger.info(f"✓ 单因子测试完成: PE_factor")
+    # except Exception as e:
+    #     logger.error(f"✗ 单因子测试失败: {e}")
+    #     raise RuntimeError(f"处理失败: {e}")  # 抛出新异常
 
     # 6. 批量测试因子
     logger.info("5. 批量测试因子...")
