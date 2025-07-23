@@ -25,6 +25,8 @@ import sys
 
 from scipy import stats
 
+n_metrics_pass_rate_key = 'n_metrics_pass_rate'
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
@@ -540,25 +542,38 @@ class SingleFactorTester:
         evaluation_dict = results['evaluate_factor_score']
         rows = []
         total_score = []
+        flatten_metrics_dict   = {}
+
         for day, evaluation in evaluation_dict.items():
             cur_total_score = evaluation['final_score']
             total_score.append(cur_total_score)
+            # 扁平化的核心指标字段
+            flatten_metrics_dict[f'{day}_综合评分'] = cur_total_score
+            sub = evaluation['sub']
+
             row = {
-                '因子名称': results['factor_name'],
-                '测试日期': results['test_date'],
+
                 '持有期': day,
                 '总评分': cur_total_score,
                 '总等级': evaluation['final_grade'],
-                'IC子评分': evaluation['sub_grades']['IC'],
-                'Quantile子评分': evaluation['sub_grades']['Quantile'],
-                'FM子评分': evaluation['sub_grades']['Fama-MacBeth'],
                 '结论': evaluation['conclusion'],
+                #
+                f'IC_{day}内部多指标通过率':sub['IC'][n_metrics_pass_rate_key],
+                f'Quantile_{day}内部多指标通过率': sub['Quantile'][n_metrics_pass_rate_key],
+                f'FM_{day}内部多指标通过率':sub['Fama-MacBeth'][n_metrics_pass_rate_key],
+
+                f'IC_{day}内部多指标评级':sub['IC']['grade'],
+                f'Quantile_{day}内部多指标评级': sub['Quantile']['grade'],
+                f'FM_{day}内部多指标评级':sub['Fama-MacBeth']['grade'],
+
                 'IC分析摘要': ic_analysis_dict[day],
                 'Quantile分析摘要': quantile_backtest_dict[day],
                 'FM分析摘要': fama_macbeth_dict[day]
             }
-            rows.append(row)
-        return {'field': results['factor_name'], 'best_score': max(total_score), 'diff_day_perform': rows}
+            merged_row = { **flatten_metrics_dict,**row}
+            rows.append(merged_row)
+        return { '因子名称': results['factor_name'],
+                '测试日期': results['test_date'], 'best_score': max(total_score),**flatten_metrics_dict, 'diff_day_perform': rows}
 
     def _generate_report(self, results: Dict[str, Any], factor_name: str):
         """生成文字报告"""
@@ -768,21 +783,21 @@ class SingleFactorTester:
         if not is_significant:
             grade = "D (不显著)"
             conclusion = "因子未通过显著性检验，结果可能由运气导致，不予采纳。"
-        elif total_score >= 4:
-            grade = "A+ (优秀)"
+        elif total_score == 4:
+            grade = "A+ (优秀（100%指标达到）)"
             conclusion = "所有指标均表现优异，是顶级的Alpha因子。"
-        elif total_score >= 3:
-            grade = "A (良好)"
+        elif total_score == 3:
+            grade = "A (良好（75%指标达到）)"
             conclusion = "核心指标表现良好，具备很强的实战价值。"
-        elif total_score >= 2:
-            grade = "B (及格)"
+        elif total_score == 2:
+            grade = "B (及格（50%指标达到）)"
             conclusion = "部分指标达标，因子具备一定有效性，可作为备选。"
         else:
             grade = "C (较差)"
             conclusion = "核心指标表现不佳，建议优化或放弃。"
 
         return {
-            'ic_score': f"{total_score}/4",
+            'n_metrics_pass_rate': total_score / 4,
             'grade': grade,
             'is_significant': is_significant,
             'details': {
@@ -835,17 +850,19 @@ class SingleFactorTester:
         # --- 3. 汇总与评级 (总分5分) ---
         total_score = sharpe_score + monotonicity_score + risk_return_score
 
-        if total_score >= 5:
-            grade = "A+ (强烈推荐)"
-        elif total_score >= 4:
-            grade = "A (优秀)"
-        elif total_score >= 3:
-            grade = "B (良好)"
+        if total_score == 5:
+            grade = "A+ (强烈推荐（100%指标达到）)"
+        elif total_score == 4:
+            grade = "A (优秀（80%指标达到）)"
+        elif total_score == 3:
+            grade = "B (良好-（60%指标达到）)"
+        elif total_score == 2:
+            grade = "C (一般（40%指标达到）)"
         else:
-            grade = "C (一般)"
+            grade = "D (一般（0%~40%）)"
 
         return {
-            'quantile_score': f"{total_score}/5",
+            'n_metrics_pass_rate': total_score / 5,
             'grade': grade,
             'details': {
                 'TMB Sharpe': f"{tmb_sharpe:.2f} (得分:{sharpe_score})",
@@ -853,7 +870,9 @@ class SingleFactorTester:
                 'Calmar Ratio': f"{calmar_ratio:.2f} (得分:{risk_return_score})",
                 'TMB Annual Return': f"{tmb_annual_return:.2%}",
                 'Max Drawdown': f"{max_drawdown:.2%}"
-            }
+            },
+            'conclusion': grade
+
         }
 
     def cal_score_fama_macbeth(self, fm_main: Dict) -> Dict[str, Any]:
@@ -861,6 +880,7 @@ class SingleFactorTester:
         【专业版】对Fama-MacBeth回归进行多维度、分离式评分
         """
         # --- 1. 提取核心指标 ---
+        n_metrics_pass_rate = 0
         t_stat = fm_main.get('t_statistic', 0)
         mean_return = fm_main.get('mean_factor_return', 0)  # 这是周期平均收益
         num_periods = fm_main.get('num_valid_periods', 0)
@@ -943,11 +963,24 @@ class SingleFactorTester:
                 else:
                     final_grade = base_grade  # C和D不再下调
                 conclusion += " [警告] 测试可信度较低，可能因周期较短，结论需谨慎对待。"
+        grade_to_score_map = {
+            'A+': 1.00,
+            'A': 0.95,
+            'B+': 0.90,
+            'B': 0.80,
+            'C+': 0.70,
+            'C': 0.50,
+            'D': 0.30,
+            'F (测试不可信)': 0.00  # 明确处理F评级
+        }
+        n_metrics_pass_rate = grade_to_score_map.get(final_grade, 0.0)
 
         return {
+            'n_metrics_pass_rate': n_metrics_pass_rate,
             'confidence_score': f"{confidence_score}/3",
             'performance_score': f"{performance_score}/5",
             'grade': final_grade,
+            'conclusion': conclusion,
             'details': {
                 't-statistic': f"{t_stat:.2f}",
                 'Annualized Factor Return': f"{annualized_return:.2%}",
@@ -966,10 +999,11 @@ class SingleFactorTester:
         """
 
         # --- 1. 提取各模块的核心评价结果 ---
-        ic_score_str = score_ic_eval.get('ic_score', '0/4')
+        ic_n_metrics_pass_rate = score_ic_eval.get(n_metrics_pass_rate_key, 0)
+        quantile_n_metrics_pass_rate = score_quantile_eval.get(n_metrics_pass_rate_key, 0)
+        fm_n_metrics_pass_rate = score_fm_eval.get(n_metrics_pass_rate_key, 0)
         ic_is_significant = score_ic_eval.get('is_significant', False)
 
-        quantile_score_str = score_quantile_eval.get('quantile_score', '0/5')
         quantile_grade = score_quantile_eval.get('grade', 'D')
         tmb_sharpe = score_quantile_eval.get('details', {}).get('TMB Sharpe', '0 (得分:0)').split(' ')[0]
 
@@ -979,8 +1013,6 @@ class SingleFactorTester:
 
         # --- 2. 解析数值分数 ---
         try:
-            ic_score = int(ic_score_str.split('/')[0])
-            quantile_score = int(quantile_score_str.split('/')[0])
             fm_performance_score = int(fm_performance_score_str.split('/')[0])
             fm_confidence_score = int(fm_confidence_score_str.split('/')[0])
             tmb_sharpe = float(tmb_sharpe)
@@ -1013,9 +1045,9 @@ class SingleFactorTester:
         fm_max_score = 5
 
         weighted_score = (
-                (ic_score / ic_max_score) * 25 +
-                (quantile_score / quantile_max_score) * 40 +
-                (fm_performance_score / fm_max_score) * 35
+                ic_n_metrics_pass_rate * 25 +
+                quantile_n_metrics_pass_rate * 40 +
+                fm_n_metrics_pass_rate * 35
         )
 
         # --- 5. 给出最终评级和结论 ---
@@ -1044,9 +1076,10 @@ class SingleFactorTester:
             'final_grade': final_grade,
             'final_score': f"{weighted_score:.1f}/100",
             'conclusion': conclusion,
-            'sub_grades': {
-                'IC': score_ic_eval.get('grade'),
-                'Quantile': quantile_grade,
-                'Fama-MacBeth': fm_grade
+
+            'sub': {
+                'IC': {"grade": score_ic_eval.get('grade'), n_metrics_pass_rate_key: ic_n_metrics_pass_rate},
+                'Quantile': {"grade": quantile_grade, n_metrics_pass_rate_key: quantile_n_metrics_pass_rate},
+                'Fama-MacBeth': {"grade": fm_grade, n_metrics_pass_rate_key: fm_n_metrics_pass_rate}
             }
         }
