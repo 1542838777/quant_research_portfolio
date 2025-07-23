@@ -10,6 +10,7 @@
 """
 
 from quant_lib import logger
+from ..factor_manager.storage.single_storage import add_single_factor_test_result
 from ..utils.factor_processor import FactorProcessor
 
 import pandas as pd
@@ -47,7 +48,7 @@ warnings.filterwarnings('ignore')
 class SingleFactorTester:
     """
     单因子测试器 - 专业版
-    
+
     按照华泰证券标准实现三种测试方法的完整流程
     """
 
@@ -78,6 +79,8 @@ class SingleFactorTester:
 
         # 初始化数据
         if data_dict is not None:
+            self.backtest_start_date = config['backtest']['start_date']
+            self.backtest_end_date = config['backtest']['end_date']
             self.data_dict = data_dict
             self.price_data = data_dict.get('close', data_dict.get('price'))
             # 准备辅助【市值、行业】数据(用于中性值 计算！)
@@ -107,11 +110,11 @@ class SingleFactorTester:
                          factor_name: str) -> Dict[str, Any]:
         """
         IC值分析法测试
-        
+
         Args:
             factor_data: 预处理后的因子数据
             factor_name: 因子名称
-            
+
 
         Returns:
             IC分析结果字典
@@ -125,11 +128,11 @@ class SingleFactorTester:
                                factor_name: str) -> Dict[str, Any]:
         """
         分层回测法测试
-        
+
         Args:
             factor_data: 预处理后的因子数据
             factor_name: 因子名称
-            
+
         Returns:
             分层回测结果字典
         """
@@ -147,11 +150,11 @@ class SingleFactorTester:
                           factor_name: str) -> Dict[str, Any]:
         """
         Fama-MacBeth回归法测试（黄金标准）
-        
+
         Args:
             factor_data: 预处理后的因子数据
             factor_name: 因子名称
-            
+
         Returns:
             Fama-MacBeth回归结果字典
         """
@@ -219,27 +222,10 @@ class SingleFactorTester:
             'fama_macbeth': fm_results,
             'evaluate_factor_score': evaluation_score_dict
         }
-        """
-        {
-        'factor_name': factor_name,
-            "comprehensive_test_results":{
-            ""            
-            }
-        }
-        
-        """
         ret = self.summary(comprehensive_results, factor_name)
-        print()
-        # 6. 生成报告和可视化
-        if save_results:
-            self._save_results(ret, factor_name)
-            self._create_visualizations(comprehensive_results, factor_name)
-            self._generate_report(comprehensive_results, factor_name)
-
-        # 7. 打印摘要
-        self._print_summary(comprehensive_results)  # 删掉
-
-        return comprehensive_results
+        self._save_results(ret, factor_name)
+        # self._create_visualizations(ret, factor_name)
+        return ret
 
     def _prepare_auxiliary_data(self) -> Dict[str, pd.DataFrame]:
         """准备辅助数据（市值、行业等）"""
@@ -331,35 +317,6 @@ class SingleFactorTester:
         cal_score_factor_holistically = self.cal_score_factor_holistically(cal_score_ic, cal_score_quantile,
                                                                            cal_score_fama_macbeth)
         return cal_score_factor_holistically
-
-    def _print_summary(self, results: Dict[str, Any]):
-        """打印测试摘要"""
-        factor_name = results['factor_name']
-        evaluation = results['evaluate_factor_score']
-        main_period = evaluation['main_period']
-
-        print(f"\n{'=' * 80}")
-        print(f"因子测试摘要: {factor_name}")
-        print(f"{'=' * 80}")
-
-        print(f"主要评价周期: {main_period}")
-        print(f"综合评分: {evaluation['score']}/3")
-        print(f"评价等级: {evaluation['grade']}")
-        print(f"结论: {evaluation['conclusion']}")
-
-        print(f"\n详细指标:")
-        print(f"  IC_IR: {evaluation['ic_ir']:.4f} ({'✓' if evaluation['ic_good'] else '✗'})")
-        print(f"  分层单调性: {'✓' if evaluation['is_monotonic_by_group'] else '✗'}")
-        print(f"  多空夏普: {evaluation['tmb_sharpe']:.4f}")
-        print(f"  FM t值: {evaluation['fama_macbeth_t_stat']:.4f} ({'✓' if evaluation['fm_significant'] else '✗'})")
-
-        print(f"\n各周期IC_IR:")
-        for period in self.test_common_periods:
-            period_key = f'{period}d'
-            ic_ir = results['ic_analysis'].get(period_key, {}).get('ic_ir', 0)
-            print(f"  {period}日: {ic_ir:.4f}")
-
-        print("=" * 80)
 
     def _create_visualizations(self, results: Dict[str, Any], factor_name: str):
         """创建可视化图表"""
@@ -482,9 +439,7 @@ class SingleFactorTester:
 
         # 保存JSON格式
         json_path = os.path.join(self.output_dir, f'{factor_name}_results.json')
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(serializable_results, f, ensure_ascii=False, indent=2)
-
+        add_single_factor_test_result(json_path, serializable_results)
         # # 保存Excel格式的摘要
         # excel_path = os.path.join(self.output_dir, f'{factor_name}_summary.xlsx')
         # # self._save_excel_summary(results, excel_path)
@@ -542,7 +497,7 @@ class SingleFactorTester:
         evaluation_dict = results['evaluate_factor_score']
         rows = []
         total_score = []
-        flatten_metrics_dict   = {}
+        flatten_metrics_dict = {}
 
         for day, evaluation in evaluation_dict.items():
             cur_total_score = evaluation['final_score']
@@ -558,76 +513,26 @@ class SingleFactorTester:
                 '总等级': evaluation['final_grade'],
                 '结论': evaluation['conclusion'],
                 #
-                f'IC_{day}内部多指标通过率':sub['IC'][n_metrics_pass_rate_key],
+                f'IC_{day}内部多指标通过率': sub['IC'][n_metrics_pass_rate_key],
                 f'Quantile_{day}内部多指标通过率': sub['Quantile'][n_metrics_pass_rate_key],
-                f'FM_{day}内部多指标通过率':sub['Fama-MacBeth'][n_metrics_pass_rate_key],
+                f'FM_{day}内部多指标通过率': sub['Fama-MacBeth'][n_metrics_pass_rate_key],
 
-                f'IC_{day}内部多指标评级':sub['IC']['grade'],
+                f'IC_{day}内部多指标评级': sub['IC']['grade'],
                 f'Quantile_{day}内部多指标评级': sub['Quantile']['grade'],
-                f'FM_{day}内部多指标评级':sub['Fama-MacBeth']['grade'],
+                f'FM_{day}内部多指标评级': sub['Fama-MacBeth']['grade'],
 
                 'IC分析摘要': ic_analysis_dict[day],
                 'Quantile分析摘要': quantile_backtest_dict[day],
                 'FM分析摘要': fama_macbeth_dict[day]
             }
-            merged_row = { **flatten_metrics_dict,**row}
+            merged_row = {**flatten_metrics_dict, **row}
             rows.append(merged_row)
-        return { '因子名称': results['factor_name'],
-                '测试日期': results['test_date'], 'best_score': max(total_score),**flatten_metrics_dict, 'diff_day_perform': rows}
-
-    def _generate_report(self, results: Dict[str, Any], factor_name: str):
-        """生成文字报告"""
-        report_path = os.path.join(self.output_dir, f'{factor_name}_report.txt')
-
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(f"单因子测试报告\n")
-            f.write(f"{'=' * 60}\n\n")
-
-            f.write(f"因子名称: {results['factor_name']}\n")
-            f.write(f"测试日期: {results['test_date']}\n")
-            f.write(f"预处理方法: {results['preprocess_method']}\n")
-            f.write(f"测试周期: {', '.join([f'{p}日' for p in self.test_common_periods])}\n\n")
-
-            # 综合评价
-            evaluation = results['evaluate_factor_score']
-            f.write(f"综合评价\n")
-            f.write(f"{'-' * 30}\n")
-            f.write(f"评价等级: {evaluation['grade']}\n")
-            f.write(f"综合评分: {evaluation['score']}/3\n")
-            f.write(f"结论: {evaluation['conclusion']}\n\n")
-
-            # 详细结果
-            f.write(f"详细测试结果\n")
-            f.write(f"{'-' * 30}\n")
-
-            # IC分析
-            f.write(f"1. IC值分析法\n")
-            for period in self.test_common_periods:
-                period_key = f'{period}d'
-                ic_result = results['ic_analysis'].get(period_key, {})
-                f.write(f"   {period}日: IC_IR={ic_result.get('ic_ir', 0):.4f}, ")
-                f.write(f"IC胜率={ic_result.get('ic_win_rate', 0):.2%}\n")
-
-            # 分层回测
-            f.write(f"\n2. 分层回测法\n")
-            for period in self.test_common_periods:
-                period_key = f'{period}d'
-                quantile_result = results['quantile_backtest'].get(period_key, {})
-                f.write(f"   {period}日: 多空收益={quantile_result.get('tmb_return', 0):.4f}, ")
-                f.write(f"夏普比率={quantile_result.get('tmb_sharpe', 0):.4f}, ")
-                f.write(f"单调性={'是' if quantile_result.get('is_monotonic_by_group', False) else '否'}\n")
-
-            # Fama-MacBeth回归
-            f.write(f"\n3. Fama-MacBeth回归法\n")
-            for period in self.test_common_periods:
-                period_key = f'{period}d'
-                fm_result = results['fama_macbeth'].get(period_key, {})
-                f.write(f"   {period}日: t值={fm_result.get('fama_macbeth_t_stat', 0):.4f}, ")
-                f.write(f"显著性={fm_result.get('significance_desc', '不显著')}\n")
-
-            f.write(f"\n测试完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-
-        print(f"测试报告已保存: {report_path}")
+        backtest_period = f'{self.backtest_start_date}~{self.backtest_end_date}'
+        return {results['factor_name']:
+                    {'测试日期': results['test_date'],
+                     '回测周期': backtest_period,
+                     'best_score': max(total_score), **flatten_metrics_dict,
+                     'diff_day_perform': rows}}
 
     def batch_test(self,
                    factors_dict: Dict[str, pd.DataFrame],
@@ -663,53 +568,8 @@ class SingleFactorTester:
             except Exception as e:
                 print(f"因子 {factor_name} 测试失败: {e}")
                 batch_results[factor_name] = {'error': str(e)}
-
-        # 生成批量测试摘要
-        self._generate_batch_summary(batch_results)
-
         return batch_results
 
-    def _generate_batch_summary(self, batch_results: Dict[str, Dict]):
-        """生成批量测试摘要"""
-        summary_data = []
-
-        for factor_name, results in batch_results.items():
-            if 'error' in results:
-                continue
-
-            evaluation = results.get('evaluate_factor_score', {})
-            summary_data.append({
-                '因子名称': factor_name,
-                '评价等级': evaluation.get('grade', 'N/A'),
-                '综合评分': evaluation.get('score', 0),
-                'IC_IR(20d)': evaluation.get('ic_ir', 0),
-                '分层单调性': evaluation.get('is_monotonic_by_group', False),
-                '多空夏普(20d)': evaluation.get('tmb_sharpe', 0),
-                'FM t值(20d)': evaluation.get('fama_macbeth_t_stat', 0),
-                'FM显著性': evaluation.get('fm_significant', False)
-            })
-
-        if summary_data:
-            summary_df = pd.DataFrame(summary_data)
-
-            # 按评分排序
-            summary_df = summary_df.sort_values(['综合评分', 'IC_IR(20d)'], ascending=[False, False])
-
-            # 保存摘要
-            summary_path = os.path.join(self.output_dir, 'batch_test_summary.xlsx')
-            summary_df.to_excel(summary_path, index=False)
-
-            print(f"\n批量测试摘要已保存: {summary_path}")
-
-            # 打印Top 5因子
-            print(f"\nTop 5 因子:")
-            print("-" * 40)
-            for i, row in summary_df.head().iterrows():
-                print(f"{row['因子名称']}: {row['评价等级']}级 (评分: {row['综合评分']}/3)")
-
-        print(f"\n批量测试完成!")
-        print(f"结果保存在: {self.output_dir}")
-        print("=" * 80)
 
     def run_comprehensive_test_with_viz(self,
                                         factor_data: pd.DataFrame,
