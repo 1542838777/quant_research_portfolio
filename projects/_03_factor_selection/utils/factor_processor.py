@@ -49,29 +49,33 @@ class FactorProcessor:
         """
         self.config = config
         self.preprocessing_config = config.get('preprocessing', {})
-
+    #ok
     def process_factor(self,
                        factor_data: pd.DataFrame,
                        universe_df: pd.DataFrame = None,
-                       auxiliary_data: Dict[str, pd.DataFrame] = None) -> pd.DataFrame:
+                       auxiliary_df_dict: Dict[str, pd.DataFrame] = None) -> pd.DataFrame:
         """
         完整的因子预处理流水线
         
         Args:
             factor_data: 原始因子数据
             universe_df: 股票池数据 如果不传递，请保证 factor_data 事先进行了股票池过滤！
-            auxiliary_data: 辅助数据（市值、行业等）
+            auxiliary_df_dict: 辅助数据（市值、行业等）
             
         Returns:
             预处理后的因子数据
         """
-        # logger.info("\t第三阶段：因子预处理流水线")
-
         processed_factor = factor_data.copy()
 
         # 应用股票池过滤
         if universe_df:
-            processed_factor = factor_data.where(universe_df)
+            processed_factor = processed_factor.where(universe_df)
+        #用昨天的数据！
+        processed_factor = processed_factor.shift(1)#用昨天的数据！
+        for name,df in auxiliary_df_dict.items():
+            auxiliary_df_dict[name] = df.shift(1)
+
+
 
         # 步骤1：去极值
         # print("2. 去极值处理...")
@@ -80,7 +84,7 @@ class FactorProcessor:
         # 步骤2：中性化
         if self.preprocessing_config.get('neutralization', {}).get('enable', False):
             # print("3. 中性化处理...")
-            processed_factor = self._neutralize(processed_factor, auxiliary_data)
+            processed_factor = self._neutralize(processed_factor, auxiliary_df_dict)
         else:
             print("3. 跳过中性化处理...")
 
@@ -134,16 +138,16 @@ class FactorProcessor:
             return factor_data.clip(lower_bound, upper_bound, axis=0)
 
         return processed_factor
-
+    #ok
     def _neutralize(self,
                     factor_data: pd.DataFrame,
-                    auxiliary_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+                    auxiliary_df_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         """
         中性化处理
         
         Args:
             factor_data: 因子数据
-            auxiliary_data: 辅助数据
+            auxiliary_df_dict: 辅助数据
             
         Returns:
             中性化后的因子数据
@@ -151,7 +155,7 @@ class FactorProcessor:
         neutralization_config = self.preprocessing_config.get('neutralization', {})
         factors_to_neutralize = neutralization_config.get('factors', [])
 
-        if not auxiliary_data:
+        if not auxiliary_df_dict:
             raise ValueError("  警告: 缺少辅助数据，中性化处理进行不下去")
 
         processed_factor = factor_data.copy()
@@ -167,8 +171,8 @@ class FactorProcessor:
             feature_names = []
 
             # 市值中性化
-            if 'market_cap' in factors_to_neutralize and 'total_mv' in auxiliary_data:
-                mv_data = auxiliary_data['total_mv']
+            if 'market_cap' in factors_to_neutralize and 'total_mv' in auxiliary_df_dict:
+                mv_data = auxiliary_df_dict['total_mv']
                 if date in mv_data.index:
                     mv_values = mv_data.loc[date, y.index].dropna()
                     if len(mv_values) > 0:
@@ -178,8 +182,8 @@ class FactorProcessor:
                         feature_names.append('log_market_cap')
 
             # 行业中性化
-            if 'industry' in factors_to_neutralize and 'industry' in auxiliary_data:
-                industry_data = auxiliary_data['industry']
+            if 'industry' in factors_to_neutralize and 'industry' in auxiliary_df_dict:
+                industry_data = auxiliary_df_dict['industry']
                 if date in industry_data.index:
                     industry_values = industry_data.loc[date, y.index].dropna()
                     if len(industry_values) > 0:
@@ -231,7 +235,7 @@ class FactorProcessor:
 
         # print(f"  中性化完成，处理因子: {factors_to_neutralize}")
         return processed_factor
-
+    #ok
     def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
         """
         标准化处理
@@ -424,7 +428,7 @@ if __name__ == "__main__":
     )
 
     # 模拟辅助数据
-    auxiliary_data = {
+    auxiliary_df_dict = {
         'total_mv': pd.DataFrame(
             index=dates,
             columns=stocks,
@@ -437,7 +441,7 @@ if __name__ == "__main__":
     processed_factor = processor.process_factor(
         factor_data,
         universe_df,
-        auxiliary_data
+        auxiliary_df_dict
     )
 
     print(f"\n处理完成！")
