@@ -143,8 +143,8 @@ def calculate_ic_vectorized(
         ic_ir = ic_mean / ic_std if ic_std > 0 else np.nan
         ic_t_stat, ic_p_value = stats.ttest_1samp(ic_series_cleaned, 0)
 
-        # 胜率！。（表示正确出现的次数/总次数） 何为正确出现：均值为负，表示负相关，我们只考虑ic里面为负的才是正确预测
-        ic_win_rate = ((ic_series_cleaned * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！
+        # 胜率！。（表示正确出现的次数/总次数）
+        ic_win_rate = ((ic_series_cleaned * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！ 计算的是IC值与IC均值同向的比例
         # 方向性检查
         if abs(ic_mean) > 1e-10 and np.sign(ic_t_stat) != np.sign(ic_mean):
             raise ValueError("严重错误：t统计量与IC均值方向不一致！")
@@ -278,7 +278,7 @@ def stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Dict[str
         }
 
     return stats
-
+#ok
 def calculate_quantile_returns(
         factor_df: pd.DataFrame,
         price_df: pd.DataFrame,
