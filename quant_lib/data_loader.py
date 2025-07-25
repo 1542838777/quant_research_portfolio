@@ -33,6 +33,7 @@ class DataLoader:
         field_map (Dict): 字段到数据源的映射
     """
 
+    #ok
     def __init__(self, data_path: Optional[Path] = None, use_cache: bool = True):
         """
         初始化数据加载器
@@ -60,6 +61,7 @@ class DataLoader:
         try:
             trade_cal_df = pd.read_parquet(self.data_path / 'trade_cal.parquet')
             trade_cal_df['cal_date'] = pd.to_datetime(trade_cal_df['cal_date'])
+            trade_cal_df.sort_values('cal_date', inplace=True)
             return trade_cal_df
         except Exception as e:
             logger.error(f"加载交易日历失败: {e}")

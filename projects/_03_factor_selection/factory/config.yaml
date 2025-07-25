@@ -2,16 +2,16 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2023-06-01'
-  end_date: '2023-12-30'
+  start_date: '2024-05-10'
+  end_date: '2025-07-11'
 
 # 股票池设置
 universe:
 
   filters:
     remove_st: true  # 剔除ST股票
-    min_liquidity_percentile: 0.3  # 流动性过滤：保留换手率前80%的股票
-    min_market_cap_percentile: 0.2  # 市值过滤：剔除市值最小的10%股票
+    min_liquidity_percentile: 0.05  # 流动性过滤：保留换手率前80%的股票 如果是好的指数股票，其实无需过滤！
+    min_market_cap_percentile: 0.05  # 市值过滤：剔除市值最小的10%股票  如果是好的指数股票，其实无需过滤！
     remove_next_day_suspended: true  # 剔除次日停牌股票
 # 新增：指数成分股过滤
   index_filter:
@@ -22,8 +22,7 @@ universe:
 
 # 目标因子设置（用于DataManager）
 target_factor:
-  name: 'pe_inv'
-  fields: ['pe_ttm']
+  fields: ['pe_ttm_inv']
 
 # 数据预处理设置
 preprocessing:
@@ -32,56 +31,56 @@ preprocessing:
     factors: ['market_cap', 'industry']
 
 # 因子定义
-factors:
+factor_definition:
   # 价值因子
-  - name: 'pe_inv'
-    type: 'value'
-    description: 'PE倒数因子'
-    fields: ['pe_ttm']
+  - name: 'pe_ttm_inv'
+    category_type: 'value'
+    description: 'PE_TTM倒数因子'
+    cal_require_base_fields: ['pe_ttm']
   
   - name: 'pb_inv'
-    type: 'value'
+    category_type: 'value'
     description: 'PB倒数因子'
-    fields: ['pb']
+    cal_require_base_fields: ['pb']
   
   - name: 'ps_inv'
-    type: 'value'
+    category_type: 'value'
     description: 'PS倒数因子'
     fields: ['ps_ttm']
   
   # 质量因子
   - name: 'roe'
-    type: 'quality'
+    category_type: 'quality'
     description: '净资产收益率'
     fields: ['roe']
   
   - name: 'roa'
-    type: 'quality'
+    category_type: 'quality'
     description: '总资产收益率'
     fields: ['roa']
   
   - name: 'profit_margin'
-    type: 'quality'
+    category_type: 'quality'
     description: '毛利率'
     fields: ['grossprofit_margin']
   
   # 动量因子
   - name: 'momentum_1m'
-    type: 'momentum'
+    category_type: 'momentum'
     description: '1个月动量'
     params:
       lookback_periods: [20]
     fields: ['close']
   
   - name: 'momentum_3m'
-    type: 'momentum'
+    category_type: 'momentum'
     description: '3个月动量'
     params:
       lookback_periods: [60]
     fields: ['close']
   
   - name: 'momentum_6m'
-    type: 'momentum'
+    category_type: 'momentum'
     description: '6个月动量'
     params:
       lookback_periods: [120]
@@ -89,14 +88,14 @@ factors:
   
   # 波动率因子
   - name: 'volatility_1m'
-    type: 'volatility'
+    category_type: 'volatility'
     description: '1个月波动率'
     params:
       window: 20
     fields: ['close']
   
   - name: 'volatility_3m'
-    type: 'volatility'
+    category_type: 'volatility'
     description: '3个月波动率'
     params:
       window: 60
@@ -108,7 +107,7 @@ factors:
 evaluation:
   n_groups: 5  # 分层回测的分组数
   quantiles: 5  # 分层回测的分组数
-  forward_periods: [1, 5, 20]  # 未来收益率计算的时间周期列表，单位为交易日
+  forward_periods: [1, 5, 10, 20]  # 未来收益率计算的时间周期列表，单位为交易日
   ic_threshold: 0.02  # IC均值阈值
   ir_threshold: 0.3  # IR阈值
 

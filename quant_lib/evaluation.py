@@ -144,7 +144,7 @@ def calculate_ic_vectorized(
         ic_t_stat, ic_p_value = stats.ttest_1samp(ic_series_cleaned, 0)
 
         # 胜率！。（表示正确出现的次数/总次数） 何为正确出现：均值为负，表示负相关，我们只考虑ic里面为负的才是正确预测
-        ic_win_rate = ((ic_series * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！
+        ic_win_rate = ((ic_series_cleaned * ic_mean) > 0).mean()  # 这个就是计算胜率，简化版！
         # 方向性检查
         if abs(ic_mean) > 1e-10 and np.sign(ic_t_stat) != np.sign(ic_mean):
             raise ValueError("严重错误：t统计量与IC均值方向不一致！")
@@ -156,7 +156,7 @@ def calculate_ic_vectorized(
             'ic_std': ic_std,  # 标准差，波动情况
             'ic_ir': ic_ir,  # 稳定性。>0.3才行 >0.5非常稳定优秀！
             'ic_win_rate': ic_win_rate,  # 胜率，在均值决定的方向上，正确出现的次数 >0.55才行
-            'ic_abs_mean': ic_series.abs().mean(),  # 不是很重要，这个值大的话，才有研究意义，能说明 在方向上有效果，而不是趋于0， 个人推荐>0.03
+            'ic_abs_mean': ic_series_cleaned.abs().mean(),  # 不是很重要，这个值大的话，才有研究意义，能说明 在方向上有效果，而不是趋于0， 个人推荐>0.03
             'ic_t_stat': ic_t_stat,  # 大于2才有意义
             'ic_p_value': ic_p_value,  # <0.05 说明因子真的有效果
             'ic_significant': ic_p_value < 0.05,
@@ -286,8 +286,8 @@ def calculate_quantile_returns(
         forward_periods: List[int] = [1, 5, 20]
 ) -> (Dict[int, pd.DataFrame], Dict[str, pd.DataFrame]):
     """
-    【最终版】计算因子分位数的未来收益率。
-    该版本采用向量化实现，并使用rank()进行稳健分组，同时采纳了防御性编程建议。
+   计算因子分位数的未来收益率。
+    该版本采用向量化实现，并使用rank()进行稳健分组，
 
     Args:
         factor_df (pd.DataFrame): 因子值DataFrame (index=date, columns=stock)
@@ -301,8 +301,6 @@ def calculate_quantile_returns(
                                  每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
     """
     results = {}
-    logger.info(f"开始计算分位数收益，分位数为: {n_quantiles}, "
-                f"向前看周期: {forward_periods}")
 
     for period in forward_periods:
         logger.info(f"  > 正在处理向前看 {period} 周期...")
@@ -328,15 +326,11 @@ def calculate_quantile_returns(
         # 按日期(level=0)分(因为是多重索引，这里取第一个索引：时间)组，对每个截面内的因子值进行排名
         merged_df['rank'] = merged_df.groupby(level=0)['factor'].rank(method='first')
 
-        # 根据排名和分组数，计算每个股票属于哪个分位数(quantile) 不用qut，当有重复val，会有bug
-        def rank_to_quantile(group, n=n_quantiles):
-            group_size = len(group) / n
-            # 使用 // 进行整数除法，确保分组的准确性
-            # .clip确保即使有浮点误差，最大值也不会超过n
-            return (group // group_size + 1.0).clip(upper=n)
 
-        merged_df['quantile'] = merged_df.groupby(level=0)['rank'].transform(rank_to_quantile)
-
+        # 因为rank列是唯一的，所以不需要担心duplicates问题。
+        merged_df['quantile'] = merged_df.groupby(level=0)['rank'].transform(
+            lambda x: pd.qcut(x, n_quantiles, labels=False) + 1
+        )
         # 5. 计算各分位数的平均收益 （时间+组别 为一个group。进行求收益率平均）
         daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])['return'].mean()
 

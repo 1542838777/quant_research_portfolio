@@ -70,28 +70,27 @@ class SingleFactorTester:
             output_dir: 结果输出目录
         """
         # 处理配置
-        if config is None:
+        if not config  :
             raise RuntimeError("config 没有传递过来！")
+        if data_dict is None or 'close' not in data_dict:
+            raise ValueError('close的df是必须的，请写入！')
 
         self.config = config
-        self.test_common_periods = config.get('forward_periods', [5, 10, 20])
+        self.test_common_periods = config.get('forward_periods', [1,5, 10, 20])
         self.n_quantiles = config.get('quantiles', 5)
         self.output_dir = output_dir
         # 初始化因子预处理器
         self.factor_processor = FactorProcessor(self.config)
 
         # 初始化数据
-        if data_dict is not None:
-            self.backtest_start_date = config['backtest']['start_date']
-            self.backtest_end_date = config['backtest']['end_date']
-            self.data_dict = data_dict
-            self.price_data = data_dict.get('close', data_dict.get('price'))
-            # 准备辅助【市值、行业】数据(用于中性值 计算！)
-            self.auxiliary_data = self._prepare_auxiliary_data()
-            self.circ_mv_data = data_dict['circ_mv']
-            self.neutral_dict_data = self._prepare_neutral_data()
-        else:
-            raise ValueError("必须提供 data_dict 或 price_data")
+        self.backtest_start_date = config['backtest']['start_date']
+        self.backtest_end_date = config['backtest']['end_date']
+        self.data_dict = data_dict
+        self.price_data = data_dict.get('close', data_dict.get('price'))
+        # 准备辅助【市值、行业】数据(用于中性值 计算！)
+        self.auxiliary_data = self._prepare_auxiliary_data()
+        self.circ_mv_data = data_dict['circ_mv']
+        self.neutral_dict_data = self._prepare_neutral_data()
 
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
@@ -186,7 +185,6 @@ class SingleFactorTester:
         logger.info(f"开始测试因子: {factor_name}")
 
         # 1. 因子预处理
-        # print("\t1. 因子预处理...")
         factor_processed = self.factor_processor.process_factor(
             factor_data=factor_data,
             auxiliary_data=self.auxiliary_data

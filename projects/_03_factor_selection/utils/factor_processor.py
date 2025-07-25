@@ -70,7 +70,6 @@ class FactorProcessor:
         processed_factor = factor_data.copy()
 
         # 应用股票池过滤
-        # print("1. 应用股票池过滤...")
         if universe_df:
             processed_factor = factor_data.where(universe_df)
 
@@ -93,7 +92,7 @@ class FactorProcessor:
         self._print_processing_stats(factor_data, processed_factor, universe_df)
 
         return processed_factor
-
+    #ok
     def _winsorize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
         """
         去极值处理
@@ -153,8 +152,7 @@ class FactorProcessor:
         factors_to_neutralize = neutralization_config.get('factors', [])
 
         if not auxiliary_data:
-            print("  警告: 缺少辅助数据，跳过中性化处理")
-            return factor_data
+            raise ValueError("  警告: 缺少辅助数据，中性化处理进行不下去")
 
         processed_factor = factor_data.copy()
 

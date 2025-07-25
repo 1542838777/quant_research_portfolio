@@ -16,6 +16,7 @@ import os
 
 from pandas import DatetimeIndex
 
+from data.namechange_date_manager import fill_end_date_field
 from quant_lib.data_loader import DataLoader
 
 # 添加项目根目录到路径
@@ -59,7 +60,8 @@ def check_field_level_completeness(processed_data_dict):
 
 def _get_nan_comment(field: str, rate: float) -> str:
     """根据字段名称和缺失率，提供专家诊断意见"""
-    if field in ['pe_ttm', 'pe' ,'pb','pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
+    if field in ['pe_ttm', 'pe', 'pb',
+                 'pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
         return " (正常现象: 主要代表公司亏损)"
 
     if field in ['dv_ttm', 'dv_ratio']:
@@ -67,7 +69,8 @@ def _get_nan_comment(field: str, rate: float) -> str:
 
     if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
         return "正常现象：不需要care 多少缺失率"
-    if field in ['circ_mv', 'close','total_mv','turnover_rate'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+    if field in ['circ_mv', 'close', 'total_mv',
+                 'turnover_rate'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate == 0.0:
         return "正常现象：不需要care 多少缺失率"
@@ -145,7 +148,7 @@ class DataManager:
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被universe_df 动了手脚了（低市值的会被置为nan，
 
         return self.processed_data
-
+    #ok
     def _build_universe_from_loaded_data(self, start_date: str, end_date: str) -> pd.DataFrame:
         """
         第一阶段：基于已加载的数据构建权威股票池
@@ -177,12 +180,9 @@ class DataManager:
         # 构建ST矩阵
         self.build_st_period_from_namechange(ts_codes, namechange, trading_dates)
 
-        # print("\n3. 执行股票池构建...")
         universe_df = self._build_universe()
-
-        # print(f"\n权威股票池构建完成！")
-        print(f"\t权威股票池构建完成 \t 平均每日股票数: {universe_df.sum(axis=1).mean():.0f} \t 股票池形状: {universe_df.shape}")
-        # print(f"   ")
+        print(
+            f"\t权威股票池构建完成 \t 平均每日股票数: {universe_df.sum(axis=1).mean():.0f} \t 股票池形状: {universe_df.shape}")
 
         return universe_df
 
@@ -259,12 +259,14 @@ class DataManager:
                                 'total_mv', 'turnover_rate',  # 为了过滤 很差劲的股票 仅此而已，不会作其他计算 、'total_mv'还可 用于计算中性化
                                 'industry',  # 用于计算中性化
                                 'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
-                                'list_date'  # 上市日期
+                                'list_date'  # 上市日期,
+
+                                'open', 'high', 'low', 'pre_close'  # 为了计算次日是否一字马涨停
                                 ])
 
         # 目标因子字段
         target_factor = self.config['target_factor']
-        required_fields.update(target_factor['fields'])
+        required_fields.update(self.get_cal_base_factors(target_factor['fields']))
 
         # 中性化需要的字段
         neutralization = self.config['preprocessing']['neutralization']
@@ -314,53 +316,48 @@ class DataManager:
         if 'close' not in self.raw_data:
             raise ValueError("缺少价格数据，无法构建股票池")
 
-        universe_df = self.raw_data['close'].notna()
-        self.show_stock_nums_for_per_day('根据收盘价notna生成的最原始的股票池', universe_df)
-        # 第二步：指数成分股过滤（如果启用）
+        base_universe_df = self.raw_data['close'].notna()
+        final_universe_df = None
+        self.show_stock_nums_for_per_day('根据收盘价notna生成的', base_universe_df)
+        # 第二步：各种过滤！
+        #--基础过滤 指数成分股过滤（如果启用）
         index_config = self.config['universe'].get('index_filter', {})
         if index_config.get('enable', False):
             # print(f"    应用指数过滤: {index_config['index_code']}")
-            universe_df = self._build_dynamic_index_universe(universe_df, index_config['index_code'])
-            # ✅ 在这里进行列修剪是合理的！
-            # 因为中证800成分股是基于外部规则，不是基于未来数据表现
-            valid_stocks = universe_df.columns[universe_df.any(axis=0)]
-            universe_df = universe_df[valid_stocks]
+            final_universe_df = self._build_dynamic_index_universe(base_universe_df, index_config['index_code'])
+            # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
+            valid_stocks = final_universe_df.columns[final_universe_df.any(axis=0)]
+            final_universe_df = final_universe_df[valid_stocks]
+        #--普适性 过滤 （通用过滤）
+        final_universe_df = self._filter_new_stocks(final_universe_df,6)#新股票数据少，不具参考
+        final_universe_df = self._filter_st_stocks(final_universe_df)#  剔除ST股票
 
-        # 应用各种过滤条件
+        # 其他各种指标过滤条件
         universe_filters = self.config['universe']['filters']
-
-        # 1. 剔除ST股票
-        if universe_filters.get('remove_st', False):
-            print("    应用ST股票过滤...")
-            universe_df = self._filter_st_stocks(universe_df)
 
         # 2. 流动性过滤
         if 'min_liquidity_percentile' in universe_filters:
             print("    应用流动性过滤...")
-            universe_df = self._filter_by_liquidity(
-                universe_df,
+            final_universe_df = self._filter_by_liquidity(
+                final_universe_df,
                 universe_filters['min_liquidity_percentile']
             )
 
         # 3. 市值过滤
         if 'min_market_cap_percentile' in universe_filters:
             print("    应用市值过滤...")
-            universe_df = self._filter_by_market_cap(
-                universe_df,
+            final_universe_df = self._filter_by_market_cap(
+                final_universe_df,
                 universe_filters['min_market_cap_percentile']
             )
 
-        # 4. 剔除次日停牌股票
-        if universe_filters.get('remove_next_day_suspended', False):
-            # print("    应用次日停牌股票过滤...")
-            universe_df = self._filter_next_day_suspended(universe_df)
+        # 剔除次日停牌股票
+        final_universe_df = self._filter_next_day_suspended(final_universe_df)
+        # 剔除涨停股票
+        final_universe_df = self._filter_next_day_limit_up(final_universe_df)
+        return final_universe_df
 
-        # 统计股票池信息
-        self.show_stock_nums_for_per_day('总过滤后（市值、换手率...)股票池统计', universe_df)
-
-
-        return universe_df
-
+    # ok
     def build_st_period_from_namechange(
             self,
             ts_codes: list,
@@ -368,50 +365,99 @@ class DataManager:
             trading_dates: pd.DatetimeIndex
     ) -> pd.DataFrame:
         """
-          【专业重构版】根据namechange历史数据，重建每日ST状态的布尔矩阵。
-          此版本能正确处理数据不完整和初始状态问题。
-          """
-        print("正在根据名称变更历史，重建每日风险警示状态矩阵...")
+         【最终无懈可击版】根据namechange历史，重建每日“已知风险”状态矩阵。
+         此版本通过searchsorted隐式处理初始状态，逻辑最简且结果正确。
+         """
+        logger.info("正在根据名称变更历史，重建每日‘已知风险’状态st矩阵...")
 
-        # 1. 创建一个“未知状态”的画布，用 np.nan 初始化
-        st_matrix = pd.DataFrame(np.nan, index=trading_dates, columns=ts_codes)
+        # --- 1. 准备工作 ---
+        if not trading_dates._is_monotonic_increasing:
+            trading_dates = trading_dates.sort_values(ascending=True)
 
+        # 【关键】必须按“生效日”排序，以确保状态的正确延续和覆盖
         namechange_df['start_date'] = pd.to_datetime(namechange_df['start_date'])
-        # 关键：我们只需要按股票分组，并在组内按时间排序
         namechange_df.sort_values(by=['ts_code', 'start_date'], inplace=True)
 
-        # 2. 【核心】只在状态【发生改变】的当天打点标记
-        # 我们使用 groupby().apply() 来避免外层循环，更高效
-        def mark_events(group):
-            for _, row in group.iterrows():
-                date = row['start_date']
-                if date in st_matrix.index:
+        # 【关键】必须用 np.nan 初始化，作为“未知状态”
+        st_matrix = pd.DataFrame(np.nan, index=trading_dates, columns=ts_codes)
+
+        # --- 2. “打点”：一个循环处理所有历史事件 ---
+        for ts_code, group in namechange_df.groupby('ts_code'):
+            group_sorted = group.sort_values(by='start_date')
+            for _, row in group_sorted.iterrows():
+                start_date = row['start_date']
+
+                # 发生在回测期前的日期，会被自动映射到位置 0  or 发生在回测期内的日期，会被映射到它对应的正确位置
+                start_date_loc = trading_dates.searchsorted(start_date,
+                                                            side='left')  # 遍历trading_dates找到首个>=start_date的下标！ 如果是rigths ：则首个>的下标
+
+                # 只处理那些能影响到我们回测周期的事件
+                if start_date_loc < len(trading_dates):
                     name_upper = row['name'].upper()
-                    is_risk_stock = 'ST' in name_upper or name_upper.startswith('S')
-                    st_matrix.loc[date, row['ts_code']] = is_risk_stock
-            return None  # apply不需要返回值
+                    is_risk_event = 'ST' in name_upper or name_upper.startswith('S')
+                    # 使用.iloc进行赋值
+                    start_trade_date = pd.DatetimeIndex(trading_dates)[start_date_loc]
+                    st_matrix.loc[start_trade_date, ts_code] = is_risk_event
 
-        namechange_df.groupby('ts_code').apply(mark_events)
-
-        # 3. 【魔法】使用ffill()，用每个时点的已知状态，填充后续所有的“未知状态”
-        # 这是整个逻辑的核心，它正确地假设了“状态会一直持续，直到下一次变更”
+        # --- 3. “传播”与“收尾” ---
         st_matrix.ffill(inplace=True)
-
-        # 4. 【收尾】将所有剩余的“未知状态”填充为False
-        # 这包括：从未有过名称变更的股票，以及在第一次名称变更前的所有日期
         st_matrix.fillna(False, inplace=True)
 
-        print("每日风险警示状态矩阵重建完毕。")
-        self.st_matrix = st_matrix
+        logger.info("每日‘已知风险’状态矩阵重建完毕。")
+        self.st_matrix = st_matrix.astype(bool)
+        return self.st_matrix
+    #ok
+    def _filter_new_stocks(self, universe_df: pd.DataFrame, months: int = 6) -> pd.DataFrame:
+        """
+        剔除上市时间小于指定月数的股票。
+        """
 
-    def _filter_st_stocks(self, universe_df: pd.DataFrame) -> pd.DataFrame:
-        if self.st_matrix is None:
-            print("    警告: 未能构建ST状态矩阵，无法过滤ST股票。")
+        if 'list_date' not in self.raw_data:
+            raise ValueError("缺少上市日期数据(list_date)，跳过新股过滤。")
+
+        list_dates_df = self.raw_data['list_date']
+        if list_dates_df.empty:
             return universe_df
 
+        # --- 1. 对齐数据 ---
+        aligned_universe, aligned_list_dates = universe_df.align(list_dates_df, join='left')
+
+        # --- 2. 【核心修正】强制转换数据类型 ---
+        # 在提取 .values 之前，确保整个DataFrame是np.datetime64类型
+        # errors='coerce' 会将任何无法转换的值（比如空值或错误字符串）变成 NaT (Not a Time)
+        try:
+            list_dates_converted = aligned_list_dates.apply(pd.to_datetime, errors='raise')
+        except Exception as e:
+            raise ValueError(f"上市日期数据无法转换为日期格式，请检查数据源: {e}")
+            # return universe_df  # Or handle error appropriately
+
+        # --- 3. 向量化计算 ---
+        dates_arr = aligned_universe.index.values[:, np.newaxis]
+
+        # 现在 list_dates_arr 的 dtype 将是 <M8[ns]
+        list_dates_arr = list_dates_converted.values
+
+        # 由于 NaT - NaT = NaT, 我们需要处理 NaT。广播计算本身不会报错。
+        time_since_listing = dates_arr - list_dates_arr
+
+        # --- 4. 创建并应用掩码 ---
+        threshold = pd.Timedelta(days=months * 30.5)
+        # NaT < threshold 会是 False, 所以 NaT 值不会被错误地当作新股
+        is_new_mask = time_since_listing < threshold
+
+        aligned_universe.values[is_new_mask] = False
+        self.show_stock_nums_for_per_day("6个月内上市的过滤！", aligned_universe)
+        return aligned_universe
+    #ok
+    def _filter_st_stocks(self, universe_df: pd.DataFrame) -> pd.DataFrame:
+        if self.st_matrix is None:
+            raise ValueError("    警告: 未能构建ST状态矩阵，无法过滤ST股票。")
+        # 【核心】将“历史真相”矩阵整体向前（未来）移动一天。 (因为st_matrix 是以据生效start计算的。t下单，只能用t-1的数据跑，t单日的st无法感知！
+        # 这确保了我们在T日做决策时，看到的是T-1日的真实状态。
+        st_mask_shifted = self.st_matrix.shift(1, fill_value=False)
         # 对齐两个DataFrame的索引和列，确保万无一失
         # join='left' 表示以universe_df的形状为准
-        aligned_universe, aligned_st_status = universe_df.align(self.st_matrix, join='left',
+        aligned_universe, aligned_st_status = universe_df.align(st_mask_shifted, join='left',
                                                                 fill_value=False)  # 至少做 行列 保持一致的对齐。 下面才做赋值！ #fill_value=False ：st_Df只能对应一部分的股票池_Df.股票池_Df剩余的行列 用false填充！
 
         # 将ST的股票从universe中剔除
@@ -426,13 +472,14 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_ST状态(判定来自于name的变化历史)_filter', aligned_universe)
 
         return aligned_universe
-
+    #ok
     def _filter_by_liquidity(self, universe_df: pd.DataFrame, min_percentile: float) -> pd.DataFrame:
         """按流动性过滤 """
         if 'turnover_rate' not in self.raw_data:
             raise RuntimeError("缺少换手率数据，无法进行流动性过滤")
 
         turnover_df = self.raw_data['turnover_rate']
+        turnover_df = turnover_df.shift(1)  # 取用的t日数据，必须前移
 
         # 1. 【确定样本】只保留 universe_df 中为 True 的换手率数据
         # “只对当前股票池计算”
@@ -449,7 +496,7 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_剔除流动性低的_filter', universe_df)
 
         return universe_df
-
+    #ok
     def _filter_by_market_cap(self,
                               universe_df: pd.DataFrame,
                               min_percentile: float) -> pd.DataFrame:
@@ -467,6 +514,7 @@ class DataManager:
             raise RuntimeError("缺少市值数据，无法进行市值过滤")
 
         mv_df = self.raw_data['total_mv']
+        mv_df = mv_df.shift(1)
 
         # 1. 【屏蔽】只保留在当前股票池(universe_df)中的股票市值，其余设为NaN
         valid_mv = mv_df.where(universe_df)
@@ -485,7 +533,61 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_剔除市值低的_filter', universe_df)
 
         return universe_df
+    #ok
+    def _filter_next_day_limit_up(self, universe_df: pd.DataFrame) -> pd.DataFrame:
+        """
+         剔除在T日开盘即一字涨停的股票。
+        这是为了模拟真实交易约束，因为这类股票在开盘时无法买入。
+        Args:
+            universe_df: 动态股票池DataFrame (T-1日决策，用于T日)
+        Returns:
+            过滤后的动态股票池DataFrame
+        """
+        logger.info("    应用次日涨停股票过滤...")
 
+        # --- 1. 数据准备与验证 ---
+        required_data = ['open', 'high', 'low', 'pre_close']
+        for data_key in required_data:
+            if data_key not in self.raw_data:
+                raise RuntimeError(f"缺少行情数据 '{data_key}'，无法过滤次日涨停股票")
+
+        open_df = self.raw_data['open']
+        high_df = self.raw_data['high']
+        low_df = self.raw_data['low']
+        pre_close_df = self.raw_data['pre_close']  # T日的pre_close就是T-1日的close
+
+        # --- 2. 向量化计算每日涨停价 ---
+        # a) 创建一个与pre_close_df形状相同的、默认值为1.1的涨跌幅限制矩阵
+        limit_rate = pd.DataFrame(1.1, index=pre_close_df.index, columns=pre_close_df.columns)
+
+        # b) 识别科创板(688开头)和创业板(300开头)的股票，将其涨跌幅限制设为1.2
+        star_market_stocks = [col for col in limit_rate.columns if str(col).startswith('688')]
+        chinext_stocks = [col for col in limit_rate.columns if str(col).startswith('300')]
+        limit_rate[star_market_stocks] = 1.2
+        limit_rate[chinext_stocks] = 1.2
+
+        # c) 计算理论涨停价 (这里不需要shift，因为pre_close已经是T-1日的信息)
+        limit_up_price = (pre_close_df * limit_rate).round(2)
+
+        # --- 3. 生成“开盘即涨停”的布尔掩码 (Mask) ---
+        # 条件1: T日的开盘价、最高价、最低价三者相等 (一字板的特征)
+        is_one_word_board = (open_df == high_df) & (open_df == low_df)
+
+        # 条件2: T日的开盘价大于或等于理论涨停价
+        is_at_limit_price = open_df >= limit_up_price
+
+        # 最终的掩码：两个条件同时满足
+        limit_up_mask = is_one_word_board & is_at_limit_price
+
+        # --- 4. 应用过滤 ---
+        # 将在T日开盘即涨停的股票，在T日的universe中剔除
+        # 这个操作是“未来”的，但它是良性的，因为它模拟的是“无法交易”的现实
+        # 它不需要.shift(1)，因为我们是拿T日的状态，来过滤T日的池子
+        universe_df[limit_up_mask] = False
+
+        self.show_stock_nums_for_per_day('过滤次日涨停股后--final', universe_df)
+        return universe_df
+    #ok
     def _filter_next_day_suspended(self, universe_df: pd.DataFrame) -> pd.DataFrame:
         """
           剔除次日停牌股票 -
@@ -509,7 +611,7 @@ class DataManager:
         #    fill_value=True 优雅地处理了最后一天，我们假设最后一天之后不会停牌
         tomorrow_has_price = close_df.notna().shift(-1, fill_value=True)
 
-        # 3. 计算出所有“次日停牌”的掩码 (Mask)
+        # 3. 计算出所有“次日停牌”的掩码 (Mask) （为什么要剔除！质疑自己：明天的事情我为什么要管？ 答：你不怕明天停牌卖不出去？ 还有个原因：ic 计算收益率，会把明天的收益0 一样进行计算！。那怎么得了！）
         #    次日停牌 = 今日有价 & 明日无价
         next_day_suspended_mask = today_has_price & (~tomorrow_has_price)
 
@@ -690,10 +792,23 @@ class DataManager:
 
     def show_stock_nums_for_per_day(self, describe_text, index_universe_df):
         daily_count = index_universe_df.sum(axis=1)
-        logger.info(f"    {describe_text}动态股票池构建完成:")
+        logger.info(f"    {describe_text}动态股票池:")
         logger.info(f"      平均每日股票数: {daily_count.mean():.0f}")
         logger.info(f"      最少每日股票数: {daily_count.min():.0f}")
         logger.info(f"      最多每日股票数: {daily_count.max():.0f}")
+
+    # 输入学术因子，返回计算所必须的base 因子
+    def get_cal_base_factors(self, target_factors: list[str]) -> set:
+        factor_df = pd.DataFrame(self.config['factor_definition'])  # 将 list[dict] 转为 DataFrame
+        result = set()
+
+        for target_factor in target_factors:
+            matched = factor_df[factor_df['name'] == target_factor]
+            if not matched.empty:
+                base_fields = matched.iloc[0]['cal_require_base_fields']
+                result.update(base_fields)  # 用 update 合并列表到 set
+
+        return result
 
 
 def create_data_manager(config_path: str) -> DataManager:

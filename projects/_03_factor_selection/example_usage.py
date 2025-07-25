@@ -29,75 +29,28 @@ from quant_lib.config.logger_config import setup_logger
 # 配置日志
 logger = setup_logger(__name__)
 
-
-def create_sample_factors(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
-    """创建示例因子用于测试"""
-    factors = {}
-
-    # 价值因子
-    if 'pb' in data_dict and 'pe_ttm' in data_dict:
-        # PB因子 - 只过滤明显错误的数据
-        pb_data = data_dict['pb'].copy()
-        pb_data = pb_data.where(pb_data > 0)  # 只过滤<=0的异常值
-        factors['PB_factor'] = 1 / pb_data  # 不在这里去极值,检验因子前，会做极值处理！
-
-        # PE因子
-        pe_data = data_dict['pe_ttm'].copy()
-        pe_data = pe_data.where(pe_data > 0)  # 只过滤<=0的异常值
-        factors['PE_factor'] = 1 / pe_data  # 不在这里去极值
-
-    # 动量因子
-    if 'close' in data_dict:
-        price = data_dict['close']
-        factors['momentum_20d'] = price / price.shift(20) - 1
-
-    # 质量因子
-    if 'roe' in data_dict and 'roa' in data_dict:
-        factors['ROE_factor'] = data_dict['roe']
-        factors['ROA_factor'] = data_dict['roa']
-
-    # 成长因子
-    if 'revenue_yoy' in data_dict and 'netprofit_yoy' in data_dict:
-        factors['revenue_growth'] = data_dict['revenue_yoy']
-        factors['profit_growth'] = data_dict['netprofit_yoy']
-
-    # 波动率因子
-    if 'close_price' in data_dict:
-        returns = data_dict['close_price'].pct_change()
-        factors['volatility_20d'] = returns.rolling(20).std()
-        factors['volatility_60d'] = returns.rolling(60).std()
-
-    return factors
-
-
 def main():
     """主函数 - 演示策略工厂的完整使用流程"""
 
-    # logger.info("=" * 80)
     logger.info("重构后的策略工厂演示 - 完整因子研究流程")
-    # logger.info("=" * 80)
 
     # 1. 初始化策略工厂
     factory = StrategyFactory(
         config_path="factory/config.yaml",
         workspace_dir="workspace"
     )
-    logger.info("✓ 策略工厂初始化完成")
-
     # 2. 加载数据
-    logger.info("2. 加载数据...")
+    logger.info("2. 加载底层原始因子raw_dict数据...")
     data_dict = factory.load_all_data_be_universe()
     logger.info(f"✓ 数据加载成功，包含 {len(data_dict)} 个数据集")
 
     # 3. 创建示例因子
-    logger.info("3. 创建示例因子...")
-    factor_data_dict = create_sample_factors(data_dict)
-    logger.info(f"✓ 创建了 {len(factor_data_dict)} 个示例因子")
+    logger.info("3. 创建目标学术因子...")
+    factor_data_dict,factor_category_dict =  factory.get_config_target_factor_dict_by_cal_base_factor_batch(data_dict)
 
     # 4. 定义因子类别映射
     factor_category_mapping = {
-        'PB_factor': FactorCategory.VALUE,
-        'PE_factor': FactorCategory.VALUE,
+        'pe_ttm_inv': FactorCategory.VALUE,
         'momentum_20d': FactorCategory.MOMENTUM,
         'momentum_60d': FactorCategory.MOMENTUM,
         'ROE_factor': FactorCategory.QUALITY,
@@ -126,8 +79,7 @@ def main():
     try:
         batch_results = factory.batch_test_factors(
             factor_data_dict=factor_data_dict,
-            auto_register=True,
-            category_mapping=factor_category_mapping
+            factor_category_type_dict=factor_category_dict
         )
         logger.info(f"✓ 批量测试完成，成功测试 {len(batch_results)} 个因子")
     except Exception as e:
