@@ -255,8 +255,8 @@ class FactorManager:
                 try:
                     category_value = FactorCategory[category.upper()].value
                 except KeyError:
-                    logger.warning(f"未知的因子类别: {category}")
-                    return []
+                    raise ValueError(f"未知的因子类别: {category}")
+
 
             summary = summary[summary['category'] == category_value]
 

@@ -51,7 +51,7 @@ def _load_or_update_trading_calendar() -> pd.DataFrame:
                 _TRADING_CALENDAR = calendar_df
                 return _TRADING_CALENDAR
         except Exception as e:
-            logger.warning(f"读取交易日历缓存失败: {e}")
+            raise ValueError(f"读取交易日历缓存失败: {e}")
     
     # 从Tushare获取交易日历
     try:

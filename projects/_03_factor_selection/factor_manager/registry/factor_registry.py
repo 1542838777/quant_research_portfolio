@@ -62,7 +62,7 @@ class FactorMetadata:
                 self.category = FactorCategory[category.upper()]
             except (KeyError, AttributeError):
                 self.category = FactorCategory.CUSTOM
-                logger.warning(f"未知的因子类别 '{category}'，使用默认类别 'CUSTOM'")
+                raise ValueError(f"未知的因子类别 '{category}'，使用默认类别 'CUSTOM'")
         
         self.description = description
         self.data_requirements = data_requirements or []
@@ -183,7 +183,7 @@ class FactorRegistry:
             是否注册成功
         """
         if name in self.registry:
-            logger.warning(f"因子 '{name}' 已存在，更新元数据")
+            raise ValueError(f"因子 '{name}' 已存在，更新元数据")
             # 更新现有因子
             metadata = self.registry[name]
             metadata.category = category if isinstance(category, FactorCategory) else \
@@ -235,8 +235,8 @@ class FactorRegistry:
             try:
                 category = FactorCategory[category.upper()]
             except KeyError:
-                logger.warning(f"未知的因子类别 '{category}'")
-                return []
+                raise ValueError(f"未知的因子类别 '{category}'")
+
         
         # 按类别筛选
         return [
@@ -280,8 +280,8 @@ class FactorRegistry:
             是否更新成功
         """
         if name not in self.registry:
-            logger.warning(f"因子 '{name}' 不存在，无法更新测试结果")
-            return False
+            raise ValueError(f"因子 '{name}' 不存在，无法更新测试结果")
+
         
         # 更新测试结果
         metadata = self.registry[name]
@@ -295,8 +295,8 @@ class FactorRegistry:
     def delete_factor(self, name: str) -> bool:
         """删除因子"""
         if name not in self.registry:
-            logger.warning(f"因子 '{name}' 不存在，无法删除")
-            return False
+            raise ValueError(f"因子 '{name}' 不存在，无法删除")
+
         
         # 删除因子
         del self.registry[name]

@@ -103,15 +103,15 @@ def calculate_ic_vectorized(
 
         # --- 1. 数据验证与对齐 ---
         if factor_df.empty or forward_returns.empty:
-            logger.warning("输入数据为空，无法计算IC。")
-            return pd.Series(dtype='float64', name='IC'), {}
+            raise ValueError("输入数据为空，无法计算IC。")
+
 
         common_idx = factor_df.index.intersection(forward_returns.index)
         common_cols = factor_df.columns.intersection(forward_returns.columns)
 
         if len(common_idx) == 0 or len(common_cols) == 0:
-            logger.warning("因子数据和收益数据没有重叠的日期或股票，无法计算IC。")
-            return pd.Series(dtype='float64', name='IC'), {}
+            raise ValueError("因子数据和收益数据没有重叠的日期或股票，无法计算IC。")
+
 
         factor_aligned = factor_df.loc[common_idx, common_cols]
         returns_aligned = forward_returns.loc[common_idx, common_cols]
@@ -121,8 +121,8 @@ def calculate_ic_vectorized(
         valid_dates = paired_valid_counts[paired_valid_counts >= min_stocks].index
 
         if valid_dates.empty:
-            logger.warning(f"没有任何日期满足最小股票数量({min_stocks})要求，无法计算IC。")
-            return pd.Series(dtype='float64', name='IC'), {}
+            raise ValueError(f"没有任何日期满足最小股票数量({min_stocks})要求，无法计算IC。")
+
 
         # --- 3. 核心计算 ---
         ic_series = factor_aligned.loc[valid_dates].corrwith(
@@ -134,8 +134,8 @@ def calculate_ic_vectorized(
         # --- 4. 计算统计指标 (只在有效IC序列上计算) ---
         ic_series_cleaned = ic_series.dropna()
         if len(ic_series_cleaned) < 2:  # t检验至少需要2个样本
-            logger.warning(f"有效IC值数量过少({len(ic_series_cleaned)})，无法计算统计指标。")
-            return ic_series, {}
+            raise ValueError(f"有效IC值数量过少({len(ic_series_cleaned)})，无法计算统计指标。")
+
 
         # 修正胜率计算和添加更多统计指标
         ic_mean = ic_series_cleaned.mean()
@@ -691,8 +691,8 @@ def run_fama_macbeth_regression(
         except (np.linalg.LinAlgError, ValueError, KeyError):
             continue
         except Exception as e:
-            logger.warning(f"日期 {date} 回归失败: {e}")
-            continue
+            raise ValueError(f"日期 {date} 回归失败: {e}")
+
 
     # --- 3. 分析与报告 ---
     # logger.info("\t步骤3: 分析回归结果并生成报告...")

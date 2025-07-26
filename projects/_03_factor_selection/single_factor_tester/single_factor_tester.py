@@ -187,7 +187,7 @@ class SingleFactorTester:
         # 1. 因子预处理
         factor_processed = self.factor_processor.process_factor(
             factor_data=factor_data,
-            auxiliary_data=self.auxiliary_data
+            auxiliary_df_dict=self.auxiliary_data
         )
         # 2. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
@@ -436,9 +436,9 @@ class SingleFactorTester:
         evaluation_dict = results['evaluate_factor_score']
         rows = []
         total_score = []
-        flatten_metrics_dict = {}
 
         for day, evaluation in evaluation_dict.items():
+            flatten_metrics_dict = {}
             cur_total_score = evaluation['final_score']
             total_score.append(cur_total_score)
             # 扁平化的核心指标字段
@@ -505,7 +505,7 @@ class SingleFactorTester:
                 batch_results[factor_name] = results
 
             except Exception as e:
-                print(f"因子 {factor_name} 测试失败: {e}")
+                raise ValueError(f"因子 {factor_name} 测试失败: {e}")
                 batch_results[factor_name] = {'error': str(e)}
         return batch_results
 
@@ -831,10 +831,13 @@ class SingleFactorTester:
         if deal_breaker_reason:
             return {
                 'final_grade': 'F (否决)',
+                'final_score':'0/100',
                 'conclusion': f"因子存在致命缺陷: {deal_breaker_reason}",
-                'ic_grade': score_ic_eval.get('grade'),
-                'quantile_grade': quantile_grade,
-                'fm_grade': fm_grade
+                'sub': {
+                    'IC': {"grade": score_ic_eval.get('grade'), n_metrics_pass_rate_key: ic_n_metrics_pass_rate},
+                    'Quantile': {"grade": quantile_grade, n_metrics_pass_rate_key: quantile_n_metrics_pass_rate},
+                    'Fama-MacBeth': {"grade": fm_grade, n_metrics_pass_rate_key: fm_n_metrics_pass_rate}
+                }
             }
 
         # --- 4. 进行加权评分 (总分100分) ---

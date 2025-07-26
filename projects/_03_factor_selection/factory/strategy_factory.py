@@ -284,8 +284,8 @@ class StrategyFactory:
                 try:
                     category_value = FactorCategory[category.upper()].value
                 except KeyError:
-                    logger.warning(f"未知的因子类别: {category}")
-                    return pd.DataFrame()
+                    raise ValueError(f"未知的因子类别: {category}")
+
 
             summary = summary[summary['category'] == category_value]
 

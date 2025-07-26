@@ -154,9 +154,8 @@ class FactorClassifier:
             factor_names.append(name)
         
         if not feature_matrix:
-            logger.warning("没有可用的因子特征进行聚类")
-            return {}
-        
+            raise  ValueError("没有可用的因子特征进行聚类")
+
         # 标准化特征
         scaler = StandardScaler()
         scaled_features = scaler.fit_transform(feature_matrix)
@@ -188,8 +187,8 @@ class FactorClassifier:
         # 提取特征并聚类
         clusters = self.cluster_factors(factor_data_dict, n_clusters)
         if not clusters:
-            logger.warning("没有可用的因子进行可视化")
-            return None
+            raise ValueError("没有可用的因子进行可视化")
+
         
         # 准备数据
         feature_matrix = []
@@ -250,8 +249,8 @@ class FactorClassifier:
             return fig
         else:
             # 可以添加其他降维方法，如t-SNE
-            logger.warning(f"不支持的降维方法: {method}")
-            return None
+            raise ValueError(f"不支持的降维方法: {method}")
+
     
     def analyze_factor_correlation(self, 
                                  factor_data_dict: Dict[str, pd.DataFrame],

@@ -59,6 +59,8 @@ def check_field_level_completeness(processed_data_dict):
 
 
 def _get_nan_comment(field: str, rate: float) -> str:
+    if rate >= 0.6:
+        raise "缺失率太高 必须检查"
     """根据字段名称和缺失率，提供专家诊断意见"""
     if field in ['pe_ttm', 'pe', 'pb',
                  'pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
@@ -70,7 +72,8 @@ def _get_nan_comment(field: str, rate: float) -> str:
     if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
         return "正常现象：不需要care 多少缺失率"
     if field in ['circ_mv', 'close', 'total_mv',
-                 'turnover_rate'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+                 'turnover_rate', 'open', 'high', 'low',
+                 'pre_close'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate == 0.0:
         return "正常现象：不需要care 多少缺失率"
@@ -120,7 +123,6 @@ class DataManager:
 
         # 确定所有需要的字段（一次性确定）
         all_required_fields = self._get_required_fields()
-        logger.info(f"需要加载的所有字段: {all_required_fields}")
 
         # === 一次性加载所有数据 ===
 
@@ -148,7 +150,8 @@ class DataManager:
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被universe_df 动了手脚了（低市值的会被置为nan，
 
         return self.processed_data
-    #ok
+
+    # ok
     def _build_universe_from_loaded_data(self, start_date: str, end_date: str) -> pd.DataFrame:
         """
         第一阶段：基于已加载的数据构建权威股票池
@@ -186,6 +189,8 @@ class DataManager:
 
         return universe_df
 
+    # 对于 是先 fill 还是先where 的考量 ：还是别先ffill了：极端例子：停牌了99天的，100。 若先ffill那么 这100天都是借来的数据！  如果先where。那么直接统统nan了。在ffill也是nan，更具真实
+    # ok
     def _align_and_clean_all_data(self, raw_dfs: Dict[str, pd.DataFrame],
                                   universe_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
@@ -203,10 +208,10 @@ class DataManager:
         master_columns = universe_df.columns
 
         # 定义不同类型数据的填充策略
-        HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate']  # 高频数据，用0填充
+        HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate']  #
         SLOW_MOVING_FIELDS = ['pe_ttm', 'pb', 'total_mv', 'circ_mv']  # 缓变数据，限制前向填充
         STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
-        PRICE_FIELDS = ['close', 'open', 'high', 'low']  # 价格数据，特殊处理
+        PRICE_FIELDS = ['close', 'open', 'high', 'low', 'pre_close']  # 价格数据，特殊处理
 
         # print(f"\n2. 开始对齐和清洗 {len(raw_dfs)} 个数据字段...")
 
@@ -217,36 +222,30 @@ class DataManager:
             # 步骤1: 对齐到修剪后的股票池 对齐到主模板（universe_df的形状）
             aligned_df = df.reindex(index=master_index, columns=master_columns)
             aligned_df = aligned_df.sort_index()
+            aligned_df = aligned_df.where(universe_df)
 
             # 步骤2: 根据数据类型应用不同的填充策略
             if name in HIGH_FREQ_FIELDS:
-                # 高频数据：只在股票池内填充0，股票池外保持NaN todo remain 暂时不填0 任由NAN 作为数据源头，必须要真实
+                # 高频数据 暂时不ffill，因为在停牌日，交易相关的活动活动（（成交量、换手率 确实是空的），你去ffill之气的那不就大错了；至于fill（0）还是保持nan，让下游自己考虑，这里不提前一棍子打死
                 # aligned_df = aligned_df.where(universe_df).fillna(0)
-                aligned_df = aligned_df.where(universe_df)
-                # print(f"     -> 高频数据，股票池内用0填充")
+                aligned_df = aligned_df
 
             elif name in SLOW_MOVING_FIELDS:
                 # 缓变数据：先限制前向填充，再应用股票池过滤
                 aligned_df = aligned_df.ffill(limit=2)  # 最多前向填充2天
-                aligned_df = aligned_df.where(universe_df)
-                # logger.info(f"     -> 缓变数据，限制前向填充2天")
 
             elif name in STATIC_FIELDS:
                 # 静态数据：无限前向填充，再应用股票池过滤
-                aligned_df = aligned_df.ffill()
-                aligned_df = aligned_df.where(universe_df)
-                # logger.info(f"     -> 静态数据，无限前向填充")
+                aligned_df = aligned_df.ffill()  # 任由他填充又何妨，反正我前期做了自动宽化填充
 
             elif name in PRICE_FIELDS:
-                # 价格数据：只保留股票池内的数据，不填充
-                aligned_df = aligned_df.where(universe_df)
-                # logger.info(f"     -> 价格数据，仅保留股票池内数据")
+                # 价格数据：只保留股票池内的数据  单因子测试需要计算收益率，价格数据不能中断 值得深入思考。问题todo
+                # 停牌股票仍需定价来计算组合净值和收益
+                aligned_df = aligned_df.ffill()
 
             else:
                 raise RuntimeError(f"此因子{name}没有指明频率，无法进行填充")
-
             aligned_data[name] = aligned_df
-
         return aligned_data
 
     def _get_required_fields(self) -> List[str]:
@@ -259,7 +258,7 @@ class DataManager:
                                 'total_mv', 'turnover_rate',  # 为了过滤 很差劲的股票 仅此而已，不会作其他计算 、'total_mv'还可 用于计算中性化
                                 'industry',  # 用于计算中性化
                                 'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
-                                'list_date'  # 上市日期,
+                                'list_date',  # 上市日期,
 
                                 'open', 'high', 'low', 'pre_close'  # 为了计算次日是否一字马涨停
                                 ])
@@ -320,7 +319,7 @@ class DataManager:
         final_universe_df = None
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', base_universe_df)
         # 第二步：各种过滤！
-        #--基础过滤 指数成分股过滤（如果启用）
+        # --基础过滤 指数成分股过滤（如果启用）
         index_config = self.config['universe'].get('index_filter', {})
         if index_config.get('enable', False):
             # print(f"    应用指数过滤: {index_config['index_code']}")
@@ -328,9 +327,9 @@ class DataManager:
             # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
             valid_stocks = final_universe_df.columns[final_universe_df.any(axis=0)]
             final_universe_df = final_universe_df[valid_stocks]
-        #--普适性 过滤 （通用过滤）
-        final_universe_df = self._filter_new_stocks(final_universe_df,6)#新股票数据少，不具参考
-        final_universe_df = self._filter_st_stocks(final_universe_df)#  剔除ST股票
+        # --普适性 过滤 （通用过滤）
+        final_universe_df = self._filter_new_stocks(final_universe_df, 6)  # 新股票数据少，不具参考
+        final_universe_df = self._filter_st_stocks(final_universe_df)  # 剔除ST股票
 
         # 其他各种指标过滤条件
         universe_filters = self.config['universe']['filters']
@@ -406,7 +405,8 @@ class DataManager:
         logger.info("每日‘已知风险’状态矩阵重建完毕。")
         self.st_matrix = st_matrix.astype(bool)
         return self.st_matrix
-    #ok
+
+    # ok
     def _filter_new_stocks(self, universe_df: pd.DataFrame, months: int = 6) -> pd.DataFrame:
         """
         剔除上市时间小于指定月数的股票。
@@ -448,7 +448,8 @@ class DataManager:
         aligned_universe.values[is_new_mask] = False
         self.show_stock_nums_for_per_day("6个月内上市的过滤！", aligned_universe)
         return aligned_universe
-    #ok
+
+    # ok
     def _filter_st_stocks(self, universe_df: pd.DataFrame) -> pd.DataFrame:
         if self.st_matrix is None:
             raise ValueError("    警告: 未能构建ST状态矩阵，无法过滤ST股票。")
@@ -472,7 +473,8 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_ST状态(判定来自于name的变化历史)_filter', aligned_universe)
 
         return aligned_universe
-    #ok
+
+    # ok
     def _filter_by_liquidity(self, universe_df: pd.DataFrame, min_percentile: float) -> pd.DataFrame:
         """按流动性过滤 """
         if 'turnover_rate' not in self.raw_data:
@@ -496,7 +498,8 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_剔除流动性低的_filter', universe_df)
 
         return universe_df
-    #ok
+
+    # ok
     def _filter_by_market_cap(self,
                               universe_df: pd.DataFrame,
                               min_percentile: float) -> pd.DataFrame:
@@ -533,7 +536,8 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_剔除市值低的_filter', universe_df)
 
         return universe_df
-    #ok
+
+    # ok
     def _filter_next_day_limit_up(self, universe_df: pd.DataFrame) -> pd.DataFrame:
         """
          剔除在T日开盘即一字涨停的股票。
@@ -587,7 +591,8 @@ class DataManager:
 
         self.show_stock_nums_for_per_day('过滤次日涨停股后--final', universe_df)
         return universe_df
-    #ok
+
+    # ok
     def _filter_next_day_suspended(self, universe_df: pd.DataFrame) -> pd.DataFrame:
         """
           剔除次日停牌股票 -

@@ -47,9 +47,8 @@ class DataLoader:
         self.cache = {}
 
         if not self.data_path.exists():
-            logger.warning(f"数据路径不存在: {self.data_path}")
             os.makedirs(self.data_path, exist_ok=True)
-            logger.info(f"已创建数据路径: {self.data_path}")
+            logger.info(f"数据路径不存在,现已创建数据路径: {self.data_path}")
 
         self.field_map = self._build_field_map()
         logger.info(f"字段->所在文件Name--映射构建完毕，共发现 {len(self.field_map)} 个字段")
@@ -102,7 +101,7 @@ class DataLoader:
                     if (col == 'name') & (
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
                         continue
-                    if (col in ['close', 'open', 'high', 'low']) & (
+                    if (col in ['close', 'open', 'high', 'low','pre_close']) & (
                             logical_name != 'daily_hfq'):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
                         continue
                     if col not in field_to_file_map:
@@ -143,26 +142,21 @@ class DataLoader:
 
         for field in list(set(fields + base_fields)):
             logical_name = self.field_map.get(field)
-            if logical_name:
-                file_to_fields[logical_name].append(field)
-            else:
-                logger.warning(f"未找到字段 {field} 的数据源")
+            if logical_name is None:
+                raise ValueError(f"未找到字段 {field} 的数据源")
+
+            file_to_fields[logical_name].append(field)
 
         # 加载和处理数据
         raw_wide_dfs = {}  # 装 宽化的df
         raw_long_dfs = {}  # 原生的 从本地拿到的 key :文件，value：df（所有列！）
-        for logical_name, columns_to_load in file_to_fields.items():
+        for logical_name, columns_to_need_load in file_to_fields.items():
             try:
                 file_path = self.data_path / logical_name
 
                 # 检查文件中实际存在的字段
                 available_columns = pd.read_parquet(file_path).columns
-
-                # 只读取实际存在的字段
-                columns_can_read = []
-                for col in list(set(columns_to_load + base_fields)):
-                    if col in available_columns:
-                        columns_can_read.append(col)
+                columns_can_read = list(set(columns_to_need_load + base_fields) & set(available_columns))
 
                 if not columns_can_read:
                     logger.warning(f"文件 {logical_name} 中没有找到任何需要的字段")
@@ -192,8 +186,7 @@ class DataLoader:
         for field in sorted(fields):
             logical_name = self.field_map.get(field)
             if not logical_name or logical_name not in raw_long_dfs:
-                logger.warning(f"未找到或加载失败: 字段 '{field}' 的数据源 '{logical_name}'")
-                continue
+                raise ValueError(f"未找到或加载失败: 字段 '{field}' 的数据源 '{logical_name}'")
             source_df = raw_long_dfs[logical_name]
             if 'trade_date' in source_df.columns:
                 # a) 对于本身就是每日更新的面板数据
