@@ -436,9 +436,9 @@ class SingleFactorTester:
         evaluation_dict = results['evaluate_factor_score']
         rows = []
         total_score = []
+        flatten_metrics_dict = {}
 
         for day, evaluation in evaluation_dict.items():
-            flatten_metrics_dict = {}
             cur_total_score = evaluation['final_score']
             total_score.append(cur_total_score)
             # 扁平化的核心指标字段
@@ -448,7 +448,7 @@ class SingleFactorTester:
             row = {
 
                 '持有期': day,
-                '总评分': cur_total_score,
+                f'{day}_综合评分': cur_total_score,
                 '总等级': evaluation['final_grade'],
                 '结论': evaluation['conclusion'],
                 #
@@ -464,7 +464,7 @@ class SingleFactorTester:
                 'Quantile分析摘要': quantile_backtest_dict[day],
                 'FM分析摘要': fama_macbeth_dict[day]
             }
-            merged_row = {**flatten_metrics_dict, **row}
+            merged_row = {**row}
             rows.append(merged_row)
         backtest_period = f'{self.backtest_start_date}~{self.backtest_end_date}'
         return {results['factor_name']:

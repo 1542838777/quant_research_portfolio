@@ -2,8 +2,8 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2018-01-10'
-  end_date: '2025-07-11'
+  start_date: '2019-01-10'
+  end_date: '2020-07-11'
 
 # 股票池设置
 universe:
@@ -35,6 +35,7 @@ factor_definition:
   # 价值因子
   - name: 'pe_ttm_inv'
     category_type: 'value'
+    'school':
     description: 'PE_TTM倒数因子'
     cal_require_base_fields: ['pe_ttm']
   
