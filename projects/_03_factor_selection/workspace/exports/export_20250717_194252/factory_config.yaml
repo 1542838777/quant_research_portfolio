@@ -95,7 +95,7 @@ preprocessing:
     factors:
     - market_cap
     - industry
-target_factor:
+target_factors_for_evaluation:
   fields:
   - pe_ttm
   name: pe_inv

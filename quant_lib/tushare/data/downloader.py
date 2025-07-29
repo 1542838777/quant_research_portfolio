@@ -98,6 +98,17 @@ def download_index_weights():
                 print(f"{year} 年的 {index_code} 成分股数据已存在，跳过下载")
 
 
+
+
+def download_index_daily_info():
+    """获取上证指数日线数据"""
+    print("\n===== 开始下载指数成分股数据 =====")
+    final_df = call_pro_tushare_api('index_daily', ts_code='000300.SH', start_date='20100101', end_date='20250711')
+
+    path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
+    final_df.to_parquet(path)
+
+
 def download_stock_info(stock_basic_path):
     if not stock_basic_path.exists():
         print("--- 正在下载股票基本信息 ---")

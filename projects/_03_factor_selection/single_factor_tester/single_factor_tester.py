@@ -8,12 +8,11 @@
 
 支持批量测试、结果可视化和报告生成
 """
+from data.local_data_load import load_index_daily
+from projects._03_factor_selection.data_manager.data_manager import DataManager
 
 from quant_lib import logger
-from ..factor_manager.factor_manager import FactorManager
-from ..factor_manager.registry.factor_registry import FactorCategory
 
-from ..factor_manager.storage.single_storage import add_single_factor_test_result
 from ..utils.factor_processor import FactorProcessor
 
 import pandas as pd
@@ -56,27 +55,32 @@ class SingleFactorTester:
     """
 
     def __init__(self,
-                 data_dict: Dict[str, pd.DataFrame] = None,
-                 price_data: pd.DataFrame = None,
+                 raw_dfs: Dict[str, pd.DataFrame] = None,
+                 processed_raw_data: Dict[str, pd.DataFrame] = None,
+                 stock_pools_dict: Dict[str, pd.DataFrame] = None,
                  config: Dict[str, Any] = None,
+                 target_factors_dict: Dict[str, pd.DataFrame] = None,
+                 target_factors_category_dict: Dict[str, Any] = None,
+                 target_factor_school_type_dict: Dict[str, Any] = None,
+
                  output_dir: str = "results/single_factor_tests"):
         """
         初始化单因子测试器 - 兼容新架构
 
         Args:
-            data_dict: 数据字典（新架构）
+            raw_dfs: 数据字典（新架构）
             price_data: 价格数据（向后兼容）
             config: 配置字典
             output_dir: 结果输出目录
         """
         # 处理配置
-        if not config  :
+        if not config:
             raise RuntimeError("config 没有传递过来！")
-        if data_dict is None or 'close' not in data_dict:
+        if raw_dfs is None or 'close' not in raw_dfs:
             raise ValueError('close的df是必须的，请写入！')
 
         self.config = config
-        self.test_common_periods = config.get('forward_periods', [1,5, 10, 20])
+        self.test_common_periods = config.get('forward_periods', [1, 5, 10, 20])
         self.n_quantiles = config.get('quantiles', 5)
         self.output_dir = output_dir
         # 初始化因子预处理器
@@ -85,12 +89,23 @@ class SingleFactorTester:
         # 初始化数据
         self.backtest_start_date = config['backtest']['start_date']
         self.backtest_end_date = config['backtest']['end_date']
-        self.data_dict = data_dict
-        self.price_data = data_dict.get('close', data_dict.get('price'))
+        self.raw_dfs = raw_dfs
+        self.processed_raw_data = processed_raw_data  # 似乎没用
+        self.stock_pools_dict = stock_pools_dict
+
+        self.target_factors_dict = target_factors_dict
+        self.target_factors_category_dict = target_factors_category_dict
+        self.target_school_type_dict = target_factor_school_type_dict
+        #基于不同股票池！！！
+        self.close_df_dict = self._prepare_dfs_dict_by_diff_stock_pool(['close'])
+        self.circ_mv_dict = self._prepare_dfs_dict_by_diff_stock_pool(['circ_mv'])
+        self.pct_chg_dict = self._prepare_dfs_dict_by_diff_stock_pool(['pct_chg'])
+        self.pct_chg_bate_dict = self.get_pct_chg_beta_dict()
+
         # 准备辅助【市值、行业】数据(用于中性值 计算！)
-        self.auxiliary_data = self._prepare_auxiliary_data()
-        self.circ_mv_data = data_dict['circ_mv']
-        self.neutral_dict_data = self._prepare_neutral_data()
+        self.auxiliary_dfs_dict = self.build_auxiliary_dfs_dict()
+        self.neutral_dfs_data_dict = self._prepare_neutral_data_dict()
+        self.check_shape()
 
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
@@ -101,6 +116,7 @@ class SingleFactorTester:
 
     def test_ic_analysis(self,
                          factor_data: pd.DataFrame,
+                         close_df: pd.DataFrame,
                          factor_name: str) -> Dict[str, Any]:
         """
         IC值分析法测试
@@ -113,12 +129,14 @@ class SingleFactorTester:
         Returns:
             IC分析结果字典
         """
-        _, stats_dict = calculate_ic_vectorized(factor_data, self.price_data, forward_periods=self.test_common_periods,
+        _, stats_dict = calculate_ic_vectorized(factor_data, close_df, forward_periods=self.test_common_periods,
                                                 method='spearman')
         return stats_dict
 
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
+                               close_df: pd.DataFrame,
+
                                factor_name: str) -> Dict[str, Any]:
         """
         分层回测法测试
@@ -132,7 +150,7 @@ class SingleFactorTester:
         """
         backtest_results, stats = calculate_quantile_returns(
             factor_data,
-            self.price_data,
+            close_df,
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
         )
@@ -141,6 +159,9 @@ class SingleFactorTester:
 
     def test_fama_macbeth(self,
                           factor_data: pd.DataFrame,
+                          close_df: pd.DataFrame,
+                          neurtal_dfs: dict[str, pd.DataFrame],
+                          circ_mv_df: pd.DataFrame,
                           factor_name: str) -> Dict[str, Any]:
         """
         Fama-MacBeth回归法测试（黄金标准）
@@ -157,24 +178,22 @@ class SingleFactorTester:
             # 运行Fama-MacBeth回归
             fm_result = run_fama_macbeth_regression(
                 factor_df=factor_data,
-                price_df=self.price_data,
+                price_df=close_df,
                 forward_returns_period=period,
-                weights_df=self.circ_mv_data,  # <-- 传入 流通市值作为权重，执行WLS
-                neutral_factors=self.neutral_dict_data  # <-- 传入市值和行业作为控制变量
+                weights_df=circ_mv_df,  # <-- 传入 流通市值作为权重，执行WLS
+                neutral_factors=neurtal_dfs  # <-- 传入市值和行业作为控制变量
             )
             fm_results[f'{period}d'] = fm_result
         return fm_results
 
     def comprehensive_test(self,
-                           factor_data: pd.DataFrame,
-                           factor_name: str,
+                           target_factor_name: str,
                            preprocess_method: str = "standard",
                            save_results: bool = True) -> Dict[str, Any]:
         """
         综合测试 - 执行所有三种测试方法
 
         Args:
-            factor_data: 原始因子数据
             factor_name: 因子名称
             preprocess_method: 预处理方法
             save_results: 是否保存结果
@@ -182,24 +201,35 @@ class SingleFactorTester:
         Returns:
             综合测试结果字典
         """
-        logger.info(f"开始测试因子: {factor_name}")
-
+        logger.info(f"开始测试因子: {target_factor_name}")
+        target_factor_data = self.target_factors_dict[target_factor_name]
+        target_school = self.target_school_type_dict[target_factor_name]
+        stock_pool_name = self.get_stock_pool_name_by_factor_school(target_school)
         # 1. 因子预处理
-        factor_processed = self.factor_processor.process_factor(
-            factor_data=factor_data,
-            auxiliary_df_dict=self.auxiliary_data
+        target_factor_processed = self.factor_processor.process_factor(
+            target_factor_df=target_factor_data,
+            target_factor_name=target_factor_name,
+            auxiliary_dfs=self.auxiliary_dfs_dict[stock_pool_name],
+            neutral_dfs=self.neutral_dfs_data_dict[stock_pool_name],
+            factor_school=target_school
         )
+
+        close_df = self.close_df_dict[stock_pool_name]['close']
+        circ_mv_df = self.circ_mv_dict[stock_pool_name]['circ_mv']
+        neutral_dfs = self.neutral_dfs_data_dict[stock_pool_name]
+
         # 2. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
-        ic_results = self.test_ic_analysis(factor_processed, factor_name)
+        ic_results = self.test_ic_analysis(target_factor_processed, close_df, target_factor_name)
 
         # 3. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
-        quantile_results = self.test_quantile_backtest(factor_processed, factor_name)
+        quantile_results = self.test_quantile_backtest(target_factor_processed, close_df, target_factor_name)
 
         # 4. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
-        fm_results = self.test_fama_macbeth(factor_processed, factor_name)
+        fm_results = self.test_fama_macbeth(target_factor_processed, close_df, neutral_dfs, circ_mv_df,
+                                            target_factor_name)
 
         # 5. 综合评价
         logger.info("5. 综合评价...")
@@ -207,7 +237,7 @@ class SingleFactorTester:
 
         # 整合结果
         comprehensive_results = {
-            'factor_name': factor_name,
+            'factor_name': target_factor_name,
             'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'preprocess_method': preprocess_method,
             'ic_analysis': ic_results,
@@ -215,58 +245,118 @@ class SingleFactorTester:
             'fama_macbeth': fm_results,
             'evaluate_factor_score': evaluation_score_dict
         }
-        ret = self.summary(comprehensive_results, factor_name)
+        ret = self.summary(comprehensive_results, target_factor_name)
 
         # self._create_visualizations(ret, factor_name)
         return ret
-
-    def _prepare_auxiliary_data(self) -> Dict[str, pd.DataFrame]:
+    #ok
+    def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
         """准备辅助数据（市值、行业等）"""
-        auxiliary_data = {}
+        ret_dict = {}
+        # 基于institutional_stock_pool
+        dataManager_temp = DataManager(
+            "factory/config.yaml",
+            need_data_deal=False
+        )
+        for stock_poll_name, stock_pool in self.stock_pools_dict.items():
+            ret_dict[stock_poll_name] = {}
 
-        # 市值数据
-        if 'total_mv' in self.data_dict:
-            auxiliary_data['total_mv'] = self.data_dict['total_mv']
-        # 行业数据
-        if 'industry' in self.data_dict:
-            auxiliary_data['industry'] = self.data_dict['industry']
-        return auxiliary_data
+            for factor_name in factor_names:
+                df = dataManager_temp._align_many_raw_dfs_by_stock_pool_and_fill(
+                    {factor_name: self.raw_dfs[factor_name]}, stock_pool)
+                ret_dict[stock_poll_name].update(df)
 
-    def _prepare_neutral_data(self) -> Dict[str, pd.DataFrame]:
-        """准备辅助数据（市值、行业等）"""
+
+        return ret_dict
+    #ok
+    def _prepare_neutral_data(self, total_mv_df, industry_df) -> Dict[str, pd.DataFrame]:
+        """
+         准备辅助数据（市值、行业等）- 最终修正版
+         解决 MultiIndex 丢失的问题
+         """
+        industry_df = industry_df.replace([None, 'NONE', 'None'], np.nan)
         neutral_dict = {}
+        logger.info("开始准备行业哑变量df。用于后续中性化使用")
+        # --- 1. 市值数据 ---
+        neutral_dict['total_mv'] = total_mv_df
 
-        # 市值数据
-        if 'total_mv' in self.data_dict:
-            neutral_dict['total_mv'] = self.data_dict['total_mv']
-        # 行业数据
-        # 行业数据 - 向量化版本
-        if 'industry' in self.data_dict:
-            # print("  转换行业数据为哑变量...")
-            industry_df = self.data_dict['industry']
+        # --- 2. 行业数据处理 ---
 
-            # 获取所有唯一行业
-            all_industries = sorted(industry_df.stack().dropna().unique())
-            # print(f"    发现 {len(all_industries)} 个行业: {all_industries}")
+        # 扁平化原始行业数据，
+        # industry_stacked_series 确实带有 (日期, 股票代码) MultiIndex
+        industry_stacked_series = industry_df.stack().dropna()
 
-            # 删除基准行业
-            if len(all_industries) > 1:
-                base_industry = all_industries[0]
-                industries_to_create = all_industries[1:]
-                # print(f"    删除基准行业: {base_industry}")
-            else:
-                industries_to_create = all_industries
+        # 获取所有唯一非NaN行业名称
+        all_industries = sorted(industry_stacked_series.unique())
 
-            # 向量化创建哑变量
-            for industry_name in industries_to_create:
-                # 使用向量化操作创建哑变量
-                industry_dummy = (industry_df == industry_name).astype(float)
-                # NaN位置保持NaN
-                industry_dummy = industry_dummy.where(industry_df.notna())
+        if not all_industries:
+            print("警告：行业数据中未发现任何有效行业名称。")
+            return neutral_dict
 
-                neutral_dict[f'industry_{industry_name}'] = industry_dummy
+        # 关键修正：
+        # 将 industry_stacked_series 的数据类型直接设置为 CategoricalDtype
+        # 这样，当 get_dummies 操作这个 Series 时，它会保留原始 Series 的索引
+        # 并且知道所有的可能类别
+        # 小白解释：
+        # CategoricalDtype = 分类数据类型定义：它不仅仅是数据本身，更像是一个“模板”或“规则”。
+        # 当你把一个 Series 转换为这种类型时，Series 仍然保留其索引，但其内部数据遵循 Categorical 的规则。
+        industry_categorical_series = industry_stacked_series.astype(
+            pd.CategoricalDtype(categories=all_industries)
+        )
 
-            # print(f"    生成 {len(industries_to_create)} 个行业哑变量")
+        # 现在，pd.get_dummies 直接操作这个带有 MultiIndex 的 Series
+        # get_dummies 会自动继承 industry_categorical_series 的 MultiIndex 作为行索引
+        # 并且根据 CategoricalDtype 的类别信息生成正确的哑变量列
+        industry_dummies_df = pd.get_dummies(industry_categorical_series, prefix='industry', dtype=float)
+
+        # 此时 industry_dummies_df 的结构是：
+        #                      industry_TMT  industry_医药  industry_消费
+        # Date        StockCode
+        # 2023-01-01  000001.SZ           1.0          0.0          0.0
+        #             000002.SZ           0.0          1.0          0.0
+        # ...
+        # 它的行索引是 MultiIndex，列是哑变量名称。这是正确的中间状态。
+
+        final_industry_dummies = {}
+
+        # --- 3. 逐个行业哑变量进行 unstack 和存储 ---
+        for col_name in industry_dummies_df.columns:
+            # col_name 是 'industry_TMT', 'industry_医药' 等
+            # 从 industry_dummies_df 中取出对应列，它是一个 Series，其索引仍然是 (日期, 股票代码) MultiIndex
+            one_industry_series = industry_dummies_df[col_name]
+
+            # 对这个 Series 进行 unstack 操作
+            # level=-1 将最内层索引（股票代码）从行索引移动到列索引
+            dummy_df_for_one_industry = one_industry_series.unstack(level=-1)
+            # ========================= 关键修正第二步 =========================
+            # 使用原始 industry_df 的列（所有股票）来 reindex
+            # 这会把在 stack() 过程中丢失的股票列加回来
+            # fill_value=0 的意思是，这些被加回来的股票，它们在这个行业哑变量中的值是0
+            dummy_df_for_one_industry = dummy_df_for_one_industry.reindex(
+                columns=industry_df.columns,
+                fill_value=0
+            )
+            # ================================================================
+
+            final_industry_dummies[col_name] = dummy_df_for_one_industry
+
+        # --- 4. 删除基准行业列 ---
+        if len(all_industries) > 1:
+            base_industry = all_industries[0]
+            base_industry_col_name = f'industry_{base_industry}'
+            if base_industry_col_name in final_industry_dummies:
+                del final_industry_dummies[base_industry_col_name]
+
+        # --- 5. 处理 NaN：将原始行业为 NaN 的位置对应的哑变量设为 NaN ---
+        nan_mask_df = industry_df.isna()
+
+        for industry_col_key, dummy_df in final_industry_dummies.items():
+            # 这里需要注意，mask 操作要求 dummy_df 和 nan_mask_df 的索引和列对齐
+            # 幸好，我们在循环内部生成的 dummy_df_for_one_industry 的索引和列是和原始 industry_df 对齐的
+            final_industry_dummies[industry_col_key] = dummy_df.mask(nan_mask_df)#对应位置替换为nan
+            final_industry_dummies[industry_col_key] = final_industry_dummies[industry_col_key].astype(float)
+
+        neutral_dict.update(final_industry_dummies)
 
         return neutral_dict
 
@@ -425,9 +515,6 @@ class SingleFactorTester:
 
         print(f"可视化图表已保存: {chart_path}")
 
-
-
-
     def summary(self, results: Dict[str, Any], excel_path: str):
 
         ic_analysis_dict = results['ic_analysis']
@@ -508,7 +595,6 @@ class SingleFactorTester:
                 raise ValueError(f"因子 {factor_name} 测试失败: {e}")
                 batch_results[factor_name] = {'error': str(e)}
         return batch_results
-
 
     def run_comprehensive_test_with_viz(self,
                                         factor_data: pd.DataFrame,
@@ -831,7 +917,7 @@ class SingleFactorTester:
         if deal_breaker_reason:
             return {
                 'final_grade': 'F (否决)',
-                'final_score':'0/100',
+                'final_score': '0/100',
                 'conclusion': f"因子存在致命缺陷: {deal_breaker_reason}",
                 'sub': {
                     'IC': {"grade": score_ic_eval.get('grade'), n_metrics_pass_rate_key: ic_n_metrics_pass_rate},
@@ -885,3 +971,147 @@ class SingleFactorTester:
                 'Fama-MacBeth': {"grade": fm_grade, n_metrics_pass_rate_key: fm_n_metrics_pass_rate}
             }
         }
+
+    def _prepare_neutral_data_dict(self):
+        dict = {}
+        pct_chg_beta_dict = self.pct_chg_bate_dict
+        for stock_pool_name, df_dict in self.auxiliary_dfs_dict.items():
+            cur_bate_df = pct_chg_beta_dict[stock_pool_name]
+            cur = self._prepare_neutral_data(df_dict['total_mv'], df_dict['industry'])
+            dict[stock_pool_name] = cur
+        return dict
+
+    def get_stock_pool_name_by_factor_school(self, target_school):
+        dataManager_temp = DataManager(
+            "factory/config.yaml",
+            need_data_deal=False
+        )
+        return dataManager_temp.get_stock_pool_name_by_factor_school(target_school)
+
+    def get_stock_pool_name_by_factor_name(self, factor_name):
+        school = self.target_school_type_dict[factor_name]
+        pool_name = self.get_stock_pool_name_by_factor_school(school[0])
+        return pool_name
+
+    def get_circ_mv_df_by_factor_school(self, factor_name):
+        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
+        return self.circ_mv_dict[pool_name]['circ_mv']
+
+    def get_close_df_by_factor_school(self, factor_name):
+        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
+        return self.close_df_dict[pool_name]['close']
+
+    def get_neutral_dfs_by_factor_name(self, target_factor_name):
+        pool_name = self.get_stock_pool_name_by_factor_name(target_factor_name)
+        return self.neutral_dfs_data_dict[pool_name]
+    #ok
+    def get_pct_chg_beta_dict(self):
+        dict = {}
+        for pool_name, pct_chg_df in self.pct_chg_dict.items():
+            bate_df = self.calculate_rolling_beta(self.config['backtest']['start_date'],
+                                                  self.config['backtest']['end_date'],
+                                                  stock_returns=pct_chg_df['pct_chg'])
+            dict[pool_name] = bate_df
+        return dict
+    #ok ok
+    def calculate_rolling_beta(
+            self,
+            start_date: str,
+            end_date: str,
+            stock_returns: pd.DataFrame,  # 假设传入的已是宽表，index=date, columns=stock
+            window: int = 60,
+            min_periods: int = 20
+    ) -> pd.DataFrame:
+        """
+        【最终健壮版】计算A股市场上每只股票相对于市场指数的滚动Beta值。
+        此版本修复了数据对齐的隐患。
+
+        Args:
+            start_date (str): 回测开始日期, 格式 'YYYYMMDD'
+            end_date (str): 回测结束日期, 格式 'YYYYMMDD'
+            stock_returns (pd.DataFrame): 股票收益率宽表, index为datetime, values已处理为小数。
+            window (int): 滚动窗口大小（天数）。
+            min_periods (int): 窗口内计算所需的最小观测数。
+
+        Returns:
+            pd.DataFrame: 滚动Beta矩阵 (index=date, columns=stock)。
+        """
+        logger.info(f"开始计算滚动Beta (窗口: {window}天)...")
+
+        # --- 1. 数据获取与准备 ---
+        # 为了计算滚动值，我们需要往前多取一些数据作为“缓冲”
+        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=window + 30)).strftime('%Y%m%d')
+
+        # a) 获取市场指数的每日收益率
+        market_returns_long = load_index_daily(buffer_start_date, end_date).assign(pct_chg=lambda x: x['pct_chg'] / 100)#pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
+        market_returns = market_returns_long.set_index('trade_date')['pct_chg']
+        market_returns.index = pd.to_datetime(market_returns.index)
+        market_returns.name = 'market_return'  # chong'ming
+
+        # --- 2. 【核心修正】显式数据对齐 ---
+        # logger.info("  > 正在进行数据显式对齐...")
+        # 使用 'left' join，以 stock_returns 的日期为基准
+        # 这会创建一个统一的时间轴，并将市场收益精确地匹配到每个交易日
+        combined_df = stock_returns.join(market_returns, how='left')
+
+        # 更新 market_returns 为对齐后的版本，确保万无一失
+        market_returns_aligned = combined_df.pop('market_return')#剔除这列！
+
+        # --- 3. 滚动计算Beta ---
+        # logger.info("  > 正在进行滚动计算...")
+        # Beta = Cov(R_stock, R_market) / Var(R_market)
+
+        # a) 现在，stock_returns 和 market_returns_aligned 的索引是100%对齐的
+        rolling_cov = combined_df.rolling(window=window, min_periods=min_periods).cov(market_returns_aligned)#协方差关心的是两组数据之间的关系（描述两个变量之间的关系方向）（是不是都是一起）
+
+        # b) 计算指数收益率的滚动方差
+        rolling_var = market_returns_aligned.rolling(window=window, min_periods=min_periods).var()
+
+        # c) 计算滚动Beta
+        beta_df = rolling_cov.div(rolling_var, axis=0)
+
+        # d) 截取我们需要的最终日期范围
+        final_beta_df = beta_df.loc[start_date:end_date]
+
+        logger.info(f"滚动Beta计算完成，最终矩阵形状: {final_beta_df.shape}")
+
+        return final_beta_df
+    #ok
+    def build_auxiliary_dfs_dict(self):
+        dict = self._prepare_dfs_dict_by_diff_stock_pool(['total_mv', 'industry'])
+        pct_chg_beta_dict = self.pct_chg_bate_dict
+
+        for stock_poll_name,df in pct_chg_beta_dict.items():
+            # 补充beta
+            dict[stock_poll_name].update({'pct_chg_beta':df})
+        return dict
+
+    def check_shape(self):
+        pool_names = self.stock_pools_dict.keys()
+        pool_shape_config = {}
+        for pool_name in pool_names:
+            pool_shape_config[pool_name] = self.stock_pools_dict[pool_name].shape
+
+        for pool_name, shape in pool_shape_config.items():
+            if shape != self.close_df_dict[pool_name]['close'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+            if shape != self.circ_mv_dict[pool_name]['circ_mv'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+            if shape != self.pct_chg_dict[pool_name]['pct_chg'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+            if shape != self.pct_chg_bate_dict[pool_name].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+
+            if shape != self.auxiliary_dfs_dict[pool_name]['pct_chg_beta'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+            if shape != self.auxiliary_dfs_dict[pool_name]['industry'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+            if shape != self.auxiliary_dfs_dict[pool_name]['total_mv'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+
+            if shape != self.neutral_dfs_data_dict[pool_name]['industry_农业综合'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+
+            if shape != self.neutral_dfs_data_dict[pool_name]['total_mv'].shape:
+                raise ValueError("形状不一致 ，请必须检查")
+

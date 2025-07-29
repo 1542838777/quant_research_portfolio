@@ -33,7 +33,7 @@ class DataLoader:
         field_map (Dict): 字段到数据源的映射
     """
 
-    #ok
+    # ok
     def __init__(self, data_path: Optional[Path] = None, use_cache: bool = True):
         """
         初始化数据加载器
@@ -50,7 +50,7 @@ class DataLoader:
             os.makedirs(self.data_path, exist_ok=True)
             logger.info(f"数据路径不存在,现已创建数据路径: {self.data_path}")
 
-        self.field_map = self._build_field_map()
+        self.field_map = self._build_field_map_to_file_name()
         logger.info(f"字段->所在文件Name--映射构建完毕，共发现 {len(self.field_map)} 个字段")
         # 在初始化时就加载交易日历，因为它是后续操作的基础(此处还没区分是否open，是全部
         self.trade_cal = self._load_trade_cal()
@@ -73,14 +73,14 @@ class DataLoader:
                (self.trade_cal['is_open'] == 1)
         return pd.to_datetime(self.trade_cal[mask]['cal_date'].unique())
 
-    def _build_field_map(self) -> Dict[str, str]:
+    def _build_field_map_to_file_name(self) -> Dict[str, str]:
         """
         构建字段到数据源的映射
         
         Returns:
             字段到数据源的映射字典
         """
-        field_to_file_map = {}
+        field_to_files_map = {}
 
         # 递归查找所有parquet文件
         for file_path in self.data_path.rglob('*.parquet'):
@@ -101,16 +101,16 @@ class DataLoader:
                     if (col == 'name') & (
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
                         continue
-                    if (col in ['close', 'open', 'high', 'low','pre_close']) & (
-                            logical_name != 'daily_hfq'):  # 就是不要这里面的close ，我们需要daily_hfq(后复权的数据)表里面的close
+                    if (col in ['close', 'open', 'high', 'low', 'pre_close','pct_chg']) & (
+                            logical_name != 'daily_hfq'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据
                         continue
-                    if col not in field_to_file_map:
-                        field_to_file_map[col] = logical_name
+                    if col not in field_to_files_map:
+                        field_to_files_map[col] = logical_name
             except Exception as e:
                 logger.error(f"读取文件 {file_path} 的元数据失败: {e}")
 
-        return field_to_file_map
-
+        return field_to_files_map
+    #ok
     def get_raw_dfs_by_require_fields(self,
                                       fields: List[str],
                                       start_date: str,
@@ -239,9 +239,7 @@ class DataLoader:
 
         return aligned_data
 
-
-
-    def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:#ok
+    def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:  # ok
         """
         对齐多个DataFrame
         
@@ -252,8 +250,7 @@ class DataLoader:
             对齐后的DataFrame字典
         """
         if not dfs:
-            logger.warning("没有数据需要对齐")
-            return {}
+            raise ValueError("居然所传需对齐数据是空的")
 
         # 找出共同的日期和股票
         common_dates = None
@@ -276,7 +273,6 @@ class DataLoader:
             aligned_data[name] = aligned_df
 
         logger.info(f"数据对齐完成: {len(common_dates)}个交易日, {len(common_stocks)}只股票")
-        logger.info("注意：未进行缺失值填充，保持原始数据状态")
         return aligned_data
 
     def clear_cache(self):

@@ -49,54 +49,53 @@ class FactorProcessor:
         """
         self.config = config
         self.preprocessing_config = config.get('preprocessing', {})
-    #ok
+
+    # ok
     def process_factor(self,
-                       factor_data: pd.DataFrame,
-                       universe_df: pd.DataFrame = None,
-                       auxiliary_df_dict: Dict[str, pd.DataFrame] = None) -> pd.DataFrame:
+                       target_factor_df: pd.DataFrame,
+                       target_factor_name: str,
+                       auxiliary_dfs,
+                       neutral_dfs,
+                       factor_school: str
+                       ):
         """
         完整的因子预处理流水线
         
         Args:
             factor_data: 原始因子数据
-            universe_df: 股票池数据 如果不传递，请保证 factor_data 事先进行了股票池过滤！
             auxiliary_df_dict: 辅助数据（市值、行业等）
             
         Returns:
             预处理后的因子数据
         """
-        processed_factor = factor_data.copy()
-
-        # 应用股票池过滤
-        if universe_df:
-            processed_factor = processed_factor.where(universe_df)
-        #用昨天的数据！
-        processed_factor = processed_factor.shift(1)#用昨天的数据！
-        for name,df in auxiliary_df_dict.items():
-            auxiliary_df_dict[name] = df.shift(1)
-
-
+        processed_target_factor_df = target_factor_df.copy()
+        auxiliary_dfs = auxiliary_dfs.copy()
+        # 用昨天的数据！
+        processed_target_factor_df = processed_target_factor_df.shift(1)  # 用昨天的数据！
+        for name, df in auxiliary_dfs.items():
+            auxiliary_dfs[name] = df.shift(1)
 
         # 步骤1：去极值
         # print("2. 去极值处理...")
-        processed_factor = self._winsorize(processed_factor)
+        processed_target_factor_df = self._winsorize(processed_target_factor_df)
 
         # 步骤2：中性化
         if self.preprocessing_config.get('neutralization', {}).get('enable', False):
             # print("3. 中性化处理...")
-            processed_factor = self._neutralize(processed_factor, auxiliary_df_dict)
+            processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,auxiliary_dfs,neutral_dfs, factor_school)
         else:
             print("3. 跳过中性化处理...")
 
         # 步骤3：标准化
         # print("4. 标准化处理...")
-        processed_factor = self._standardize(processed_factor)
+        processed_target_factor_df = self._standardize(processed_target_factor_df)
 
         # 统计处理结果
-        self._print_processing_stats(factor_data, processed_factor, universe_df)
+        self._print_processing_stats(target_factor_df, processed_target_factor_df)
 
-        return processed_factor
-    #ok
+        return processed_target_factor_df
+
+    # ok#okdiff
     def _winsorize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
         """
         去极值处理
@@ -138,104 +137,148 @@ class FactorProcessor:
             return factor_data.clip(lower_bound, upper_bound, axis=0)
 
         return processed_factor
-    #ok
+
+    # ok
     def _neutralize(self,
                     factor_data: pd.DataFrame,
-                    auxiliary_df_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+                    target_factor_name:str,
+                    auxiliary_dfs: Dict[str, pd.DataFrame],
+                    neutral_dfs: Dict[str, pd.DataFrame],
+                    factor_school: str  # <-- 新增的关键参数：因子门派
+                    ) -> pd.DataFrame:
         """
-        中性化处理
-        
-        Args:
-            factor_data: 因子数据
-            auxiliary_df_dict: 辅助数据
-            
-        Returns:
-            中性化后的因子数据
-        """
+         根据因子所属的“门派”，自动选择最合适的中性化方案。
+         Args:
+             factor_data: 待中性化的因子数据 (T-1日信息)
+             target_factor_name: 待中性化因子的名称
+             auxiliary_dfs: 辅助数据字典 (可能包含Beta等，根据您的实际约定)
+             neutral_dfs: 包含了市值和预处理好的行业哑变量数据的字典 (日期-股票代码的DataFrame)
+             factor_school: 因子门派 ('fundamentals', 'trend', 'microstructure')
+
+         Returns:
+             中性化后的因子数据
+         """
         neutralization_config = self.preprocessing_config.get('neutralization', {})
-        factors_to_neutralize = neutralization_config.get('factors', [])
+        if not neutralization_config.get('enable', False):
+            return factor_data
 
-        if not auxiliary_df_dict:
-            raise ValueError("  警告: 缺少辅助数据，中性化处理进行不下去")
-
+        logger.info(f"  > 正在对 '{factor_school}' 派因子 '{target_factor_name}' 进行中性化处理...")
         processed_factor = factor_data.copy()
 
+        # --- 阶段一：(可选) 因子残差化 (仅针对市场微观派) ---
+        # 残差化通常是对时间序列进行去均值，与截面中性化是两个不同的操作
+        if factor_school == 'microstructure':
+            window = neutralization_config.get('residualization_window', 20)
+            logger.info(f"    > 应用时间序列残差化 (窗口: {window}天)...")
+            # 确保 min_periods 不会太小导致过多 NaN
+            factor_mean = processed_factor.rolling(window=window, min_periods=max(1, int(window * 0.5))).mean()
+            processed_factor = processed_factor - factor_mean
+
+        # --- 阶段二：确定本次回归需要中性化的因子列表 ---
+        factors_to_neutralize = []
+        if factor_school == 'fundamentals':
+            factors_to_neutralize = ['market_cap', 'industry']
+        elif factor_school == 'momentum':
+            factors_to_neutralize = ['market_cap', 'industry', 'pct_chg_beta']
+        elif factor_school == 'microstructure':
+            factors_to_neutralize = ['market_cap', 'industry']
+
+        if not factors_to_neutralize:
+            logger.info(f"    > '{factor_school}' 派因子无需中性化。")
+            return processed_factor
+
+        # --- 阶段三：逐日进行截面回归中性化 ---
         for date in processed_factor.index:
-            # 获取当天的因子值
+            # 获取当天待中性化的因子数据（因变量 y）
             y = processed_factor.loc[date].dropna()
-            if len(y) < 20:  # 至少需要20个样本
+            if len(y) < 20:  # 确保有足够多的样本进行回归，避免过拟合或回归不稳定 todo 实盘需注意，这设置的20
+                logger.debug(f"    日期 {date.date()} 样本数不足 ({len(y)} < 20)，跳过中性化。")
+                # 当天数据如果不足，将处理后的因子值设为NaN，表示该日未进行有效中性化
+                processed_factor.loc[date] = np.nan
                 continue
 
-            # 构建回归变量
-            X_list = []
-            feature_names = []
+            # a) 构建回归自变量矩阵 X
+            # X_df 的索引必须与 y 的索引（即当前日期有因子值的股票）保持一致
+            X_df = pd.DataFrame(index=y.index)
 
-            # 市值中性化
-            if 'market_cap' in factors_to_neutralize and 'total_mv' in auxiliary_df_dict:
-                mv_data = auxiliary_df_dict['total_mv']
-                if date in mv_data.index:
-                    mv_values = mv_data.loc[date, y.index].dropna()
-                    if len(mv_values) > 0:
-                        # 取对数
-                        log_mv = np.log(mv_values)
-                        X_list.append(log_mv)
-                        feature_names.append('log_market_cap')
+            # --- 市值因子 (从 neutral_dfs 获取) ---
+            if 'market_cap' in factors_to_neutralize:
+                if 'total_mv' not in neutral_dfs:
+                    raise ValueError(f"  错误: neutral_dfs 中缺少 'total_mv' 数据，无法进行市值中性化。")
 
-            # 行业中性化
-            if 'industry' in factors_to_neutralize and 'industry' in auxiliary_df_dict:
-                industry_data = auxiliary_df_dict['industry']
-                if date in industry_data.index:
-                    industry_values = industry_data.loc[date, y.index].dropna()
-                    if len(industry_values) > 0:
-                        # 创建行业哑变量
-                        industry_dummies = pd.get_dummies(industry_values, prefix='industry')
-                        # 去掉一个行业避免共线性
-                        if industry_dummies.shape[1] > 1:
-                            industry_dummies = industry_dummies.iloc[:, :-1]
+                mv_series = neutral_dfs['total_mv'].loc[date]
+                # 对市值取对数，这是常见做法，因为市值分布通常是偏态的
+                X_df['log_market_cap'] = np.log(mv_series.reindex(y.index))  # 确保与 y 的索引对齐
 
-                        for col in industry_dummies.columns:
-                            X_list.append(industry_dummies[col])
-                            feature_names.append(col)
+            # --- 行业因子 (从 neutral_dfs 获取预处理好的哑变量) ---
+            if 'industry' in factors_to_neutralize:
+                # 找到所有以 'industry_' 开头的辅助数据键，这些就是预处理好的行业哑变量
+                # 小白解释：列表推导式，高效地从字典键中筛选出所有行业哑变量的名称。
+                industry_dummy_keys = [k for k in neutral_dfs.keys() if k.startswith('industry_')]
 
-            # 执行回归
-            if X_list:
-                try:
-                    # 对齐数据
-                    common_index = y.index
-                    for x in X_list:
-                        common_index = common_index.intersection(x.index)
+                if not industry_dummy_keys:
+                   raise ValueError(
+                        f"   neutral_dfs 中未发现任何预处理的行业哑变量（以 'industry_' 开头），行业中性化失败。")
+                else:
+                    current_date_industry_dummies = pd.DataFrame(index=y.index)
+                    for industry_key in industry_dummy_keys:
+                        # 从 neutral_dfs 中获取对应行业的 DataFrame
+                        # 然后 loc[date] 获取当前日期的数据
+                        # reindex(y.index) 确保哑变量与当前日期的 y 因子值股票对齐
+                        dummy_series = neutral_dfs[industry_key].loc[date]
+                        current_date_industry_dummies[industry_key] = dummy_series.reindex(y.index)
 
-                    if len(common_index) > 10:
-                        # 构建回归矩阵
-                        X_matrix = pd.DataFrame(index=common_index)
-                        for i, x in enumerate(X_list):
-                            X_matrix[feature_names[i]] = x.loc[common_index]
+                    # 合并所有行业哑变量到 X_df
+                    X_df = X_df.join(current_date_industry_dummies)
 
-                        y_aligned = y.loc[common_index]
+            # --- Beta 因子 (假设仍在 auxiliary_dfs 中) ---
+            if 'pct_chg_beta' in factors_to_neutralize:
+                if 'pct_chg_beta' not in auxiliary_dfs:
+                    raise ValueError(f"  错误: auxiliary_dfs 中缺少 'pct_chg_beta' 数据，无法进行Beta中性化。")
 
-                        # 去除缺失值
-                        valid_mask = X_matrix.notna().all(axis=1) & y_aligned.notna()
-                        if valid_mask.sum() > 10:
-                            X_clean = X_matrix[valid_mask]
-                            y_clean = y_aligned[valid_mask]
+                beta_series = auxiliary_dfs['pct_chg_beta'].loc[date]
+                X_df['pct_chg_beta'] = beta_series.reindex(y.index)  # 确保与 y 的索引对齐
 
-                            # 线性回归
-                            reg = LinearRegression()
-                            reg.fit(X_clean, y_clean)
+            # b) 数据对齐与清洗
+            # 使用 join 和 dropna 来确保 y 和 X_df 的股票代码对齐，并去除所有 NaN
+            # 注意：X_df 在构建时已经基于 y.index，但如果某个辅助因子本身有 NaN，这里会进一步清理
+            combined_df = pd.concat([y, X_df], axis=1).dropna()
 
-                            # 计算残差
-                            y_pred = reg.predict(X_clean)
-                            residuals = y_clean - y_pred
+            # 确保清理后的样本数满足回归要求
+            # X_df.shape[1] 是自变量的数量，我们需要比自变量数量更多的样本，避免欠拟合
+            # 经验法则：样本数至少是自变量数量的几倍（例如，2-5倍）
+            num_predictors = X_df.shape[1]  # 计算实际的自变量数量
+            if len(combined_df) < num_predictors + 5:  # 至少要比变量数多5个样本，这是一个经验值，可以根据需求调整 ，x是自变量个数，y是因变量（测试的天数），甚至都赶不上自变量的个数，那还测试什么 干脆报错把 但是实际很难出现，x最多就100来个（因为行业就100来个），我们回测天数都是几百天，
+                logger.warning(
+                    f"  警告: 日期 {date.date()} 清理后样本数不足 ({len(combined_df)} < {num_predictors + 5})，跳过中性化。")
+                processed_factor.loc[date] = np.nan  # 将当天因子数据设为NaN
+                continue
 
-                            # 更新因子值为残差
-                            processed_factor.loc[date, residuals.index] = residuals
+            # 提取清理后的因变量和自变量
+            y_clean = combined_df[y.name]
+            # 确保 X_clean 拿到的是对齐后的，并且是 X_df 中实际使用的列
+            X_clean = combined_df[X_df.columns]
 
-                except Exception as e:
-                    raise RuntimeError(f"  警告: 日期 {date} 中性化失败: {e}")
+            # c) 执行回归并计算残差
+            try:
+                # fit_intercept=True 默认包含截距项，通常是回归分析的良好实践
+                reg = LinearRegression(fit_intercept=True)
+                reg.fit(X_clean, y_clean)
 
-        # print(f"  中性化完成，处理因子: {factors_to_neutralize}")
+                # 计算残差：原始因子值 - 因子模型预测值
+                residuals = y_clean - reg.predict(X_clean)
+
+                # 将中性化后的残差更新回 processed_factor
+                # 只更新那些参与了回归的股票（即 residuals.index）
+                processed_factor.loc[date, residuals.index] = residuals
+                logger.debug(f"    日期 {date.date()} 中性化成功，处理了 {len(residuals)} 个样本。")
+
+            except Exception as e:
+                # 捕获回归可能出现的错误，如矩阵奇异（共线性）、样本不足导致无法拟合等
+                raise ValueError(f"  警告: 日期 {date.date()} 中性化回归失败: {e}。该日因子数据将标记为NaN。") #raise
         return processed_factor
-    #ok
+
+    # ok
     def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
         """
         标准化处理
@@ -282,12 +325,12 @@ class FactorProcessor:
             processed_factor[single_value_mask] = 0.0
             return processed_factor
 
-        raise  RuntimeError("请指定标准化方式")
+        raise RuntimeError("请指定标准化方式")
 
     def _print_processing_stats(self,
                                 original_factor: pd.DataFrame,
-                                processed_factor: pd.DataFrame,
-                                universe_df: pd.DataFrame):
+                                processed_factor: pd.DataFrame
+                                ):
         """打印处理统计信息"""
         logger.info("因子预处理统计:")
 
@@ -298,21 +341,15 @@ class FactorProcessor:
         # 处理后因子统计
         proc_valid = processed_factor.notna().sum().sum()
 
-        # 股票池统计
-        if universe_df:
-            universe_valid = universe_df.sum().sum()
-
-            logger.info(f"  原始因子有效值: {orig_valid:,} / {orig_total:,} ({orig_valid / orig_total:.1%})")
-            logger.info(f"  处理后有效值: {proc_valid:,} / {universe_valid:,} ({proc_valid / universe_valid:.1%})")
-
         # 分布统计
         all_values = processed_factor.values.flatten()
         all_values = all_values[~np.isnan(all_values)]
 
         if len(all_values) > 0:
-            logger.info(f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f} （z标准化，均值一定是0）")
+            logger.info(
+                f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f} （z标准化，均值一定是0）")
             logger.info(f"  分位数: 1%={np.percentile(all_values, 1):.3f}, "
-                  f"99%={np.percentile(all_values, 99):.3f}")
+                        f"99%={np.percentile(all_values, 99):.3f}")
 
 
 class FactorCalculator:
@@ -328,7 +365,7 @@ class FactorCalculator:
             config: 配置字典
         """
         self.config = config
-        self.target_factor_config = config.get('target_factor', {})
+        self.target_factor_config = config.get('target_factors_for_evaluation', {})
 
     def calculate_factor(self, data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         """
@@ -421,7 +458,7 @@ if __name__ == "__main__":
     factor_data.iloc[10:15, 5:10] *= 10
 
     # 模拟股票池
-    universe_df = pd.DataFrame(
+    stock_pool_df = pd.DataFrame(
         index=dates,
         columns=stocks,
         data=True
@@ -440,7 +477,7 @@ if __name__ == "__main__":
     processor = create_factor_processor(config)
     processed_factor = processor.process_factor(
         factor_data,
-        universe_df,
+        stock_pool_df,
         auxiliary_df_dict
     )
 

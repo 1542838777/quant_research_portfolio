@@ -98,12 +98,10 @@ def calculate_ic_vectorized(
     logger.info(f"\t向量化计算 {method.capitalize()} 类型IC (生产级版本)...")
     stats_dict = {}
     ic_series_dict = {}
+    if factor_df.empty or price_df.empty:
+        raise ValueError("输入的因子或价格数据为空，无法计算IC。")
     for period in forward_periods:
         forward_returns = price_df.shift(-period) / price_df - 1
-
-        # --- 1. 数据验证与对齐 ---
-        if factor_df.empty or forward_returns.empty:
-            raise ValueError("输入数据为空，无法计算IC。")
 
 
         common_idx = factor_df.index.intersection(forward_returns.index)
@@ -316,7 +314,7 @@ def calculate_quantile_returns(
         merged_df = pd.concat([factor_long, returns_long], axis=1).dropna()
 
         if merged_df.empty:
-            logger.warning(f"  > 在周期 {period}，因子和收益数据没有重叠，无法计算。")
+            logger.warning(f"  > 在周期 {period}，因子和收益数据没有重叠，无法计算。")#  考虑 要不要直接报错 不能，因为forward_returns有nan很正常
             # 创建一个空的DataFrame以保持输出结构一致性
             empty_cols = [f'Q{i + 1}' for i in range(n_quantiles)] + ['TopMinusBottom']
             results[period] = pd.DataFrame(columns=empty_cols, dtype='float64')

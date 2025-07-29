@@ -5,6 +5,7 @@
 提供一站式量化研究解决方案。
 """
 import sys
+import traceback
 
 import pandas as pd
 from typing import Dict, List, Any, Union, Tuple
@@ -63,6 +64,14 @@ class StrategyFactory:
 
         logger.info("策略工厂初始化完成（config读取，工作区间准备）")
 
+    def get_category_type(self, factor_name):
+        factor_definition = self.data_manager.config['factor_definition']
+        return factor_definition[factor_definition['name'] == factor_name]['category_type']
+
+    def get_school(self, factor_name):
+        factor_definition = self.data_manager.config['factor_definition']
+        return factor_definition[factor_definition['name'] == factor_name]['school']
+
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """加载配置文件"""
         config_file = Path(config_path)
@@ -81,7 +90,7 @@ class StrategyFactory:
             'data': {
                 'start_date': '2020-01-01',
                 'end_date': '2024-12-31',
-                'universe': 'hs300',
+                'stack_pool': 'hs300',
                 'benchmark': '000300.SH'
             },
             'factor_test': {
@@ -174,37 +183,25 @@ class StrategyFactory:
         )
 
     # return with动态股票池处理好的数据
-    def load_all_data_be_universe(self) -> Dict[str, pd.DataFrame]:
+    def processed_raw_df_dict_by_stock_pool_processed(self) -> Dict[str, pd.DataFrame]:
         """加载数据"""
-        logger.info("开始加载基础必要数据...")
-        data_dict = self.data_manager.load_all_data()
-        logger.info(f"数据加载完成，包含 {len(data_dict)} 个数据集（data_dict）")
+        data_dict = self.data_manager.processed_raw_data_dict_by_stock_pool_()
         return data_dict
 
     def test_single_factor(self,
-                           factor_name: str,
-                           factor_data: pd.DataFrame,
-                           factor_category_type: str,
+                           target_factor_name: str,
+
                            **test_kwargs) -> Dict[str, Any]:
         """
         测试单个因子
         
         Args:
-            factor_data: 因子数据
+
             factor_name: 因子名称
-            category: 因子类别
+
             **test_kwargs: 测试参数
         """
-        # 初始化单因子测试器（如果还没有）
-        if self.single_factor_tester is None:
-            self.single_factor_tester = SingleFactorTester(
-                data_dict=self.data_manager.raw_data,
-                config=self.config
-            )
 
-        if factor_category_type is None:
-            # 寻找
-            raise ValueError("请指定因子是什么类型的")
         # # 自动分类因子
         # 先注释下面的，问题：自动识别因子类型 函数有待补充！ 暂且不用 不是很要紧
         # if category is None and auto_register:
@@ -224,50 +221,49 @@ class StrategyFactory:
 
         # 执行测试
         test_result = self.single_factor_tester.comprehensive_test(
-            factor_data=factor_data,
-            factor_name=factor_name,
+
+            target_factor_name=target_factor_name,
             **test_kwargs
         )
-        self.factor_manager._save_results(test_result, factor_name)
+        self.factor_manager._save_results(test_result, target_factor_name)
         return test_result
 
     # 批量测试！起始。先配置 基础底层target因子，比如价格，。。 然后自己换算出目标因子，然后为给这个factor_data_dict todo
     def batch_test_factors(self,
-                           factor_data_dict: Dict[str, pd.DataFrame],
-                           factor_category_type_dict: Dict[str, str],
+                           target_factors_dict: Dict[str, pd.DataFrame],
+                           target_factors_category_dict: Dict[str, str],
+                           target_factor_school_type_dict: Dict[str, str],
                            **test_kwargs) -> Dict[str, Any]:
         """
         批量测试因子
-        
-        Args:
-            factor_data_dict: 因子数据字典
-            category_mapping: 因子类别映射
-            **test_kwargs: 测试参数
         """
 
         # 初始化单因子测试器
         if self.single_factor_tester is None:
             self.single_factor_tester = SingleFactorTester(
-                data_dict=self.data_manager.raw_data,
+                raw_dfs=self.data_manager.raw_dfs,
+                processed_raw_data=self.data_manager.processed_raw_data,
+                target_factors_dict=target_factors_dict,
+                target_factors_category_dict=target_factors_category_dict,
+                target_factor_school_type_dict=target_factor_school_type_dict,
+                stock_pools_dict=self.data_manager.stock_pools_dict,
                 config=self.config
-
             )
 
         # 批量测试
         results = {}
-        for factor_name, factor_data in factor_data_dict.items():
+        for factor_name, factor_data in target_factors_dict.items():
             try:
                 # 执行测试
                 result = self.test_single_factor(
-                    factor_name=factor_name,
-                    factor_data=factor_data,
-                    factor_category_type=factor_category_type_dict[factor_name],
+                    target_factor_name=factor_name,
                     **test_kwargs
                 )
                 self.factor_manager._save_results(results[factor_name], factor_name)
                 results[factor_name] = result
             except Exception as e:
-                logger.error(f"因子 {factor_name} 测试失败: {e}")
+                # traceback.print_exc()
+                raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
 
         return results
 
@@ -285,7 +281,6 @@ class StrategyFactory:
                     category_value = FactorCategory[category.upper()].value
                 except KeyError:
                     raise ValueError(f"未知的因子类别: {category}")
-
 
             summary = summary[summary['category'] == category_value]
 
@@ -477,31 +472,143 @@ class StrategyFactory:
     # 返回目标学术因子 （通过计算base Factor
     def get_config_target_factor_dict_by_cal_base_factor_batch(self, raw_data_dict: Dict[str, pd.DataFrame]) -> Tuple[
         Dict[
-            str, pd.DataFrame], Dict[str,str]]:
+            str, pd.DataFrame], Dict[str, str]]:
         ret_data_dict = {}
         factor_category_dict = {}
         # 拿到目标学术因子
-        aca_target_factors = self.config['target_factor']['fields']
-        for target_factor in aca_target_factors:
-            target_data_df, category_type = self.get_config_target_factor_dict_by_cal_base_factor(target_factor,
-                                                                                                  raw_data_dict)
-            ret_data_dict.update({target_factor: target_data_df})
-            factor_category_dict.update({target_factor: category_type})
+        aca_target_factors = self.config['target_factors_for_evaluation']['fields']
+        for target_factors_for_evaluation in aca_target_factors:
+            target_data_df, category_type, school = self.get_done_cal_factor_and_category_and_school(
+                target_factors_for_evaluation,
+                raw_data_dict)
+            ret_data_dict.update({target_factors_for_evaluation: target_data_df})
+            factor_category_dict.update({target_factors_for_evaluation: category_type})
         return ret_data_dict, factor_category_dict
 
     # 返回目标学术因子 （通过计算base Factor
-    def get_config_target_factor_dict_by_cal_base_factor(self, target_factor_name,
-                                                         raw_data_dict: Dict[str, pd.DataFrame]) -> Tuple[
-        pd.DataFrame, str]:
-        factor_definition = pd.DataFrame(self.config['factor_definition'])
-        # 价值因子
+    def get_done_cal_factor_and_category_and_school(
+            self,
+            target_factor_name: str,
+            raw_data_dict: Dict[str, pd.DataFrame]
+    ) -> Tuple[pd.DataFrame, str, str]:
+        """
+        【专业版】因子计算工厂。
+        根据因子名称，调用对应的计算逻辑，并返回处理好的因子DataFrame及其元数据。
+        """
+        # --- 在函数开头一次性查找因子定义 ---
+        factor_definitions = pd.DataFrame(self.config['factor_definition'])
+        factor_info = factor_definitions[factor_definitions['name'] == target_factor_name]
+
+        if factor_info.empty:
+            raise ValueError(f"在配置文件中未找到因子 '{target_factor_name}' 的定义！")
+
+        # 将Series转换为单个值，方便调用
+        category_type = factor_info['category_type'].iloc[0]
+        school = factor_info['school'].iloc[0]
+
+        logger.info(f"开始计算学术因子: '{target_factor_name}' (门派: {school})")
+
+        # --- 因子计算逻辑的分发 ---
+
         if 'pe_ttm_inv' == target_factor_name:
-            # PE因子
-            pe_data = raw_data_dict['pe_ttm'].copy()
-            pe_data = pe_data.where(pe_data > 0)  # 只过滤<=0的异常值
-            category_type = factor_definition[factor_definition['name'] == target_factor_name]['category_type']
-            return 1 / pe_data, category_type
-        raise ValueError("请定义学术因子计算逻辑！")
+            # PE因子倒数 (E/P)
+            pe_df = raw_data_dict['pe_ttm'].copy()
+            # PE值必须为正才有意义（负的盈利，E/P失去意义）
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+
+        # --- 【为你补充的三个因子逻辑】 ---
+
+        elif 'bm_ratio' == target_factor_name:
+            # 账面市值比 (B/M), 即市净率倒数
+            pb_df = raw_data_dict['pb'].copy()
+            # PB值必须为正才有意义 (负的净资产，B/M失去意义)
+            pb_df = pb_df.where(pb_df > 0)
+            factor_df = 1 / pb_df
+            return factor_df, category_type, school
+
+        elif 'momentum_12_1' == target_factor_name:
+            # 经典12-1月动量
+            close_df = raw_data_dict['close'].copy()
+            # 计算 T-1月 / T-12月 的价格比
+            # 假设每月21个交易日，每年252个交易日
+            price_1m_ago = close_df.shift(21)
+            price_12m_ago = close_df.shift(252)
+
+            # 确保分母不为0或负（虽然股价基本不会）
+            price_12m_ago = price_12m_ago.where(price_12m_ago > 0)
+
+            factor_df = (price_1m_ago / price_12m_ago) - 1
+            return factor_df, category_type, school
+
+        elif 'turnover_rate_abnormal_20d' == target_factor_name:
+            # 异常换手率（20日窗口）
+            turnover_df = raw_data_dict['turnover_rate'].copy()
+
+            # 计算20日滚动均值，min_periods=10确保在数据初期也能尽快产出信号
+            turnover_mean_20d = turnover_df.rolling(window=20, min_periods=10).mean()
+
+            # 用当日值减去均值，得到“超预期”的异动信号
+            factor_df = turnover_df - turnover_mean_20d
+            return factor_df, category_type, school
+
+        # --- 如果有更多因子，在这里继续添加 elif 分支 ---
+
+        raise ValueError(f"因子 '{target_factor_name}' 的计算逻辑尚未定义！")
+
+    def get_target_factors_entity(self):
+
+        technical_df_dict = {}
+        technical_category_dict = {}
+        technical_school_dict = {}
+
+        # 找出所有目标target 因子。
+        # 通过config的标识 找出需要学术计算的因子
+        # 自生的门派，重新align Require的因子，参与计算，返回学术_df
+        target_factors_for_evaluation = self.data_manager.config['target_factors_for_evaluation']['fields']
+
+        for target_factor_name in target_factors_for_evaluation:
+            need_technical_cal = self.get_one_factor_denifition(target_factor_name)['need_technical_cal']
+            if need_technical_cal:
+                # 根据门派，找出所需股票池
+                # 自行计算！
+                target_data_df, category_type, school = self.build_technical_factor_entity(target_factor_name)
+
+            else:
+                # 不需要额外学术计算
+                target_data_df, category_type, school = self.build_base_factor_entity(target_factor_name)
+            technical_df_dict.update({target_factor_name: target_data_df})
+            technical_category_dict.update({target_factor_name: category_type})
+            technical_school_dict.update({target_factor_name: school})
+
+        return technical_df_dict, technical_category_dict, technical_school_dict
+
+    def get_one_factor_denifition(self, target_factor_name):
+        factor_definition = self.data_manager.config['factor_definition']
+        factor_definition_dict = {item['name']: item for item in factor_definition}
+        return factor_definition_dict.get(target_factor_name)
+
+    def build_technical_factor_entity(self, target_factor_name):
+        cal_require_base_fields = self.get_one_factor_denifition(target_factor_name)['cal_require_base_fields']
+        stock_pool = self.data_manager.get_stock_pool_by_factor_name(target_factor_name)
+
+        # 拿出require的原生df 基于同股票池维度对齐
+        require_dfs = {field:self.data_manager.raw_dfs[field] for field in  cal_require_base_fields}
+        require_cal_dfs = self.data_manager._align_many_raw_dfs_by_stock_pool_and_fill(
+            require_dfs, stock_pool)
+        # 自行计算！
+        return self.get_done_cal_factor_and_category_and_school(
+            target_factor_name,
+            require_cal_dfs)
+
+    def build_base_factor_entity(self, target_factor_name):
+        df = self.data_manager.processed_raw_data[target_factor_name]
+        # category
+        category = self.factor_manager.get_category_type(target_factor_name)
+        scholl = self.factor_manager.get_school(target_factor_name)
+
+        return df, category, scholl
 
 
 class FactorPipeline:
@@ -517,7 +624,7 @@ class FactorPipeline:
         results = {}
 
         # 1. 加载数据
-        data_dict = self.factory.load_all_data_be_universe()
+        data_dict = self.factory.processed_raw_df_dict_by_stock_pool_processed()
 
         # 2. 创建因子
         factor_dict = {}
@@ -526,7 +633,6 @@ class FactorPipeline:
             factor_type = config.get('type')
             factor_params = config.get('params', {})
 
-            # TODO: 实现因子创建逻辑
 
         # 3. 批量测试
         test_results = self.factory.batch_test_factors(factor_dict)

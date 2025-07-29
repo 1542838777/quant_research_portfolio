@@ -254,7 +254,7 @@ def run_backtest(config: dict, data_dict: dict, model, X: pd.DataFrame, result_d
     engine = create_backtest_engine(
         start_date=config['start_date'],
         end_date=config['end_date'],
-        universe=list(data_dict['close'].columns),
+        stack_pool=list(data_dict['close'].columns),
         rebalance_freq=backtest_config['rebalance_freq'],
         n_stocks=backtest_config['n_stocks'],
         fee_rate=backtest_config['fee_rate'],

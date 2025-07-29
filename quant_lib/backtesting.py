@@ -22,7 +22,7 @@ class BacktestConfig:
     """回测配置类"""
     start_date: str
     end_date: str
-    universe: List[str]
+    stack_pool: List[str]
     rebalance_freq: str = 'day'  # 'day', 'week', 'month', 'quarter'
     n_stocks: int = 10
     fee_rate: float = 0.0003 * 2 + 0.001
@@ -330,7 +330,7 @@ class BacktestEngine:
 def create_backtest_engine(
         start_date: str,
         end_date: str,
-        universe: List[str],
+        stack_pool: List[str],
         rebalance_freq: str = 'month',
         n_stocks: int = 50,
         fee_rate: float = 0.0003*2 + 0.001,
@@ -344,7 +344,7 @@ def create_backtest_engine(
     Args:
         start_date: 开始日期
         end_date: 结束日期
-        universe: 股票池
+        stack_pool: 股票池
         rebalance_freq: 调仓频率，'day', 'week', 'month', 'quarter'
         n_stocks: 持仓股票数量
         fee_rate: 交易费率
@@ -358,7 +358,7 @@ def create_backtest_engine(
     config = BacktestConfig(
         start_date=start_date,
         end_date=end_date,
-        universe=universe,
+        stack_pool=stack_pool,
         rebalance_freq=rebalance_freq,
         n_stocks=n_stocks,
         fee_rate=fee_rate,
