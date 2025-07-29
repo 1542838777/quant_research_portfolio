@@ -259,8 +259,8 @@ class StrategyFactory:
                     target_factor_name=factor_name,
                     **test_kwargs
                 )
-                self.factor_manager._save_results(results[factor_name], factor_name)
                 results[factor_name] = result
+                self.factor_manager._save_results(results[factor_name], factor_name)
             except Exception as e:
                 # traceback.print_exc()
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
