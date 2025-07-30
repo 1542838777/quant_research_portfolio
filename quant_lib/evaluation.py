@@ -1,4 +1,5 @@
 import vectorbt as vbt
+from pandas import Series
 
 from quant_lib import logger
 from quant_lib.utils.dataFrame_utils import align_dataframes
@@ -79,7 +80,7 @@ def calculate_ic_vectorized(
         forward_periods: List[int] = [1, 5, 20],
         method: str = 'spearman',
         min_stocks: int = 10
-) -> Tuple[Dict[str, object], Dict[str, object]]:
+) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
     """
     【生产级版本】向量化计算因子IC值及相关统计指标。
     此版本逻辑严密，接口清晰，返回纯粹的IC序列和独立的统计数据。
@@ -96,8 +97,8 @@ def calculate_ic_vectorized(
         - stats_dict (Dict): 包含IC均值、ICIR、t值、p值等核心统计指标的字典。
     """
     logger.info(f"\t向量化计算 {method.capitalize()} 类型IC (生产级版本)...")
-    stats_dict = {}
-    ic_series_dict = {}
+    stats_periods_dict = {}
+    ic_series_periods_dict = {}
     if factor_df.empty or price_df.empty:
         raise ValueError("输入的因子或价格数据为空，无法计算IC。")
     for period in forward_periods:
@@ -147,8 +148,8 @@ def calculate_ic_vectorized(
         if abs(ic_mean) > 1e-10 and np.sign(ic_t_stat) != np.sign(ic_mean):
             raise ValueError("严重错误：t统计量与IC均值方向不一致！")
         dayStr = f'{period}d'
-        ic_series_dict[dayStr] = ic_series
-        stats_dict[dayStr] = {
+        ic_series_periods_dict[dayStr] = ic_series
+        stats_periods_dict[dayStr] = {
             # 'ic_series': ic_series,
             'ic_mean': ic_mean,  # >=0.02 及格 。超过0.04良好 超过0.06 超级好
             'ic_std': ic_std,  # 标准差，波动情况
@@ -163,7 +164,7 @@ def calculate_ic_vectorized(
             'ic_Total Days': len(common_idx),
             'ic_Coverage Rate': len(ic_series_cleaned) / len(common_idx)
         }
-    return ic_series_dict, stats_dict
+    return ic_series_periods_dict, stats_periods_dict
 
 
 def calculate_ic_decay(factor_df: pd.DataFrame,
@@ -213,7 +214,7 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
 
 
 # ok
-def stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Dict[str, object]:
+def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Tuple[Dict[str, pd.DataFrame],Dict[str,  pd.DataFrame]]:
     """
     计算并汇总分层回测的关键性能指标。
 
@@ -224,7 +225,9 @@ def stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Dict[str
     Returns:
         一个字典，包含了每个周期的汇总统计指标。
     """
-    stats = {}
+    quantile_stats_periods_dict = {}
+    quantile_returns_periods_dict = {}
+
     # 修正了循环的写法，'result' 就是当前周期的DataFrame
     for period, result in results.items():
         if result.empty:
@@ -261,7 +264,8 @@ def stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Dict[str
 
         # --- 存储结果 ---
         # 'period' 变量用于创建描述性的键，如 '5d'
-        stats[f'{period}d'] = {
+        quantile_returns_periods_dict[f'{period}d'] = result
+        quantile_stats_periods_dict[f'{period}d'] = {
             # 'returns_data': result,
             'mean_returns': mean_returns,
             'tmb_return_period': tmb_mean_period_return,  # 特定周期的平均收益 (例如，5日平均收益)
@@ -275,14 +279,14 @@ def stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Dict[str
             'quantile_means': quantile_means
         }
 
-    return stats
+    return quantile_returns_periods_dict,quantile_stats_periods_dict
 #ok
 def calculate_quantile_returns(
         factor_df: pd.DataFrame,
         price_df: pd.DataFrame,
         n_quantiles: int = 5,
         forward_periods: List[int] = [1, 5, 20]
-) -> (Dict[int, pd.DataFrame], Dict[str, pd.DataFrame]):
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
     """
    计算因子分位数的未来收益率。
     该版本采用向量化实现，并使用rank()进行稳健分组，
@@ -350,9 +354,7 @@ def calculate_quantile_returns(
 
         # 8. 存储结果
         results[period] = quantile_returns_wide.sort_index(axis=1)
-    stats = stats_result(results, n_quantiles)
-
-    return results, stats
+    return  quantile_stats_result(results, n_quantiles)
 
 
 def plot_ic_series(ic_series: pd.Series, title: str = 'IC时间序列', figsize: Tuple[int, int] = (12, 6)):
@@ -574,13 +576,13 @@ def calculate_max_drawdown_robust(
 
 
 # ok
-def run_fama_macbeth_regression(
+def fama_macbeth_regression(
         factor_df: pd.DataFrame,
         price_df: pd.DataFrame,
         forward_returns_period: int = 20,
         weights_df: pd.DataFrame = None,
         neutral_factors: Dict[str, pd.DataFrame] = None
-) -> Dict[str, Any]:
+) -> Tuple[Series,Dict[str, Any]]:
     """
     【最终生产版】对单个因子进行Fama-MacBeth回归检验。
     此版本逻辑结构清晰，代码健壮，并使用Newey-West标准误修正t检验，符合学术界和业界的严格标准。
@@ -774,4 +776,35 @@ def run_fama_macbeth_regression(
         'skipped_dates': num_skipped_dates,
     }
 
-    return results_summary
+    return factor_returns_series,results_summary
+def fama_macbeth(
+                      factor_data: pd.DataFrame,
+                      close_df: pd.DataFrame,
+                      neutral_dfs: dict[str, pd.DataFrame],
+                      forward_periods,
+                      circ_mv_df: pd.DataFrame,
+                      factor_name: str) -> Tuple[Dict[str, pd.DataFrame],Dict[str, pd.DataFrame]]:
+    """
+    Fama-MacBeth回归法测试（黄金标准）
+
+    Args:
+        factor_data: 预处理后的因子数据
+        factor_name: 因子名称
+
+    Returns:
+        Fama-MacBeth回归结果字典
+    """
+    fm_stat_results_periods_dict = {}
+    factor_returns_series_periods_dict  = {}
+    for period in forward_periods:
+        # 运行Fama-MacBeth回归
+        factor_returns_series,fm_result = fama_macbeth_regression(
+            factor_df=factor_data,
+            price_df=close_df,
+            forward_returns_period=period,
+            weights_df=circ_mv_df,  # <-- 传入 流通市值作为权重，执行WLS
+            neutral_factors=neutral_dfs  # <-- 传入市值和行业作为控制变量
+        )
+        fm_stat_results_periods_dict[f'{period}d'] = fm_result
+        factor_returns_series_periods_dict[f'{period}d'] = factor_returns_series
+    return factor_returns_series_periods_dict,fm_stat_results_periods_dict

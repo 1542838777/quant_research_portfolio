@@ -23,9 +23,6 @@ sys.path.append(str(project_root))
 
 from quant_lib.data_loader import DataLoader
 from quant_lib.evaluation import (
-    calculate_ic, 
-    calculate_ic_decay,
-    plot_ic_series,
     calculate_ic_vectorized  # 添加向量化函数
 )
 from quant_lib.utils.file_utils import (

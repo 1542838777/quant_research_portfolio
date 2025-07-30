@@ -8,6 +8,8 @@
 
 支持批量测试、结果可视化和报告生成
 """
+from pandas import Series
+
 from data.local_data_load import load_index_daily, load_daily_hfq
 from projects._03_factor_selection.data_manager.data_manager import DataManager
 
@@ -34,8 +36,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
     calculate_ic_vectorized,
-    calculate_quantile_returns,
-    run_fama_macbeth_regression
+    calculate_quantile_returns, fama_macbeth
+
 )
 
 # 导入新的可视化管理器
@@ -118,7 +120,7 @@ class SingleFactorTester:
     def test_ic_analysis(self,
                          factor_data: pd.DataFrame,
                          close_df: pd.DataFrame,
-                         factor_name: str) -> Dict[str, Any]:
+                         factor_name: str) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
         """
         IC值分析法测试
 
@@ -130,15 +132,15 @@ class SingleFactorTester:
         Returns:
             IC分析结果字典
         """
-        _, stats_dict = calculate_ic_vectorized(factor_data, close_df, forward_periods=self.test_common_periods,
+        ic_series_periods_dict, stats_periods_dict = calculate_ic_vectorized(factor_data, close_df, forward_periods=self.test_common_periods,
                                                 method='spearman')
-        return stats_dict
+        return ic_series_periods_dict, stats_periods_dict
 
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
                                close_df: pd.DataFrame,
 
-                               factor_name: str) -> Dict[str, Any]:
+                               factor_name: str) ->Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         分层回测法测试
 
@@ -149,43 +151,24 @@ class SingleFactorTester:
         Returns:
             分层回测结果字典
         """
-        backtest_results, stats = calculate_quantile_returns(
+        quantile_returns_periods_dict, quantile_stats_periods_dict = calculate_quantile_returns(
             factor_data,
             close_df,
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
         )
 
-        return stats
+        return quantile_returns_periods_dict, quantile_stats_periods_dict
 
-    def test_fama_macbeth(self,
-                          factor_data: pd.DataFrame,
-                          close_df: pd.DataFrame,
-                          neurtal_dfs: dict[str, pd.DataFrame],
-                          circ_mv_df: pd.DataFrame,
-                          factor_name: str) -> Dict[str, Any]:
-        """
-        Fama-MacBeth回归法测试（黄金标准）
-
-        Args:
-            factor_data: 预处理后的因子数据
-            factor_name: 因子名称
-
-        Returns:
-            Fama-MacBeth回归结果字典
-        """
-        fm_results = {}
-        for period in self.test_common_periods:
-            # 运行Fama-MacBeth回归
-            fm_result = run_fama_macbeth_regression(
-                factor_df=factor_data,
-                price_df=close_df,
-                forward_returns_period=period,
-                weights_df=circ_mv_df,  # <-- 传入 流通市值作为权重，执行WLS
-                neutral_factors=neurtal_dfs  # <-- 传入市值和行业作为控制变量
-            )
-            fm_results[f'{period}d'] = fm_result
-        return fm_results
+    # def test_fama_macbeth(self,
+    #                       factor_data: pd.DataFrame,
+    #                       close_df: pd.DataFrame,
+    #                       neutral_dfs: dict[str, pd.DataFrame],
+    #                       circ_mv_df: pd.DataFrame,
+    #                       factor_name: str) -> Tuple[Dict[str, pd.DataFrame],Dict[str, pd.DataFrame]]:
+    #     return test_fama_macbeth(factor_data=factor_data, close_df=close_df, neutral_dfs=neutral_dfs,
+    #                       circ_mv_df=circ_mv_df,
+    #                       factor_name=factor_name)
 
     def comprehensive_test(self,
                            target_factor_name: str,
@@ -221,29 +204,32 @@ class SingleFactorTester:
 
         # 2. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
-        ic_results = self.test_ic_analysis(target_factor_processed, close_df, target_factor_name)
+        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df, target_factor_name)
 
         # 3. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
-        quantile_results = self.test_quantile_backtest(target_factor_processed, close_df, target_factor_name)
+        quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(target_factor_processed, close_df, target_factor_name)
 
         # 4. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
-        fm_results = self.test_fama_macbeth(target_factor_processed, close_df, neutral_dfs, circ_mv_df,
-                                            target_factor_name)
+        factor_returns_series_periods_dict,fm_stat_results_periods_dict = fama_macbeth(factor_data = target_factor_processed, close_df=close_df,forward_periods=self.test_common_periods, neutral_dfs= neutral_dfs, circ_mv_df = circ_mv_df,
+                                            factor_name = target_factor_name)
 
         # 5. 综合评价
         logger.info("5. 综合评价...")
-        evaluation_score_dict = self.evaluation_score_dict(ic_results, quantile_results, fm_results)
+        evaluation_score_dict = self.evaluation_score_dict(ic_series_periods_dict, ic_stats_periods_dict,
+                                                           quantile_returns_series_periods_dict, quantile_stats_periods_dict,
+                                                           factor_returns_series_periods_dict,
+                                                           fm_stat_results_periods_dict)
 
         # 整合结果
         comprehensive_results = {
             'factor_name': target_factor_name,
             'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'preprocess_method': preprocess_method,
-            'ic_analysis': ic_results,
-            'quantile_backtest': quantile_results,
-            'fama_macbeth': fm_results,
+            'ic_analysis': ic_stats_periods_dict,
+            'quantile_backtest': quantile_stats_periods_dict,
+            'fama_macbeth': fm_stat_results_periods_dict,
             'evaluate_factor_score': evaluation_score_dict
         }
         ret = self.summary(comprehensive_results, target_factor_name)
@@ -362,9 +348,11 @@ class SingleFactorTester:
         return neutral_dict
 
     def evaluation_score_dict(self,
-                              ic_results: Dict,
-                              quantile_results: Dict,
-                              fm_results: Dict) -> Dict[str, Any]:
+                              ic_series_periods_dict, ic_stats_periods_dict,
+                              quantile_returns_series_periods_dict, quantile_stats_periods_dict,
+                              factor_returns_series_periods_dict,
+                              fm_stat_results_periods_dict
+                              ) -> Dict[str, Any]:
 
         ret = {}
         for period in self.test_common_periods:
