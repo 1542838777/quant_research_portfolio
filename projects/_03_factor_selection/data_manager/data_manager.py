@@ -206,7 +206,7 @@ class DataManager:
         aligned_data = {}
         for factor_name, raw_df in raw_dfs.items():
             # 1. 确定当前因子需要哪个股票池！
-            aligned_df = self.__align_one_raw_dfs_by_stock_pool_and_fill(factor_name, raw_df, stock_pool_param)
+            aligned_df = self._align_one_df_by_stock_pool_and_fill(factor_name, raw_df, stock_pool_param)
             aligned_data[factor_name] = aligned_df
         return aligned_data
 
@@ -842,13 +842,14 @@ class DataManager:
             return 'microstructure_stock_pool'
         raise ValueError('没有定义因子属于哪一门派')
 
-    def __align_one_raw_dfs_by_stock_pool_and_fill(self, factor_name, raw_df_param,
-                                                   stock_pool_param: pd.DataFrame = None):
+    def _align_one_df_by_stock_pool_and_fill(self, factor_name, raw_df_param,
+                                             stock_pool_param: pd.DataFrame = None):
         # 定义不同类型数据的填充策略
         HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate','pct_chg']  #
         SLOW_MOVING_FIELDS = ['pe_ttm', 'pb', 'total_mv', 'circ_mv']  # 缓变数据，限制前向填充
         STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
         PRICE_FIELDS = ['close', 'open', 'high', 'low', 'pre_close']  # 价格数据，特殊处理
+        tech_fields  = ['momentum_2_1','momentum_12_1','turnover_rate_abnormal_20d','bm_ratio']
         raw_df = raw_df_param.copy(deep=True)
         if stock_pool_param is not None:
             stock_pool_df = stock_pool_param
@@ -880,7 +881,8 @@ class DataManager:
             # 我还是觉得 污染了正确性！ 后期有空再解决 todo
             # 停牌股票仍需定价来计算组合净值和收益
             aligned_df = aligned_df.ffill()
-
+        elif factor_name in tech_fields:
+            aligned_df = aligned_df
         else:
             raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
         return aligned_df

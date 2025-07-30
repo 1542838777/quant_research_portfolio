@@ -2,8 +2,8 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2019-01-10'
-  end_date: '2020-07-11'
+  start_date: '2018-04-10'
+  end_date: '2025-07-11'
 
 # ==============================================================================
 stock_pool_profiles:
@@ -68,7 +68,7 @@ stock_pool_profiles:
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   #fields: [ 'bm_ratio','momentum_12_1','turnover_rate_abnormal_20d' ]
-  fields: ['momentum_12_1' ]
+  fields: ['momentum_2_1' ]
 
 # 数据预处理设置
 preprocessing:
@@ -109,10 +109,17 @@ factor_definition:
     description: '收盘价'
     fields: [ 'close' ]
 
+
   - name: 'momentum_12_1'
     school: 'trend'
     category_type: 'trend'
     description: '过去12个月剔除最近1个月的累计收益率，经典的趋势因子，捕捉中期价格惯性。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'close' ] # 需要后复权收盘价来计算历史收益率
+  - name: 'momentum_2_1'
+    school: 'trend'
+    category_type: 'trend'
+    description: '过去2个月剔除最近1个月的累计收益率，经典的趋势因子，捕捉中期价格惯性。'
     need_technical_cal: True
     cal_require_base_fields: [ 'close' ] # 需要后复权收盘价来计算历史收益率
 

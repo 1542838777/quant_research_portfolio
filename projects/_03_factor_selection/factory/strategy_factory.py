@@ -260,7 +260,6 @@ class StrategyFactory:
                     **test_kwargs
                 )
                 results[factor_name] = result
-                self.factor_manager._save_results(results[factor_name], factor_name)
             except Exception as e:
                 # traceback.print_exc()
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
@@ -542,6 +541,20 @@ class StrategyFactory:
             factor_df = (price_1m_ago / price_12m_ago) - 1
             return factor_df, category_type, school
 
+        elif 'momentum_2_1' == target_factor_name:
+            # 经典2-1月动量
+            close_df = raw_data_dict['close'].copy()
+            # 计算 T-1月 / T-12月 的价格比
+            # 假设每月21个交易日，每年252个交易日
+            price_1m_ago = close_df.shift(21)
+            price_2m_ago = close_df.shift(21*2)
+
+            # 确保分母不为0或负（虽然股价基本不会）
+            price_2m_ago = price_2m_ago.where(price_2m_ago > 0)
+
+            factor_df = (price_1m_ago / price_2m_ago) - 1
+            return factor_df, category_type, school
+
         elif 'turnover_rate_abnormal_20d' == target_factor_name:
             # 异常换手率（20日窗口）
             turnover_df = raw_data_dict['turnover_rate'].copy()
@@ -595,12 +608,12 @@ class StrategyFactory:
 
         # 拿出require的原生df 基于同股票池维度对齐
         require_dfs = {field:self.data_manager.raw_dfs[field] for field in  cal_require_base_fields}
-        require_cal_dfs = self.data_manager._align_many_raw_dfs_by_stock_pool_and_fill(
-            require_dfs, stock_pool)
-        # 自行计算！
-        return self.get_done_cal_factor_and_category_and_school(
+        # 自行计算！_align_many_raw_dfs_by_stock_pool_and_fill
+        target_df,category,school =  self.get_done_cal_factor_and_category_and_school(
             target_factor_name,
-            require_cal_dfs)
+            require_dfs)
+        return self.data_manager._align_one_df_by_stock_pool_and_fill(factor_name = target_factor_name,
+                                                                      raw_df_param  = target_df, stock_pool_param= stock_pool),category,school
 
     def build_base_factor_entity(self, target_factor_name):
         df = self.data_manager.processed_raw_data[target_factor_name]
