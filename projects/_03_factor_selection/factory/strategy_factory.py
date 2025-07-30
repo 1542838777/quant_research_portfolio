@@ -605,8 +605,8 @@ class StrategyFactory:
     def build_base_factor_entity(self, target_factor_name):
         df = self.data_manager.processed_raw_data[target_factor_name]
         # category
-        category = self.factor_manager.get_category_type(target_factor_name)
-        scholl = self.factor_manager.get_school(target_factor_name)
+        category = self.get_category_type(target_factor_name)
+        scholl = self.get_school(target_factor_name)
 
         return df, category, scholl
 

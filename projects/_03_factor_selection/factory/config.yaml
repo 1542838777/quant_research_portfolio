@@ -67,7 +67,8 @@ stock_pool_profiles:
 
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'bm_ratio','momentum_12_1','turnover_rate_abnormal_20d' ]
+  #fields: [ 'bm_ratio','momentum_12_1','turnover_rate_abnormal_20d' ]
+  fields: ['momentum_12_1' ]
 
 # 数据预处理设置
 preprocessing:

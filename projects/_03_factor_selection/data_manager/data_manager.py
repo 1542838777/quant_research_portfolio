@@ -802,7 +802,7 @@ class DataManager:
 
         # 2. 流动性过滤
         if 'min_liquidity_percentile' in universe_filters:
-            print("    应用流动性过滤...")
+            # print("    应用流动性过滤...")
             final_stock_pool_df = self._filter_by_liquidity(
                 final_stock_pool_df,
                 universe_filters['min_liquidity_percentile']

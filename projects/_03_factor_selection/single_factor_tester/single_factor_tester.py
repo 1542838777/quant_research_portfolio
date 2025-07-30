@@ -8,7 +8,7 @@
 
 支持批量测试、结果可视化和报告生成
 """
-from data.local_data_load import load_index_daily
+from data.local_data_load import load_index_daily, load_daily_hfq
 from projects._03_factor_selection.data_manager.data_manager import DataManager
 
 from quant_lib import logger
@@ -100,6 +100,7 @@ class SingleFactorTester:
         self.close_df_dict = self._prepare_dfs_dict_by_diff_stock_pool(['close'])
         self.circ_mv_dict = self._prepare_dfs_dict_by_diff_stock_pool(['circ_mv'])
         self.pct_chg_dict = self._prepare_dfs_dict_by_diff_stock_pool(['pct_chg'])
+        self.prepare_master_pct_chg_beta_dataframe()
         self.pct_chg_bate_dict = self.get_pct_chg_beta_dict()
 
         # 准备辅助【市值、行业】数据(用于中性值 计算！)
@@ -213,7 +214,7 @@ class SingleFactorTester:
             neutral_dfs=self.neutral_dfs_data_dict[stock_pool_name],
             factor_school=target_school
         )
-
+        #必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
         close_df = self.close_df_dict[stock_pool_name]['close']
         circ_mv_df = self.circ_mv_dict[stock_pool_name]['circ_mv']
         neutral_dfs = self.neutral_dfs_data_dict[stock_pool_name]
@@ -993,32 +994,48 @@ class SingleFactorTester:
         pool_name = self.get_stock_pool_name_by_factor_school(school[0])
         return pool_name
 
-    def get_circ_mv_df_by_factor_school(self, factor_name):
-        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
-        return self.circ_mv_dict[pool_name]['circ_mv']
-
-    def get_close_df_by_factor_school(self, factor_name):
-        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
-        return self.close_df_dict[pool_name]['close']
-
-    def get_neutral_dfs_by_factor_name(self, target_factor_name):
-        pool_name = self.get_stock_pool_name_by_factor_name(target_factor_name)
-        return self.neutral_dfs_data_dict[pool_name]
-    #ok
+    #ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     def get_pct_chg_beta_dict(self):
         dict = {}
-        for pool_name, pct_chg_df in self.pct_chg_dict.items():
-            bate_df = self.calculate_rolling_beta(self.config['backtest']['start_date'],
-                                                  self.config['backtest']['end_date'],
-                                                  stock_returns=pct_chg_df['pct_chg'])
-            dict[pool_name] = bate_df
+        for pool_name, _ in self.stock_pools_dict.items():
+            beta_df = self.get_pct_chg_beta_data_for_pool(pool_name)
+            dict[pool_name] = beta_df
         return dict
+
+    def prepare_master_pct_chg_beta_dataframe(self):
+        """
+        一个在系统初始化时调用的方法，用于生成一份统一的、覆盖所有股票的Beta矩阵。
+        """
+        logger.info("开始准备主Beta矩阵...")
+
+        # 1. 整合所有股票池的股票代码，形成一个总的股票列表
+        all_unique_stocks = set()
+        for stock_pool in self.stock_pools_dict.values():
+            all_unique_stocks.update(stock_pool.columns)
+
+        master_stock_list = sorted(list(all_unique_stocks))
+
+        # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
+        logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
+        self.master_beta_df = self.calculate_rolling_beta(
+            self.config['backtest']['start_date'],
+            self.config['backtest']['end_date'],
+            master_stock_list
+        )
+
+    def get_pct_chg_beta_data_for_pool(self, pool_name):
+        pool_stocks = self.stock_pools_dict[pool_name].columns
+
+        # 直接从主Beta矩阵中按需选取，无需重新计算
+        beta_for_this_pool = self.master_beta_df[pool_stocks]
+
+        return beta_for_this_pool
     #ok ok
     def calculate_rolling_beta(
             self,
             start_date: str,
             end_date: str,
-            stock_returns: pd.DataFrame,  # 假设传入的已是宽表，index=date, columns=stock
+            cur_stock_codes: list,
             window: int = 60,
             min_periods: int = 20
     ) -> pd.DataFrame:
@@ -1039,10 +1056,34 @@ class SingleFactorTester:
         logger.info(f"开始计算滚动Beta (窗口: {window}天)...")
 
         # --- 1. 数据获取与准备 ---
+        #  指数提前。但是入参传入的股票是死的，建议重新手动加载。但是考虑是否与股票池对应！ 答案：还是别跟动态股票池进行where了，疑问
+        #解释：
         # 为了计算滚动值，我们需要往前多取一些数据作为“缓冲”
-        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=window + 30)).strftime('%Y%m%d')
+        ##
+        # 滚动历史因子 (Rolling History Factor)
+        # 例子: pct_chg_beta, 动量因子 (Momentum), 滚动波动率 (Volatility)。
+        #
+        # 关键特征: 计算今天的值，需要过去N天连续、干净的历史数据。它的计算过程本身就是一个“时间序列”操作。
+        #
+        # 为什么预处理是“致命的”: 如果在计算之前，就用每日动态股票池把历史数据弄得“千疮百孔”（充满NaN），那么滚动窗口在回看历史时就找不到足够的数据，导致计算结果本身就是错误的（大量的NaN）。预处理污染了计算的“原材料”。#
+        buffer_days = int(window * 1.7) + 5
+        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y%m%d')
+        # 1. Load the long-form DataFrame
+        stock_data_long = load_daily_hfq(buffer_start_date, end_date, cur_stock_codes)
 
-        # a) 获取市场指数的每日收益率
+        # 2. It's better to modify the column before pivoting
+        stock_data_long['pct_chg'] = stock_data_long['pct_chg'] / 100
+
+        # 3. Correctly pivot the DataFrame to wide format
+        # The 'columns' argument should be the name of the column containing the stock codes.
+        stock_returns = pd.pivot_table(
+            stock_data_long,
+            index='trade_date',
+            columns='ts_code',  # Use the column name 'ts_code'
+            values='pct_chg'
+        )
+
+        # a) 获取市场指数的每日收益率 是否是自动过滤了 非交易日 yes
         market_returns_long = load_index_daily(buffer_start_date, end_date).assign(pct_chg=lambda x: x['pct_chg'] / 100)#pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
         market_returns = market_returns_long.set_index('trade_date')['pct_chg']
         market_returns.index = pd.to_datetime(market_returns.index)
@@ -1096,8 +1137,6 @@ class SingleFactorTester:
             if shape != self.close_df_dict[pool_name]['close'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
             if shape != self.circ_mv_dict[pool_name]['circ_mv'].shape:
-                raise ValueError("形状不一致 ，请必须检查")
-            if shape != self.pct_chg_dict[pool_name]['pct_chg'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
             if shape != self.pct_chg_bate_dict[pool_name].shape:
                 raise ValueError("形状不一致 ，请必须检查")
