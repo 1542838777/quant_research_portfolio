@@ -14,6 +14,7 @@ import os
 from datetime import datetime
 
 from quant_lib import setup_logger
+from quant_lib.config.logger_config import log_success, log_warning
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .classifier.factor_classifier import FactorClassifier
@@ -226,51 +227,26 @@ class FactorManager:
             factor_data_dict, n_clusters, method, figsize
         )
 
+    ##
 
+    # 全局排序 对所有因子进行综合排序，选出一个比如Top 50的大名单。 ，保证所有因子的个体质量都是顶尖的。
+    #
+    # 在“Top 50的大名单”   中进行分类和相关性分析:
+    #
+    # --对这Top 50的因子进行分类（价值、动量等）。
+    #
+    # --计算这50个因子之间的相关性矩阵。
+    #
+    # --从这50个最优秀的因子中，挑出比如10个，要求这10个因子彼此不相关，并且尽可能覆盖不同的风格类别。
+    #
+    # 例如，发现在动量类里，排名前5的因子相关性都高达0.8，那么你只保留其中综合排名最高的那一个。然后你再去价值类、质量类里做同样的操作。
+    #
+    # 这个混合策略，保证没有错过任何一个在全市场范围内表现优异的因子（质量），又通过后续的步骤保证了最终入选因子的多样性。稳健多因子模型。#
 
+    def get_top_factors(self):
 
-    def get_top_factors(self,
-                       category: Union[str, FactorCategory] = None,
-                       top_n: int = 10,
-                       min_score: float = 2.0) -> List[str]:
-        """
-        获取顶级因子
+         return None
 
-        Args:
-            category: 因子类别
-            top_n: 返回的因子数量
-            min_score: 最低评分
-
-        Returns:
-            因子名称列表
-        """
-        # 获取因子摘要
-        summary = self.get_factor_summary()
-
-        # 筛选类别
-        if category is not None:
-            if isinstance(category, FactorCategory):
-                category_value = category.value
-            else:
-                try:
-                    category_value = FactorCategory[category.upper()].value
-                except KeyError:
-                    raise ValueError(f"未知的因子类别: {category}")
-
-
-            summary = summary[summary['category'] == category_value]
-
-        # 筛选评分
-        if 'test_overall_score' in summary.columns:
-            summary = summary[summary['test_overall_score'] >= min_score]
-
-        # 排序并返回顶级因子
-        if 'test_overall_score' in summary.columns:
-            top_factors = summary.sort_values('test_overall_score', ascending=False)['name'].tolist()[:top_n]
-        else:
-            top_factors = summary['name'].tolist()[:top_n]
-
-        return top_factors
     def _make_serializable(self, obj):
         """将结果转换为可序列化格式"""
         if isinstance(obj, dict):
@@ -312,14 +288,73 @@ class FactorManager:
             except:
                 return str(obj)
 
-    def _save_results(self, results: Dict[str, Any], factor_name: str):
+    def _save_results(self, results: Dict[str, Any],file_name_prefix: str) -> None:
         """保存测试结果"""
         # 准备可序列化的结果
         serializable_results = self._make_serializable(results)
 
         # 保存JSON格式
-        json_path = os.path.join(self.results_dir, f'all_single_factor_test_results.json')
+        json_path = os.path.join(self.results_dir, f'all_single_factor_test_{file_name_prefix}_results.json')
         add_single_factor_test_result(json_path, serializable_results)
+    #ok
+    def update_and_save_factor_leaderboard(self, all_summary_rows: list, file_name_prefix: str):
+        """
+           更新或创建因子排行榜，支持增量更新。
+           如果文件已存在，则删除本次测试涉及的因子和周期的旧记录，并追加新记录。
+           如果文件不存在，则创建新文件。
+           """
+        if not all_summary_rows:
+            print("警告：没有新的测试结果可供更新。")
+            return
+
+        # 1. 准备新数据
+        new_results_df = pd.DataFrame(all_summary_rows)
+        # (推荐) 在合并前先排序，保持数据条理性
+        new_results_df.sort_values(by=['factor_name', 'period'], inplace=True)
+
+        # 2. 【修正Bug 3】正确构建文件路径
+        output_dir = Path(f'{self.results_dir}')
+        output_dir.mkdir(exist_ok=True)
+        parquet_path = output_dir / f'all_single_factor_test_{file_name_prefix}.parquet'
+        csv_path = output_dir / f'all_single_factor_test_{file_name_prefix}.csv'
+
+        # 3. 【修正Bug 1】安全地读取旧数据
+        try:
+            existing_leaderboard = pd.read_parquet(parquet_path)
+        except FileNotFoundError:
+            log_warning(f"信息：未找到现有的排行榜文件 at {parquet_path}。将创建新文件。")
+            existing_leaderboard = pd.DataFrame()
+
+        # 4. 【修正逻辑风险 4】从新数据中提取所有待更新的“主键”
+        #    这样即使一次传入多个因子的结果也能正确处理
+        keys_to_update = new_results_df[['factor_name', 'backtest_period']].drop_duplicates()
+
+        # 5. 删除旧记录
+        if not existing_leaderboard.empty:
+            # 使用 merge + indicator 来找到并排除需要删除的行
+            ##
+            # indicator=True
+            # 结果就是：新生成_merger列，值要么是both 要么是left_only#
+            merged = existing_leaderboard.merge(keys_to_update, on=['factor_name', 'backtest_period'], how='left',
+                                                indicator=True)
+            leaderboard_to_keep = merged[merged['_merge'] == 'left_only'].drop(columns=['_merge'])
+        else:
+            leaderboard_to_keep = existing_leaderboard
+
+        # 6. 【修正Bug 2】合并旧的“保留”数据和所有新数据
+        final_leaderboard = pd.concat([leaderboard_to_keep, new_results_df], ignore_index=True)
+
+        # 7. 保存最终的排行榜
+        try:
+            final_leaderboard.to_parquet(parquet_path, index=False)
+            print(f"✅ 因子排行榜已成功更新并保存至: {parquet_path}")
+
+            final_leaderboard.to_csv(csv_path, index=False, encoding='utf-8-sig')
+            print(f"✅ 因子排行榜已成功更新并保存至: {csv_path}")
+
+        except Exception as e:
+            print(f"❌ 保存结果时发生错误: {e}")
+            raise e  # 重新抛出异常，让上层知道发生了错误
 
 
 

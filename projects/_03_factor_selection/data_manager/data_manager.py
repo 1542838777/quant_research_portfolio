@@ -16,7 +16,8 @@ import os
 
 from pandas import DatetimeIndex
 
-from data.local_data_load import load_index_daily
+from data.load_file import _load_config
+from data.local_data_load import load_index_daily, load_suspend_d_df
 from data.namechange_date_manager import fill_end_date_field
 from quant_lib.data_loader import DataLoader
 
@@ -76,7 +77,7 @@ def _get_nan_comment(field: str, rate: float) -> str:
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
     if field in ['pct_chg'] and rate <= 0.10:
-        return  "正常"
+        return "正常"
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
 
@@ -99,17 +100,14 @@ class DataManager:
             config_path: 配置文件路径
         """
         self.st_matrix = None
-        self.config = self._load_config(config_path)
+        self._tradeable_matrix_by_suspend_resume = None
+        self.config = _load_config(config_path)
+        self.backtest_start_date = self.config['backtest']['start_date']
+        self.backtest_end_date = self.config['backtest']['end_date']
         if need_data_deal:
             self.data_loader = DataLoader(data_path=LOCAL_PARQUET_DATA_DIR)
             self.raw_dfs = {}
             self.stock_pools_dict = None
-
-    def _load_config(self, config_path: str) -> Dict:
-        """加载配置文件"""
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        return config
 
     def processed_raw_data_dict_by_stock_pool_(self) -> Dict[str, pd.DataFrame]:
         """
@@ -168,12 +166,6 @@ class DataManager:
         if missing_fields:
             raise ValueError(f"构建股票池缺少必需字段: {missing_fields}")
 
-        # 获取所有股票和交易日期
-        ts_codes = list(set(self.get_price_data().columns))
-        trading_dates = self.data_loader.get_trading_dates(start_date=start_date, end_date=end_date)
-
-        # 构建ST矩阵
-        self.build_st_period_from_namechange(ts_codes, self.get_namechange_data(), trading_dates)
         self.build_diff_stock_pools()
 
     def build_diff_stock_pools(self) -> pd.DataFrame:
@@ -261,71 +253,93 @@ class DataManager:
                 if negative_ratio > 0:
                     print(f"    警告: {field_name} 存在 {negative_ratio:.2%} 的非正值")
 
-    def _build_universe(self) -> pd.DataFrame:
+    def build_tradeable_matrix_by_suspend_resume(
+            self,
+    ) -> pd.DataFrame:
         """
-        构建动态股票池
-        Returns:
-            股票池DataFrame，True表示该股票在该日期可用
+         根据完整的停复牌历史，构建每日“可交易”状态矩阵。
+
         """
-        print("  构建基础股票池...")
+        if self._tradeable_matrix_by_suspend_resume is not None:
+            logger.info(
+                "self._tradeable_matrix_by_suspend_resume 之前以及被初始化，无需再次加载（这是全量数据，一次加载即可")
+            return self._tradeable_matrix_by_suspend_resume
+        # 数据准备 获取所有股票和交易日期
+        ts_codes = list(set(self.get_price_data().columns))
+        trading_dates = self.data_loader.get_trading_dates(start_date=self.backtest_start_date,
+                                                           end_date=self.backtest_end_date)
 
-        # 第一步：基础股票池 - 有价格数据的股票
-        if 'close' not in self.raw_dfs:
-            raise ValueError("缺少价格数据，无法构建股票池")
+        logger.info("【专业版】正在重建每日‘可交易’状态矩阵...")
+        suspend_df = load_suspend_d_df()  # 直接传入完整的停复牌数据
 
-        base_stock_pool_df = self.raw_dfs['close'].notna()
-        final_stock_pool_df = base_stock_pool_df
-        self.show_stock_nums_for_per_day('根据收盘价notna生成的', base_stock_pool_df)
-        # 第二步：各种过滤！
-        # --基础过滤 指数成分股过滤（如果启用）
-        index_config = self.config['stack_pool'].get('index_filter', {})
-        if index_config.get('enable', False):
-            # print(f"    应用指数过滤: {index_config['index_code']}")
-            final_stock_pool_df = self._build_dynamic_index_universe(base_stock_pool_df, index_config['index_code'])
-            # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
-            valid_stocks = final_stock_pool_df.columns[final_stock_pool_df.any(axis=0)]
-            final_stock_pool_df = final_stock_pool_df[valid_stocks]
-        # --普适性 过滤 （通用过滤）
-        final_stock_pool_df = self._filter_new_stocks(final_stock_pool_df, 6)  # 新股票数据少，不具参考
-        final_stock_pool_df = self._filter_st_stocks(final_stock_pool_df)  # 剔除ST股票
+        # --- 1. 数据预处理 ---
+        # 确保suspend_df中的日期是datetime类型，并按股票和日期排序
+        suspend_df['trade_date'] = pd.to_datetime(suspend_df['trade_date'])
+        suspend_df.sort_values(by=['ts_code', 'trade_date'], inplace=True)
 
-        # 其他各种指标过滤条件
-        universe_filters = self.config['stack_pool']['filters']
+        # 初始化一个空的DataFrame，准备逐列填充
+        tradeable_matrix = pd.DataFrame(index=trading_dates, columns=ts_codes, dtype=bool)
 
-        # 2. 流动性过滤
-        if 'min_liquidity_percentile' in universe_filters:
-            print("    应用流动性过滤...")
-            final_stock_pool_df = self._filter_by_liquidity(
-                final_stock_pool_df,
-                universe_filters['min_liquidity_percentile']
-            )
+        # --- 2. 逐一处理每只股票的状态序列 ---
+        for ts_code in ts_codes:
+            # a. 获取该股票的所有停复牌事件
+            stock_events = suspend_df[suspend_df['ts_code'] == ts_code]
 
-        # 3. 市值过滤
-        if 'min_market_cap_percentile' in universe_filters:
-            # print("    应用市值过滤...")
-            final_stock_pool_df = self._filter_by_market_cap(
-                final_stock_pool_df,
-                universe_filters['min_market_cap_percentile']
-            )
+            # 创建一个用于状态传播的临时Series，初始值全为NaN
+            status_series = pd.Series(np.nan, index=trading_dates)
 
-        # 剔除次日停牌股票
-        final_stock_pool_df = self._filter_next_day_suspended(final_stock_pool_df)
-        # 剔除涨停股票
-        final_stock_pool_df = self._filter_next_day_limit_up(final_stock_pool_df)
-        return final_stock_pool_df
+            # b. 【核心】确定初始状态
+            # 查找在回测开始日期之前发生的最后一个事件
+            events_before_start = stock_events[stock_events['trade_date'] < trading_dates[0]]
+            if not events_before_start.empty:
+                # 如果存在，则最后一个事件的类型决定了初始状态
+                # 'R' (Resumed) -> True (可交易), 'S' (Suspended) -> False (不可交易)
+                initial_status = (events_before_start.iloc[-1]['suspend_type'] == 'R')
+            else:
+                # 如果之前没有任何停复牌事件，则默认为可交易
+                initial_status = True
+
+            # 在我们的状态序列的第一个位置，设置好初始状态
+            status_series.iloc[0] = initial_status
+
+            # c. 【核心】标记回测期内的状态变化“拐点”
+            events_in_period = stock_events[stock_events['trade_date'].isin(trading_dates)]
+            for _, event in events_in_period.iterrows():
+                event_date = event['trade_date']
+                is_tradeable = (event['suspend_type'] == 'R')
+                status_series[event_date] = is_tradeable
+
+            # d. 【核心】状态传播 (Forward Fill)
+            # ffill会用前一个有效值填充后面的NaN，完美模拟了状态的持续性
+            status_series.ffill(inplace=True)
+
+            # 将这只股票计算好的完整状态序列，填充到总矩阵中
+            tradeable_matrix[ts_code] = status_series
+
+        # e. 收尾工作：对于没有任何停复牌历史的股票，它们列可能依然是NaN，默认为可交易
+        tradeable_matrix.fillna(True, inplace=True)
+
+        logger.info("每日‘可交易’状态矩阵重建完毕。")
+        self._tradeable_matrix_by_suspend_resume = tradeable_matrix.astype(bool)
+        return self._tradeable_matrix_by_suspend_resume
 
     # ok
     def build_st_period_from_namechange(
             self,
-            ts_codes: list,
-            namechange_df: pd.DataFrame,
-            trading_dates: pd.DatetimeIndex
     ) -> pd.DataFrame:
         """
          【最终无懈可击版】根据namechange历史，重建每日“已知风险”状态矩阵。
          此版本通过searchsorted隐式处理初始状态，逻辑最简且结果正确。
          """
+        if self.st_matrix is not None:
+            logger.info("self.st_matrix 之前已经被初始化，无需再次加载（这是全量数据，一次加载即可")
+            return self.st_matrix
         logger.info("正在根据名称变更历史，重建每日‘已知风险’状态st矩阵...")
+        # 数据准备 获取所有股票和交易日期
+        ts_codes = list(set(self.get_price_data().columns))
+        trading_dates = self.data_loader.get_trading_dates(start_date=self.backtest_start_date,
+                                                           end_date=self.backtest_end_date)
+        namechange_df = self.get_namechange_data()
 
         # --- 1. 准备工作 ---
         if not trading_dates._is_monotonic_increasing:
@@ -432,6 +446,37 @@ class DataManager:
 
         return aligned_universe
 
+    # 适配停经历复牌事件的可交易股票池 ok
+    def _filter_tradeable_matrix_by_suspend_resume(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
+        if self._tradeable_matrix_by_suspend_resume is None:
+            raise ValueError("警告: 未能构建 _tradeable_matrix_by_suspend_resume 状态矩阵。")
+
+            # 1. 【修正细节】shift 时，用 True 填充第一行，因为默认股票是可交易的。
+        tradeable_mask_shifted = self._tradeable_matrix_by_suspend_resume.shift(1, fill_value=True)
+
+        # 2. 对齐股票池和可交易状态掩码
+        #    join='left' 保证了股票池的股票集合不发生变化
+        #    fill_value=True 假设未在停复牌信息中出现的股票是可交易的（安全做法）
+        aligned_universe, aligned_tradeable_mask = stock_pool_df.align(
+            tradeable_mask_shifted,
+            join='left',
+            fill_value=True
+        )
+
+        # 统计过滤前的数量
+        pre_filter_count = aligned_universe.sum().sum()
+
+        # 3. 【修正核心Bug】使用布尔“与”运算进行过滤
+        #    最终的股票池 = 之前的股票池 AND 可交易的股票池
+        final_pool = aligned_universe & aligned_tradeable_mask
+
+        # 统计过滤后的数量
+        post_filter_count = final_pool.sum().sum()
+        filtered_out_count = pre_filter_count - post_filter_count
+        logger.info(f"      停牌股票过滤: 共剔除 {filtered_out_count:.0f} 个停牌的股票-日期对。")
+        self.show_stock_nums_for_per_day('过滤停牌股后', final_pool)
+        return final_pool
+
     # ok
     def _filter_by_liquidity(self, stock_pool_df: pd.DataFrame, min_percentile: float) -> pd.DataFrame:
         """按流动性过滤 """
@@ -495,7 +540,7 @@ class DataManager:
 
         return stock_pool_df
 
-    # ok
+    # ok 这个属于感知未来，用不得！
     def _filter_next_day_limit_up(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
         """
          剔除在T日开盘即一字涨停的股票。
@@ -550,39 +595,38 @@ class DataManager:
         self.show_stock_nums_for_per_day('过滤次日涨停股后--final', stock_pool_df)
         return stock_pool_df
 
-    # ok
-    def _filter_next_day_suspended(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
-        """
-          剔除次日停牌股票 -
-
-          Args:
-              stock_pool_df: 动态股票池DataFrame
-
-          Returns:
-              过滤后的动态股票池DataFrame
-          """
-        if 'close' not in self.raw_dfs:
-            raise RuntimeError(" 缺少价格数据，无法过滤次日停牌股票")
-
-        close_df = self.raw_dfs['close']
-
-        # 1. 创建一个代表“当日有价格”的布尔矩阵
-        today_has_price = close_df.notna()
-
-        # 2. 创建一个代表“次日有价格”的布尔矩阵
-        #    shift(-1) 将 T+1 日的数据，移动到 T 日的行。这就在一瞬间完成了所有“next_date”的查找
-        #    fill_value=True 优雅地处理了最后一天，我们假设最后一天之后不会停牌
-        tomorrow_has_price = close_df.notna().shift(-1, fill_value=True)
-
-        # 3. 计算出所有“次日停牌”的掩码 (Mask) （为什么要剔除！质疑自己：明天的事情我为什么要管？ 答：你不怕明天停牌卖不出去？ 还有个原因：ic 计算收益率，会把明天的收益0 一样进行计算！。那怎么得了！）
-        #    次日停牌 = 今日有价 & 明日无价
-        next_day_suspended_mask = today_has_price & (~tomorrow_has_price)
-
-        # 4. 一次性从股票池中剔除所有被标记的股票
-        #    这个布尔运算会自动按索引对齐，应用到整个DataFrame
-        stock_pool_df[next_day_suspended_mask] = False
-
-        return stock_pool_df
+    # def _filter_next_day_suspended(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
+    #     """
+    #       剔除次日停牌股票 -
+    #
+    #       Args:
+    #           stock_pool_df: 动态股票池DataFrame
+    #
+    #       Returns:
+    #           过滤后的动态股票池DataFrame
+    #       """
+    #     if 'close' not in self.raw_dfs:
+    #         raise RuntimeError(" 缺少价格数据，无法过滤次日停牌股票")
+    #
+    #     close_df = self.raw_dfs['close']
+    #
+    #     # 1. 创建一个代表“当日有价格”的布尔矩阵
+    #     today_has_price = close_df.notna()
+    #
+    #     # 2. 创建一个代表“次日有价格”的布尔矩阵
+    #     #    shift(-1) 将 T+1 日的数据，移动到 T 日的行。这就在一瞬间完成了所有“next_date”的查找
+    #     #    fill_value=True 优雅地处理了最后一天，我们假设最后一天之后不会停牌
+    #     tomorrow_has_price = close_df.notna().shift(-1, fill_value=True)
+    #
+    #     # 3. 计算出所有“次日停牌”的掩码 (Mask) （为什么要剔除！质疑自己：明天的事情我为什么要管？ 答：你不怕明天停牌卖不出去？  !!!!糟糕！，明天的事情你今天无法感知啊，这个函数必须删除
+    #     #    次日停牌 = 今日有价 & 明日无价
+    #     next_day_suspended_mask = today_has_price & (~tomorrow_has_price)
+    #
+    #     # 4. 一次性从股票池中剔除所有被标记的股票
+    #     #    这个布尔运算会自动按索引对齐，应用到整个DataFrame
+    #     stock_pool_df[next_day_suspended_mask] = False
+    #
+    #     return stock_pool_df
 
     def _load_dynamic_index_components(self, index_code: str,
                                        start_date: str, end_date: str) -> pd.DataFrame:
@@ -770,7 +814,8 @@ class DataManager:
                 result.update(base_fields)  # 用 update 合并列表到 set
 
         return result
-    #ok
+
+    # ok
     def product_stock_pool(self, stock_pool_config_profile, pool_name):
         """
                 构建动态股票池
@@ -793,12 +838,20 @@ class DataManager:
             # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
             valid_stocks = final_stock_pool_df.columns[final_stock_pool_df.any(axis=0)]
             final_stock_pool_df = final_stock_pool_df[valid_stocks]
-        # --普适性 过滤 （通用过滤）
-        final_stock_pool_df = self._filter_new_stocks(final_stock_pool_df, 6)  # 新股票数据少，不具参考
-        final_stock_pool_df = self._filter_st_stocks(final_stock_pool_df)  # 剔除ST股票
-
         # 其他各种指标过滤条件
         universe_filters = stock_pool_config_profile[pool_name]['filters']
+
+        # --普适性 过滤 （通用过滤）
+        if universe_filters['remove_new_stocks']:
+            final_stock_pool_df = self._filter_new_stocks(final_stock_pool_df, 6)  # 新股票数据少，数据不全不具参考，所以淘汰
+        if universe_filters['remove_st']:
+            # 构建ST矩阵
+            self.build_st_period_from_namechange()
+            final_stock_pool_df = self._filter_st_stocks(final_stock_pool_df)  # 剔除ST股票
+        if universe_filters['adapt_tradeable_matrix_by_suspend_resume']:
+            # 基于停复牌事件构建的可交易的池子
+            self.build_tradeable_matrix_by_suspend_resume()
+            final_stock_pool_df = self._filter_tradeable_matrix_by_suspend_resume(final_stock_pool_df)
 
         # 2. 流动性过滤
         if 'min_liquidity_percentile' in universe_filters:
@@ -815,12 +868,7 @@ class DataManager:
                 final_stock_pool_df,
                 universe_filters['min_market_cap_percentile']
             )
-        # 剔除次日停牌股票
-        if universe_filters['remove_next_day_suspended']:
-            final_stock_pool_df = self._filter_next_day_suspended(final_stock_pool_df)
-        # 剔除涨停股票
-        if universe_filters['remove_next_day_limit_up']:
-            final_stock_pool_df = self._filter_next_day_limit_up(final_stock_pool_df)
+
         return final_stock_pool_df
 
     def get_school_code_by_factor_name(self, factor_name):
@@ -845,11 +893,11 @@ class DataManager:
     def _align_one_df_by_stock_pool_and_fill(self, factor_name, raw_df_param,
                                              stock_pool_param: pd.DataFrame = None):
         # 定义不同类型数据的填充策略
-        HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate','pct_chg']  #
+        HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate', 'pct_chg']  #
         SLOW_MOVING_FIELDS = ['pe_ttm', 'pb', 'total_mv', 'circ_mv']  # 缓变数据，限制前向填充
         STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
         PRICE_FIELDS = ['close', 'open', 'high', 'low', 'pre_close']  # 价格数据，特殊处理
-        tech_fields  = ['momentum_2_1','momentum_12_1','turnover_rate_abnormal_20d','bm_ratio']
+        tech_fields = ['momentum_2_1', 'momentum_12_1', 'turnover_rate_abnormal_20d', 'bm_ratio']
         raw_df = raw_df_param.copy(deep=True)
         if stock_pool_param is not None:
             stock_pool_df = stock_pool_param
@@ -877,7 +925,7 @@ class DataManager:
 
         elif factor_name in PRICE_FIELDS:
             # 价格数据：只保留股票池内的数据  单因子测试需要计算收益率，价格数据不能中断 值得深入思考。
-            #赞成fill理由：。根据标准的基金会计准则，在停牌期间，一只股票的价值并没有消失或变成未知。为了计算每日的投资组合净值，它的价值必须被定义为**“最后一个可获得的公允价值”**，也就是它停牌前的最后一个价格/市值。
+            # 赞成fill理由：。根据标准的基金会计准则，在停牌期间，一只股票的价值并没有消失或变成未知。为了计算每日的投资组合净值，它的价值必须被定义为**“最后一个可获得的公允价值”**，也就是它停牌前的最后一个价格/市值。
             # 我还是觉得 污染了正确性！ 后期有空再解决 todo
             # 停牌股票仍需定价来计算组合净值和收益
             aligned_df = aligned_df.ffill()
@@ -886,6 +934,7 @@ class DataManager:
         else:
             raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
         return aligned_df
+
 
 def create_data_manager(config_path: str) -> DataManager:
     """

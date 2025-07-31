@@ -2,8 +2,8 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2018-04-10'
-  end_date: '2025-07-11'
+  start_date: '2024-04-10'
+  end_date: '2025-07-10'
 
 # ==============================================================================
 stock_pool_profiles:
@@ -23,6 +23,7 @@ stock_pool_profiles:
         # --- 普适性风险过滤 (强制性) ---
         remove_st: true          # 必须剔除ST股票
         remove_new_stocks: true  # 必须剔除上市不足6个月的新股
+        adapt_tradeable_matrix_by_suspend_resume: true #适配停经历复牌事件的可交易股票池
 
         # --- 指标过滤 (针对指数池内部) ---
         # 在中证800这个优等生群体中，再剔除流动性最差的10%，作为风险控制
@@ -50,6 +51,7 @@ stock_pool_profiles:
         # --- 普适性风险过滤 (强制性) ---
         remove_st: true          # 必须剔除ST股票
         remove_new_stocks: true  # 必须剔除上市不足6个月的新股
+        adapt_tradeable_matrix_by_suspend_resume: true #适配停经历复牌事件的可交易股票池
 
         # --- 指标过滤 (基于全市场) ---
         # 剔除全市场流动性最差的20%的“僵尸股”，保留真实的“散户博弈区”

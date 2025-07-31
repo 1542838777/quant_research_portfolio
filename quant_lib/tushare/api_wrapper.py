@@ -74,7 +74,7 @@ def call_pro_tushare_api(func_name: str, max_retries=3, **kwargs):
         except Exception as e:
             # ... (错误处理和Token刷新逻辑保持不变) ...
             error_message = str(e)
-            logger.error(f"API调用'{func_name}'失败: {error_message}")
+            logger.error(f"call_pro_tushare_api调用'{func_name}'失败: {error_message}")
             if is_token_invalid_error(error_message):
                 if TushareClient.refresh_pro():  # 假设已有refresh_apis可以同时刷新pro和ts
                     logger.info("Token已刷新，正在立即重试...")
@@ -86,7 +86,7 @@ def call_pro_tushare_api(func_name: str, max_retries=3, **kwargs):
                 logger.warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
                 time.sleep(60)
 
-    logger.error(f"API调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
+    logger.error(f"call_pro_tushare_api调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
     raise ValueError("访问api重度异常！！！！立即停止")
 
 
@@ -107,7 +107,7 @@ def call_ts_tushare_api(func_name: str, max_retries=3, **kwargs):
         except Exception as e:
             # ... (错误处理和Token刷新逻辑保持不变) ...
             error_message = str(e)
-            logger.error(f"API调用'{func_name}'失败: {error_message}")
+            logger.error(f"call_ts_tushare_api调用'{func_name}'失败: {error_message}")
             if is_token_invalid_error(error_message):
                 if TushareClient.refresh_pro():
                     logger.info("Token已刷新，正在立即重试...")
@@ -119,5 +119,5 @@ def call_ts_tushare_api(func_name: str, max_retries=3, **kwargs):
                 logger.warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
                 time.sleep(60)
 
-    logger.error(f"API调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
+    logger.error(f"call_ts_tushare_api调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
     return pd.DataFrame()

@@ -1,5 +1,8 @@
 import logging
 
+from quant_lib.config.symbols_constants import SUCCESS, WARNING, FAIL
+
+
 def setup_logger(name: str = None, level: str = 'INFO') -> logging.Logger:
     """设置日志配置，避免重复配置"""
     logger_name = name or 'quant_lib'
@@ -27,3 +30,9 @@ def setup_logger(name: str = None, level: str = 'INFO') -> logging.Logger:
     logger.propagate = False
 
     return logger
+
+logger = setup_logger(__name__, level='INFO')
+def log_success(msg): logger.info(f"{SUCCESS} {msg}")
+def log_warning(msg): logger.info(f"{WARNING} {msg}")
+def log_notice(msg): logger.info(f"{FAIL} {msg}")
+def log_error(msg): logger.info(f"{FAIL} {msg}")

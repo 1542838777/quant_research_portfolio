@@ -14,6 +14,7 @@ from data.local_data_load import load_index_daily, load_daily_hfq
 from projects._03_factor_selection.data_manager.data_manager import DataManager
 
 from quant_lib import logger
+from ..factor_manager.factor_manager import FactorManager
 
 from ..utils.factor_processor import FactorProcessor
 
@@ -84,13 +85,13 @@ class SingleFactorTester:
         self.config = config
         self.test_common_periods = config.get('forward_periods', [1, 5, 10, 20])
         self.n_quantiles = config.get('quantiles', 5)
-        self.output_dir = output_dir
         # 初始化因子预处理器
         self.factor_processor = FactorProcessor(self.config)
 
         # 初始化数据
         self.backtest_start_date = config['backtest']['start_date']
         self.backtest_end_date = config['backtest']['end_date']
+        self.backtest_period =  f"{pd.to_datetime(self.backtest_start_date).strftime('%Y%m%d')} ~ {pd.to_datetime(self.backtest_end_date).strftime('%Y%m%d')}"
         self.raw_dfs = raw_dfs
         self.processed_raw_data = processed_raw_data  # 似乎没用
         self.stock_pools_dict = stock_pools_dict
@@ -98,7 +99,7 @@ class SingleFactorTester:
         self.target_factors_dict = target_factors_dict
         self.target_factors_category_dict = target_factors_category_dict
         self.target_school_type_dict = target_factor_school_type_dict
-        #基于不同股票池！！！
+        # 基于不同股票池！！！
         self.close_df_dict = self._prepare_dfs_dict_by_diff_stock_pool(['close'])
         self.circ_mv_dict = self._prepare_dfs_dict_by_diff_stock_pool(['circ_mv'])
         self.pct_chg_dict = self._prepare_dfs_dict_by_diff_stock_pool(['pct_chg'])
@@ -111,7 +112,7 @@ class SingleFactorTester:
         self.check_shape()
 
         # 创建输出目录
-        os.makedirs(output_dir, exist_ok=True)
+        # os.makedirs(output_dir, exist_ok=True)
 
         # 设置中文字体
         plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
@@ -132,15 +133,16 @@ class SingleFactorTester:
         Returns:
             IC分析结果字典
         """
-        ic_series_periods_dict, stats_periods_dict = calculate_ic_vectorized(factor_data, close_df, forward_periods=self.test_common_periods,
-                                                method='spearman')
+        ic_series_periods_dict, stats_periods_dict = calculate_ic_vectorized(factor_data, close_df,
+                                                                             forward_periods=self.test_common_periods,
+                                                                             method='spearman')
         return ic_series_periods_dict, stats_periods_dict
 
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
                                close_df: pd.DataFrame,
 
-                               factor_name: str) ->Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+                               factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         分层回测法测试
 
@@ -169,11 +171,12 @@ class SingleFactorTester:
     #     return test_fama_macbeth(factor_data=factor_data, close_df=close_df, neutral_dfs=neutral_dfs,
     #                       circ_mv_df=circ_mv_df,
     #                       factor_name=factor_name)
-
+    # 纯测试结果
     def comprehensive_test(self,
                            target_factor_name: str,
                            preprocess_method: str = "standard",
-                           save_results: bool = True) -> Dict[str, Any]:
+                           ) -> Tuple[
+        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         """
         综合测试 - 执行所有三种测试方法
 
@@ -197,46 +200,33 @@ class SingleFactorTester:
             neutral_dfs=self.neutral_dfs_data_dict[stock_pool_name],
             factor_school=target_school
         )
-        #必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
+        # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
         close_df = self.close_df_dict[stock_pool_name]['close']
         circ_mv_df = self.circ_mv_dict[stock_pool_name]['circ_mv']
         neutral_dfs = self.neutral_dfs_data_dict[stock_pool_name]
 
         # 2. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
-        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df, target_factor_name)
+        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df,
+                                                                              target_factor_name)
 
         # 3. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
-        quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(target_factor_processed, close_df, target_factor_name)
+        quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(
+            target_factor_processed, close_df, target_factor_name)
 
         # 4. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
-        factor_returns_series_periods_dict,fm_stat_results_periods_dict = fama_macbeth(factor_data = target_factor_processed, close_df=close_df,forward_periods=self.test_common_periods, neutral_dfs= neutral_dfs, circ_mv_df = circ_mv_df,
-                                            factor_name = target_factor_name)
+        factor_returns_series_periods_dict, fm_stat_results_periods_dict = fama_macbeth(
+            factor_data=target_factor_processed, close_df=close_df, forward_periods=self.test_common_periods,
+            neutral_dfs=neutral_dfs, circ_mv_df=circ_mv_df,
+            factor_name=target_factor_name)
 
-        # 5. 综合评价
-        logger.info("5. 综合评价...")
-        evaluation_score_dict = self.evaluation_score_dict(ic_series_periods_dict, ic_stats_periods_dict,
-                                                           quantile_returns_series_periods_dict, quantile_stats_periods_dict,
-                                                           factor_returns_series_periods_dict,
-                                                           fm_stat_results_periods_dict)
+        return (ic_series_periods_dict, ic_stats_periods_dict,
+                quantile_returns_series_periods_dict, quantile_stats_periods_dict,
+                factor_returns_series_periods_dict, fm_stat_results_periods_dict)
 
-        # 整合结果
-        comprehensive_results = {
-            'factor_name': target_factor_name,
-            'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'preprocess_method': preprocess_method,
-            'ic_analysis': ic_stats_periods_dict,
-            'quantile_backtest': quantile_stats_periods_dict,
-            'fama_macbeth': fm_stat_results_periods_dict,
-            'evaluate_factor_score': evaluation_score_dict
-        }
-        ret = self.summary(comprehensive_results, target_factor_name)
-
-        # self._create_visualizations(ret, factor_name)
-        return ret
-    #ok
+    # ok
     def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
         """准备辅助数据（市值、行业等）"""
         ret_dict = {}
@@ -253,9 +243,9 @@ class SingleFactorTester:
                     {factor_name: self.raw_dfs[factor_name]}, stock_pool)
                 ret_dict[stock_poll_name].update(df)
 
-
         return ret_dict
-    #ok
+
+    # ok
     def _prepare_neutral_data(self, total_mv_df, industry_df) -> Dict[str, pd.DataFrame]:
         """
          准备辅助数据（市值、行业等）- 最终修正版
@@ -340,7 +330,7 @@ class SingleFactorTester:
         for industry_col_key, dummy_df in final_industry_dummies.items():
             # 这里需要注意，mask 操作要求 dummy_df 和 nan_mask_df 的索引和列对齐
             # 幸好，我们在循环内部生成的 dummy_df_for_one_industry 的索引和列是和原始 industry_df 对齐的
-            final_industry_dummies[industry_col_key] = dummy_df.mask(nan_mask_df)#对应位置替换为nan
+            final_industry_dummies[industry_col_key] = dummy_df.mask(nan_mask_df)  # 对应位置替换为nan
             final_industry_dummies[industry_col_key] = final_industry_dummies[industry_col_key].astype(float)
 
         neutral_dict.update(final_industry_dummies)
@@ -348,15 +338,16 @@ class SingleFactorTester:
         return neutral_dict
 
     def evaluation_score_dict(self,
-                              ic_series_periods_dict, ic_stats_periods_dict,
-                              quantile_returns_series_periods_dict, quantile_stats_periods_dict,
-                              factor_returns_series_periods_dict,
+                              ic_stats_periods_dict,
+                              quantile_stats_periods_dict,
                               fm_stat_results_periods_dict
                               ) -> Dict[str, Any]:
 
         ret = {}
         for period in self.test_common_periods:
-            ret[f'{period}d'] = self._evaluate_factor_score(f'{period}d', ic_results, quantile_results, fm_results)
+            ret[f'{period}d'] = self._evaluate_factor_score(f'{period}d', ic_stats_periods_dict,
+                                                            quantile_stats_periods_dict,
+                                                            fm_stat_results_periods_dict)
         return ret
 
     def _evaluate_factor_score(self,
@@ -390,121 +381,7 @@ class SingleFactorTester:
                                                                            cal_score_fama_macbeth)
         return cal_score_factor_holistically
 
-    def _create_visualizations(self, results: Dict[str, Any], factor_name: str):
-        """创建可视化图表"""
-        # 创建子图
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle(f'因子测试报告: {factor_name}', fontsize=16, fontweight='bold')
-
-        # 1. IC时间序列图
-        ax1 = axes[0, 0]
-        for period in self.test_common_periods:
-            period_key = f'{period}d'
-            ic_series = results['ic_analysis'].get(period_key, {}).get('ic_series', pd.Series())
-            if not ic_series.empty:
-                ax1.plot(ic_series.index, ic_series.values, label=f'{period}日', alpha=0.7)
-        ax1.set_title('IC时间序列')
-        ax1.set_ylabel('IC值')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-
-        # 2. IC统计指标柱状图
-        ax2 = axes[0, 1]
-        periods = [f'{p}d' for p in self.test_common_periods]
-        ic_means = [results['ic_analysis'].get(p, {}).get('ic_mean', 0) for p in periods]
-        ic_irs = [results['ic_analysis'].get(p, {}).get('ic_ir', 0) for p in periods]
-
-        x = np.arange(len(periods))
-        width = 0.35
-        ax2.bar(x - width / 2, ic_means, width, label='IC均值', alpha=0.8)
-        ax2.bar(x + width / 2, ic_irs, width, label='IC_IR', alpha=0.8)
-        ax2.set_title('IC统计指标')
-        ax2.set_xlabel('预测周期')
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(periods)
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-
-        # 3. 分层收益率图
-        ax3 = axes[0, 2]
-        main_period = '20d'
-        quantile_main = results['quantile_backtest'].get(main_period, {})
-        if quantile_main:
-            quantile_means = quantile_main.get('quantile_means', [])
-            if quantile_means:
-                quantiles = [f'Q{i}' for i in range(1, len(quantile_means) + 1)]
-                ax3.bar(quantiles, quantile_means, alpha=0.8, color='skyblue')
-                ax3.set_title(f'分层收益率 ({main_period})')
-                ax3.set_ylabel('平均收益率')
-                ax3.grid(True, alpha=0.3)
-
-        # 4. 多空组合净值曲线
-        ax4 = axes[1, 0]
-        for period in self.test_common_periods:
-            period_key = f'{period}d'
-            quantile_data = results['quantile_backtest'].get(period_key, {})
-            if quantile_data:
-                returns_data = quantile_data.get('returns_data')
-                if returns_data is not None and 'TopMinusBottom' in returns_data.columns:
-                    tmb_series = returns_data['TopMinusBottom']
-                    cumulative_returns = (1 + tmb_series).cumprod()
-                    ax4.plot(cumulative_returns.index, cumulative_returns.values,
-                             label=f'{period}日', alpha=0.8)
-        ax4.set_title('多空组合净值曲线')
-        ax4.set_ylabel('累计收益')
-        ax4.legend()
-        ax4.grid(True, alpha=0.3)
-
-        # 5. Fama-MacBeth t值图
-        ax5 = axes[1, 1]
-        periods = [f'{p}d' for p in self.test_common_periods]
-        t_stats = [results['fama_macbeth'].get(p, {}).get('fama_macbeth_t_stat', 0) for p in periods]
-        colors = ['red' if abs(t) > 2 else 'orange' if abs(t) > 1.64 else 'gray' for t in t_stats]
-
-        ax5.bar(periods, t_stats, color=colors, alpha=0.8)
-        ax5.axhline(y=2, color='red', linestyle='--', alpha=0.7, label='显著水平(2)')
-        ax5.axhline(y=-2, color='red', linestyle='--', alpha=0.7)
-        ax5.set_title('Fama-MacBeth t统计量')
-        ax5.set_ylabel('t值')
-        ax5.legend()
-        ax5.grid(True, alpha=0.3)
-
-        # 6. 综合评价雷达图
-        ax6 = axes[1, 2]
-        evaluation = results['evaluate_factor_score']
-
-        # 雷达图数据
-        categories = ['IC_IR', '单调性', 'FM显著性', '多空夏普']
-        values = [
-            min(abs(evaluation['ic_ir']) / 0.5, 1),  # 标准化到0-1
-            1 if evaluation['is_monotonic_by_group'] else 0,
-            1 if evaluation['fm_significant'] else 0,
-            min(abs(evaluation['tmb_sharpe']) / 2, 1)  # 标准化到0-1
-        ]
-
-        # 创建雷达图
-        angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False)
-        values += values[:1]  # 闭合
-        angles = np.concatenate((angles, [angles[0]]))
-
-        ax6.plot(angles, values, 'o-', linewidth=2, alpha=0.8)
-        ax6.fill(angles, values, alpha=0.25)
-        ax6.set_xticks(angles[:-1])
-        ax6.set_xticklabels(categories)
-        ax6.set_ylim(0, 1)
-        ax6.set_title('综合评价雷达图')
-        ax6.grid(True)
-
-        plt.tight_layout()
-
-        # 保存图表
-        chart_path = os.path.join(self.output_dir, f'{factor_name}_analysis_charts.png')
-        plt.savefig(chart_path, dpi=300, bbox_inches='tight')
-        plt.close()
-
-        print(f"可视化图表已保存: {chart_path}")
-
-    def summary(self, results: Dict[str, Any], excel_path: str):
+    def overrall_summary(self, results: Dict[str, Any]):
 
         ic_analysis_dict = results['ic_analysis']
         quantile_backtest_dict = results['quantile_backtest']
@@ -570,63 +447,19 @@ class SingleFactorTester:
             print(f"\n进度: {i}/{len(factors_dict)}")
 
             try:
-                results = self.comprehensive_test(
+                ic_series_periods_dict, quantile_returns_series_periods_dict, factor_returns_series_periods_dict, summary_stats = self.comprehensive_test(
                     factor_data,
                     factor_name,
                     preprocess_method=preprocess_method,
                     save_results=True
                 )
-                # self.factor_manager._save_results(results, factor_name)
 
-                batch_results[factor_name] = results
+                batch_results[factor_name] = summary_stats
 
             except Exception as e:
                 raise ValueError(f"因子 {factor_name} 测试失败: {e}")
                 batch_results[factor_name] = {'error': str(e)}
         return batch_results
-
-    def run_comprehensive_test_with_viz(self,
-                                        factor_data: pd.DataFrame,
-                                        factor_name: str,
-                                        preprocess_method: str = "standard",
-                                        generate_plots: bool = True) -> Dict[str, Any]:
-        """
-        运行综合测试并生成可视化（新增方法）
-
-        Args:
-            factor_data: 因子数据
-            factor_name: 因子名称
-            preprocess_method: 预处理方法
-            generate_plots: 是否生成图表
-
-        Returns:
-            包含测试结果和图表路径的字典
-        """
-        # 运行标准测试
-        test_results = self.run_comprehensive_test(
-            factor_data=factor_data,
-            factor_name=factor_name,
-            preprocess_method=preprocess_method
-        )
-
-        # 生成可视化
-        plot_paths = {}
-        if generate_plots and self.viz_manager is not None:
-            try:
-                plot_paths = self.viz_manager.plot_single_factor_results(
-                    test_results=test_results,
-                    factor_name=factor_name,
-                    save_plots=True
-                )
-                print(f"✓ 图表已生成并保存到: {self.viz_manager.output_dir}")
-            except Exception as e:
-                print(f"⚠ 图表生成失败: {e}")
-
-        # 合并结果
-        enhanced_results = test_results.copy()
-        enhanced_results['plot_paths'] = plot_paths
-
-        return enhanced_results
 
     def cal_score_ic(self,
                      ic_mean: float,
@@ -638,7 +471,7 @@ class SingleFactorTester:
         """
 
         # 1. 科学性检验 (准入门槛)
-        is_significant = ic_p_value < 0.05 if not np.isnan(ic_p_value) else False
+        is_significant = ic_p_value is not None and ic_p_value < 0.05
 
         # 2. 分级评分
         icir_score = 0
@@ -982,7 +815,7 @@ class SingleFactorTester:
         pool_name = self.get_stock_pool_name_by_factor_school(school[0])
         return pool_name
 
-    #ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
+    # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     def get_pct_chg_beta_dict(self):
         dict = {}
         for pool_name, _ in self.stock_pools_dict.items():
@@ -1018,7 +851,8 @@ class SingleFactorTester:
         beta_for_this_pool = self.master_beta_df[pool_stocks]
 
         return beta_for_this_pool
-    #ok ok
+
+    # ok ok
     def calculate_rolling_beta(
             self,
             start_date: str,
@@ -1045,7 +879,7 @@ class SingleFactorTester:
 
         # --- 1. 数据获取与准备 ---
         #  指数提前。但是入参传入的股票是死的，建议重新手动加载。但是考虑是否与股票池对应！ 答案：还是别跟动态股票池进行where了，疑问
-        #解释：
+        # 解释：
         # 为了计算滚动值，我们需要往前多取一些数据作为“缓冲”
         ##
         # 滚动历史因子 (Rolling History Factor)
@@ -1072,7 +906,8 @@ class SingleFactorTester:
         )
 
         # a) 获取市场指数的每日收益率 是否是自动过滤了 非交易日 yes
-        market_returns_long = load_index_daily(buffer_start_date, end_date).assign(pct_chg=lambda x: x['pct_chg'] / 100)#pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
+        market_returns_long = load_index_daily(buffer_start_date, end_date).assign(
+            pct_chg=lambda x: x['pct_chg'] / 100)  # pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
         market_returns = market_returns_long.set_index('trade_date')['pct_chg']
         market_returns.index = pd.to_datetime(market_returns.index)
         market_returns.name = 'market_return'  # chong'ming
@@ -1084,14 +919,15 @@ class SingleFactorTester:
         combined_df = stock_returns.join(market_returns, how='left')
 
         # 更新 market_returns 为对齐后的版本，确保万无一失
-        market_returns_aligned = combined_df.pop('market_return')#剔除这列！
+        market_returns_aligned = combined_df.pop('market_return')  # 剔除这列！
 
         # --- 3. 滚动计算Beta ---
         # logger.info("  > 正在进行滚动计算...")
         # Beta = Cov(R_stock, R_market) / Var(R_market)
 
         # a) 现在，stock_returns 和 market_returns_aligned 的索引是100%对齐的
-        rolling_cov = combined_df.rolling(window=window, min_periods=min_periods).cov(market_returns_aligned)#协方差关心的是两组数据之间的关系（描述两个变量之间的关系方向）（是不是都是一起）
+        rolling_cov = combined_df.rolling(window=window, min_periods=min_periods).cov(
+            market_returns_aligned)  # 协方差关心的是两组数据之间的关系（描述两个变量之间的关系方向）（是不是都是一起）
 
         # b) 计算指数收益率的滚动方差
         rolling_var = market_returns_aligned.rolling(window=window, min_periods=min_periods).var()
@@ -1105,14 +941,15 @@ class SingleFactorTester:
         logger.info(f"滚动Beta计算完成，最终矩阵形状: {final_beta_df.shape}")
 
         return final_beta_df
-    #ok
+
+    # ok
     def build_auxiliary_dfs_dict(self):
         dict = self._prepare_dfs_dict_by_diff_stock_pool(['total_mv', 'industry'])
         pct_chg_beta_dict = self.pct_chg_bate_dict
 
-        for stock_poll_name,df in pct_chg_beta_dict.items():
+        for stock_poll_name, df in pct_chg_beta_dict.items():
             # 补充beta
-            dict[stock_poll_name].update({'pct_chg_beta':df})
+            dict[stock_poll_name].update({'pct_chg_beta': df})
         return dict
 
     def check_shape(self):
@@ -1142,3 +979,115 @@ class SingleFactorTester:
             if shape != self.neutral_dfs_data_dict[pool_name]['total_mv'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
 
+    def test_single_factor_entity_service(self,
+                                          target_factor_name: str,
+                                          preprocess_method: str = "standard",
+                                          **test_kwargs) -> Tuple[
+        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """
+        测试单个因子
+        综合评分
+        保存结果
+        画图保存
+        Args:
+
+            factor_name: 因子名称
+
+            **test_kwargs: 测试参数
+        """
+
+        # # 自动分类因子
+        # 先注释下面的，问题：自动识别因子类型 函数有待补充！ 暂且不用 不是很要紧
+        # if category is None and auto_register:
+        #
+        #
+        #     # returns_data = self.single_factor_tester.get_returns_data()#todo！！！
+        #     # category = self.factor_manager.classify_factor(factor_data, returns_data)
+        #
+        # # 自动注册因子
+        # if auto_register:
+        #     self.register_factor(
+        #         name=factor_name,
+        #         category=category or FactorCategory.CUSTOM,
+        #         description=f"自动注册的{category.value if isinstance(category, FactorCategory) else category or '自定义'}因子",
+        #         data_requirements=["price", "returns"]
+        #     )
+
+        # 执行测试
+        ic_series_periods_dict, ic_stats_periods_dict, quantile_returns_series_periods_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict = \
+            (
+                self.comprehensive_test(
+                    target_factor_name=target_factor_name,
+                    preprocess_method="standard"
+                ))
+        # 5. 综合评价
+
+        evaluation_score_dict = self.evaluation_score_dict(ic_stats_periods_dict,
+                                                           quantile_returns_series_periods_dict,
+                                                           fm_stat_results_periods_dict)
+        # 整合结果
+        comprehensive_results = {
+            'factor_name': target_factor_name,
+            'factor_category': self.target_factors_category_dict[target_factor_name],
+            'backtest_period': self.backtest_period,
+            'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'preprocess_method': preprocess_method,
+            'ic_analysis': ic_stats_periods_dict,
+            'quantile_backtest': quantile_stats_periods_dict,
+            'fama_macbeth': fm_stat_results_periods_dict,
+            'evaluate_factor_score': evaluation_score_dict
+        }
+        overrall_summary_stats = self.overrall_summary(comprehensive_results)
+        purify_summary_rows_contain_periods = self.purify_summary_rows_contain_periods(comprehensive_results)
+
+        test_kwargs.get('factor_manager')._save_results(overrall_summary_stats, file_name_prefix = 'overrall_summary')
+        test_kwargs.get('factor_manager').update_and_save_factor_leaderboard(purify_summary_rows_contain_periods, file_name_prefix = 'purify_summary')
+        # 画图保存
+        test_kwargs.get('visualization_manager').plot_single_factor_results(
+            target_factor_name,
+            ic_series_periods_dict,
+            ic_stats_periods_dict,
+            quantile_returns_series_periods_dict,
+            quantile_stats_periods_dict,
+            factor_returns_series_periods_dict,
+            fm_stat_results_periods_dict)
+
+        return ic_series_periods_dict, quantile_returns_series_periods_dict, factor_returns_series_periods_dict, overrall_summary_stats
+
+    def purify_summary_rows_contain_periods(self, comprehensive_results):
+        factor_category = comprehensive_results.get('factor_category', 'Unknown')  # 使用.get增加健壮性
+        factor_name = comprehensive_results['factor_name']
+
+        ic_stats_periods_dict = comprehensive_results['ic_analysis']
+        quantile_stats_periods_dict = comprehensive_results['quantile_backtest']
+        fm_stat_results_periods_dict = comprehensive_results['fama_macbeth']
+
+        # 以 ic_stats 的 keys 为准，确保所有字典都有这些周期
+        periods = ic_stats_periods_dict.keys()
+        purify_summary_rows = []
+
+        for period in periods:
+            # 在循环内部进行防御性检查，确保所有结果字典都包含当前周期
+            if not all(period in d for d in [quantile_stats_periods_dict, fm_stat_results_periods_dict]):
+                print(f"警告：因子 {factor_name} 在周期 {period} 的结果不完整，已跳过。")
+                continue
+
+            summary_row = {
+                'factor_name': factor_name,
+                'factor_category': factor_category,
+                'backtest_period': self.backtest_period,
+
+                'period': period,  # 【BUG已修正】这里应该是单个周期
+                #收益维度
+                'tmb_sharpe': quantile_stats_periods_dict[period]['tmb_sharpe'],
+                'tmb_annual_return': quantile_stats_periods_dict[period]['tmb_annual_return'],
+                # 风险与稳定性维度 (Risk & Stability Dimension) - 过程有多颠簸
+                'tmb_max_drawdown': quantile_stats_periods_dict[period]['max_drawdown'],
+                'ic_ir': ic_stats_periods_dict[period]['ic_ir'],
+                #纯净度与独特性维度 (Purity & Uniqueness Dimension) - “是真Alpha还是只是风险暴露
+                'fm_t_statistic': fm_stat_results_periods_dict[period]['t_statistic'],
+                'is_monotonic_by_group': quantile_stats_periods_dict[period]['is_monotonic_by_group'],
+                'ic_mean': ic_stats_periods_dict[period]['ic_mean']
+            }
+            purify_summary_rows.append(summary_row)
+        return purify_summary_rows

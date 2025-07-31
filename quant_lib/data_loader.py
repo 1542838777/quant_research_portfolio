@@ -20,6 +20,7 @@ from quant_lib.utils import get_trading_dates
 # 获取模块级别的logger
 logger = setup_logger(__name__)
 
+
 class DataLoader:
     """
     数据加载器类
@@ -54,6 +55,24 @@ class DataLoader:
         logger.info(f"字段->所在文件Name--映射构建完毕，共发现 {len(self.field_map)} 个字段")
         # 在初始化时就加载交易日历，因为它是后续操作的基础(此处还没区分是否open，是全部
         self.trade_cal = self._load_trade_cal()
+
+    def check_local_date_period_completeness(self, file_to_fields, start_date, end_date):
+        for logical_name, columns_to_need_load in file_to_fields.items():
+            logger.info(f"开始检查{logical_name} 时间段完整")
+            file_path = self.data_path / logical_name
+
+            df = pd.read_parquet(file_path)
+            if  logical_name in ['index_daily.parquet','daily_basic','daily_basic','index_weights','adj_factor','daily','stk_limit','margin_detail'] :
+                self.check_local_date_period_completeness_for_trade(logical_name, df, start_date, end_date)
+            if 'trade_cal.parquet'  == logical_name:
+                self.check_local_date_period_completeness_col(logical_name, df, 'cal_date', start_date, end_date)
+            if 'namechange.parquet'  == logical_name:
+                self.check_local_date_period_completeness_col(logical_name, df, 'ann_date', start_date, end_date)
+            if 'stock_basic.parquet'  == logical_name:
+                self.check_local_date_period_completeness_col(logical_name, df, 'list_date', start_date, end_date)
+            if 'fina_indicator_vip'  == logical_name:
+                self.check_local_date_period_completeness_col(logical_name, df, 'ann_date', start_date, end_date)
+
 
     def _load_trade_cal(self) -> pd.DataFrame:
         """加载交易日历"""
@@ -101,7 +120,7 @@ class DataLoader:
                     if (col == 'name') & (
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
                         continue
-                    if (col in ['close', 'open', 'high', 'low', 'pre_close','pct_chg']) & (
+                    if (col in ['close', 'open', 'high', 'low', 'pre_close', 'pct_chg']) & (
                             logical_name != 'daily_hfq'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据
                         continue
                     if col not in field_to_files_map:
@@ -110,7 +129,8 @@ class DataLoader:
                 logger.error(f"读取文件 {file_path} 的元数据失败: {e}")
 
         return field_to_files_map
-    #ok
+
+    # ok
     def get_raw_dfs_by_require_fields(self,
                                       fields: List[str],
                                       start_date: str,
@@ -146,7 +166,7 @@ class DataLoader:
                 raise ValueError(f"未找到字段 {field} 的数据源")
 
             file_to_fields[logical_name].append(field)
-
+        # self.check_local_date_period_completeness(file_to_fields, start_date, end_date) todo 后面实盘开启
         # 加载和处理数据
         raw_wide_dfs = {}  # 装 宽化的df
         raw_long_dfs = {}  # 原生的 从本地拿到的 key :文件，value：df（所有列！）
@@ -320,6 +340,25 @@ class DataLoader:
         #     return result_df
 
         return long_df  # 如果没有日期列，返回原始数据 反正后面有 对齐！
+
+    def check_local_date_period_completeness_col(self, logical_name, df, col, start_date, end_date):
+        df[col] = pd.to_datetime(df[col])
+        min_date = df[col].min()
+        max_date = df[col].max()
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
+        if min_date > start_date:
+            raise ValueError(
+                f"[{logical_name}] 最早 trade_date = {min_date.date()} 晚于 start_date = {start_date.date()} ❌")
+        if max_date < end_date:
+            raise ValueError(
+                f"[{logical_name}] 最晚 trade_date = {max_date.date()} 早于 end_date = {end_date.date()} ❌")
+        print(f"[{logical_name}] 日期覆盖完整 ✅")
+        pass
+
+    def check_local_date_period_completeness_for_namechange(self, logical_name, df, start_date, end_date):
+
+        pass
 
 
 class DataProcessor:

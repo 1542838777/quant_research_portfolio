@@ -13,6 +13,8 @@ from pathlib import Path
 import yaml
 from datetime import datetime
 import json
+
+from data.load_file import _load_config
 from ..factor_manager.factor_manager import FactorManager
 from ..single_factor_tester.single_factor_tester import SingleFactorTester
 from ..factor_manager.registry.factor_registry import FactorCategory
@@ -56,7 +58,7 @@ class StrategyFactory:
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # 加载配置
-        self.config = self._load_config(config_path)
+        self.config = _load_config(config_path)
         self.config_path = config_path
 
         # 初始化核心组件
@@ -72,17 +74,6 @@ class StrategyFactory:
         factor_definition = self.data_manager.config['factor_definition']
         return factor_definition[factor_definition['name'] == factor_name]['school']
 
-    def _load_config(self, config_path: str) -> Dict[str, Any]:
-        """加载配置文件"""
-        config_file = Path(config_path)
-        if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            logger.info(f"配置文件加载成功: {config_path}")
-        else:
-            raise RuntimeError("未找到config文件")
-
-        return config
 
     def _get_default_config(self) -> Dict[str, Any]:
         """获取默认配置"""
@@ -187,46 +178,7 @@ class StrategyFactory:
         """加载数据"""
         data_dict = self.data_manager.processed_raw_data_dict_by_stock_pool_()
         return data_dict
-
-    def test_single_factor(self,
-                           target_factor_name: str,
-
-                           **test_kwargs) -> Dict[str, Any]:
-        """
-        测试单个因子
-        
-        Args:
-
-            factor_name: 因子名称
-
-            **test_kwargs: 测试参数
-        """
-
-        # # 自动分类因子
-        # 先注释下面的，问题：自动识别因子类型 函数有待补充！ 暂且不用 不是很要紧
-        # if category is None and auto_register:
-        #
-        #
-        #     # returns_data = self.single_factor_tester.get_returns_data()#todo！！！
-        #     # category = self.factor_manager.classify_factor(factor_data, returns_data)
-        #
-        # # 自动注册因子
-        # if auto_register:
-        #     self.register_factor(
-        #         name=factor_name,
-        #         category=category or FactorCategory.CUSTOM,
-        #         description=f"自动注册的{category.value if isinstance(category, FactorCategory) else category or '自定义'}因子",
-        #         data_requirements=["price", "returns"]
-        #     )
-
-        # 执行测试
-        test_result = self.single_factor_tester.comprehensive_test(
-
-            target_factor_name=target_factor_name,
-            **test_kwargs
-        )
-        self.factor_manager._save_results(test_result, target_factor_name)
-        return test_result
+    #really
 
     # 批量测试！起始。先配置 基础底层target因子，比如价格，。。 然后自己换算出目标因子，然后为给这个factor_data_dict todo
     def batch_test_factors(self,
@@ -255,11 +207,13 @@ class StrategyFactory:
         for factor_name, factor_data in target_factors_dict.items():
             try:
                 # 执行测试
-                result = self.test_single_factor(
+                ic_series_periods_dict,quantile_returns_series_periods_dict,factor_returns_series_periods_dict,summary_stats = (self.single_factor_tester.
+                test_single_factor_entity_service(
                     target_factor_name=factor_name,
-                    **test_kwargs
-                )
-                results[factor_name] = result
+                    factor_manager=self.factor_manager,
+                    visualization_manager = self.visualization_manager
+                ))
+                results[factor_name] = summary_stats
             except Exception as e:
                 # traceback.print_exc()
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
@@ -414,54 +368,6 @@ class StrategyFactory:
         return self.factor_manager.visualize_factor_clusters(
             factor_data_dict, n_clusters, method, figsize
         )
-
-    def export_results(self, output_dir: str = None) -> Dict[str, str]:
-        """
-        导出结果
-        
-        Args:
-            output_dir: 输出目录
-            
-        Returns:
-            导出文件路径字典
-        """
-        if output_dir is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = self.workspace_dir / "exports" / f"export_{timestamp}"
-        else:
-            output_dir = Path(output_dir)
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        exported_files = {}
-
-        # 导出因子摘要
-        summary = self.get_factor_performance_summary()
-        if not summary.empty:
-            summary_file = output_dir / "factor_summary.xlsx"
-            summary.to_excel(summary_file, index=False)
-            exported_files['summary'] = str(summary_file)
-
-        # 导出配置
-        config_file = output_dir / "factory_config.yaml"
-        with open(config_file, 'w', encoding='utf-8') as f:
-            yaml.dump(self.config, f, default_flow_style=False)
-        exported_files['config'] = str(config_file)
-
-        # 导出测试结果
-        results_file = output_dir / "test_results.json"
-        test_results = {}
-        for factor_name in self.factor_manager.list_factors():
-            result = self.factor_manager.get_test_result(factor_name)
-            if result:
-                test_results[factor_name] = result.to_dict()
-
-        with open(results_file, 'w', encoding='utf-8') as f:
-            json.dump(test_results, f, indent=2, ensure_ascii=False)
-        exported_files['results'] = str(results_file)
-
-        logger.info(f"结果导出完成: {output_dir}")
-        return exported_files
 
     def create_factor_pipeline(self,
                                factor_configs: List[Dict[str, Any]]) -> 'FactorPipeline':
@@ -622,6 +528,8 @@ class StrategyFactory:
         scholl = self.get_school(target_factor_name)
 
         return df, category, scholl
+
+
 
 
 class FactorPipeline:

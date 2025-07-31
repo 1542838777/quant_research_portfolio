@@ -2,7 +2,7 @@ import pandas as pd
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api
-from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info
+from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d
 from quant_lib.tushare.tushare_client import TushareClient
 
 
@@ -21,9 +21,8 @@ def get_fields_map():
 
 
 if __name__ == '__main__':
-    download_index_daily_info()
 
-    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet')
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
     print(df)
 
     ##

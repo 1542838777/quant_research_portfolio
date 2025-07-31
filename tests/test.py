@@ -68,6 +68,7 @@ def compare_local_and_net():
     daily_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic')
     namechange = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'namechange.parquet')
     stock_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
+    final_indicator_vip = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'final_indicator_vip')
 
     for miss_ts_code in miss_ts_codes:
         net_ret = call_ts_tushare_api("pro_bar", ts_code=miss_ts_code, start_date='20180101', end_date='20250711', adj='hfq')

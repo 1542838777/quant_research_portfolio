@@ -107,6 +107,23 @@ def download_index_daily_info():
 
     path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
     final_df.to_parquet(path)
+#2025 07 31调用，所以也只有截止到0731的数据！
+def download_suspend_d():
+    print("\n===== 开始下载停复牌数据 =====")
+    #获取所有股票
+    stock_basic = TushareClient.get_pro().stock_basic(list_status='L,D,P',
+                                                      fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type')
+    ts_codes = list(stock_basic['ts_code'].unique())
+    all_data_list=[]
+
+    for i,ts_code in enumerate(ts_codes):
+        print(f"开始处理第{i+1}/{len(ts_codes)}股票...")
+        data = call_pro_tushare_api('suspend_d', ts_code=ts_code)
+        all_data_list.append(data)
+    final_df = pd.concat(all_data_list, ignore_index=True)
+    final_df.drop_duplicates(inplace=True)
+    final_df.to_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
+    print("download_suspend_d保存成功")
 
 
 def download_stock_info(stock_basic_path):
