@@ -296,8 +296,8 @@ class FactorManager:
         # 保存JSON格式
         json_path = os.path.join(self.results_dir, f'all_single_factor_test_{file_name_prefix}_results.json')
         add_single_factor_test_result(json_path, serializable_results)
-    #ok
-    def update_and_save_factor_leaderboard(self, all_summary_rows: list, file_name_prefix: str):
+    #ok 保存 精简简要的测试结果
+    def update_and_save_factor_purify_summary(self, all_summary_rows: list, file_name_prefix: str):
         """
            更新或创建因子排行榜，支持增量更新。
            如果文件已存在，则删除本次测试涉及的因子和周期的旧记录，并追加新记录。
@@ -357,4 +357,62 @@ class FactorManager:
             raise e  # 重新抛出异常，让上层知道发生了错误
 
 
+    def update_and_save_fm_factor_return_matrix(self, new_fm_factor_returns_dict: dict, file_name_prefix: str):
+        """
+        【新】更新或创建统一的因子收益矩阵文件。
+        如果文件已存在，则用新的收益序列覆盖掉同名的旧序列。
 
+        Args:
+            new_fm_factor_returns_dict (dict): 本次测试产出的新收益序列字典。
+                                          键为 'factor_name_period' (如 'momentum_2_1_20d')，
+                                          值为 pd.Series。
+            file_name_prefix (str): 文件名前缀。
+        """
+        if not new_fm_factor_returns_dict:
+            print("警告：没有新的因子收益序列可供更新。")
+            return
+
+        # 1. 准备新数据：将输入的字典转换为一个“宽格式”的DataFrame
+        new_returns_df = pd.DataFrame(new_fm_factor_returns_dict)
+
+        # 2. 正确构建文件路径
+        output_dir = Path(f'{self.results_dir}')
+        output_dir.mkdir(exist_ok=True)
+        parquet_path = output_dir / f'all_single_factor_fm_returns_{file_name_prefix}.parquet'
+        csv_path = output_dir / f'all_factor_returns_{file_name_prefix}.csv'
+
+        # 3. 安全地读取旧的收益矩阵
+        try:
+            existing_matrix = pd.read_parquet(parquet_path)
+        except FileNotFoundError:
+            print(f"信息：未找到现有的收益矩阵文件 at {parquet_path}。将创建新文件。")
+            existing_matrix = pd.DataFrame()
+
+        # 4. 识别需要被替换的旧列
+        #    这些列的名字，就是新数据 new_returns_df 的列名
+        cols_to_update = new_returns_df.columns
+
+        # 找出在旧矩阵中确实存在的、需要被删除的列
+        cols_to_drop = [col for col in cols_to_update if col in existing_matrix.columns]
+
+        # 5. 删除旧列，得到需要保留的旧矩阵部分
+        matrix_to_keep = existing_matrix.drop(columns=cols_to_drop)
+
+        # 6. 合并“保留的旧矩阵”和“所有新数据”
+        #    axis=1 表示按列进行合并。Pandas会自动按索引（日期）对齐。
+        final_matrix = pd.concat([matrix_to_keep, new_returns_df], axis=1)
+
+        # 7. (推荐) 按列名排序，让文件结构更清晰
+        final_matrix.sort_index(axis=1, inplace=True)
+
+        # 8. 保存最终的、更新后的收益矩阵
+        try:
+            final_matrix.to_parquet(parquet_path, index=True)  # 收益序列，索引(日期)需要保存
+            print(f"✅ 因子收益矩阵已成功更新并保存至: {parquet_path}")
+
+            final_matrix.to_csv(csv_path, index=True, encoding='utf-8-sig')
+            print(f"✅ 因子收益矩阵已成功更新并保存至: {csv_path}")
+
+        except Exception as e:
+            print(f"❌ 保存因子收益矩阵时发生错误: {e}")
+            raise e

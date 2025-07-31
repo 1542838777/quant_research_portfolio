@@ -64,9 +64,9 @@ class SingleFactorTester:
                  config: Dict[str, Any] = None,
                  target_factors_dict: Dict[str, pd.DataFrame] = None,
                  target_factors_category_dict: Dict[str, Any] = None,
-                 target_factor_school_type_dict: Dict[str, Any] = None,
+                 target_factor_school_type_dict: Dict[str, Any] = None
 
-                 output_dir: str = "results/single_factor_tests"):
+                 ):
         """
         初始化单因子测试器 - 兼容新架构
 
@@ -74,7 +74,6 @@ class SingleFactorTester:
             raw_dfs: 数据字典（新架构）
             price_data: 价格数据（向后兼容）
             config: 配置字典
-            output_dir: 结果输出目录
         """
         # 处理配置
         if not config:
@@ -1039,9 +1038,12 @@ class SingleFactorTester:
         }
         overrall_summary_stats = self.overrall_summary(comprehensive_results)
         purify_summary_rows_contain_periods = self.purify_summary_rows_contain_periods(comprehensive_results)
+        fm_return_series_dict = self.build_fm_return_series_dict(factor_returns_series_periods_dict,target_factor_name)
+
 
         test_kwargs.get('factor_manager')._save_results(overrall_summary_stats, file_name_prefix = 'overrall_summary')
-        test_kwargs.get('factor_manager').update_and_save_factor_leaderboard(purify_summary_rows_contain_periods, file_name_prefix = 'purify_summary')
+        test_kwargs.get('factor_manager').update_and_save_factor_purify_summary(purify_summary_rows_contain_periods, file_name_prefix = 'purify_summary')
+        test_kwargs.get('factor_manager').update_and_save_fm_factor_return_matrix(fm_return_series_dict, file_name_prefix = 'fm_return_series')
         # 画图保存
         test_kwargs.get('visualization_manager').plot_single_factor_results(
             target_factor_name,
@@ -1091,3 +1093,13 @@ class SingleFactorTester:
             }
             purify_summary_rows.append(summary_row)
         return purify_summary_rows
+
+    def build_fm_return_series_dict(self, fm_factor_returns_series_periods_dict, target_factor_name):
+        periods = fm_factor_returns_series_periods_dict.keys()
+        fm_factor_returns = {}
+
+        for period ,return_series in fm_factor_returns_series_periods_dict.items():
+            colum_name  = f'{target_factor_name}_{period}'
+            fm_factor_returns[colum_name] = return_series
+
+        return fm_factor_returns
