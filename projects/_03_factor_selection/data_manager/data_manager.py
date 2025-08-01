@@ -19,6 +19,8 @@ from pandas import DatetimeIndex
 from data.load_file import _load_config
 from data.local_data_load import load_index_daily, load_suspend_d_df
 from data.namechange_date_manager import fill_end_date_field
+from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL, \
+    FILL_STRATEGY_ZERO, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT2
 from quant_lib.data_loader import DataLoader
 
 # 添加项目根目录到路径
@@ -32,8 +34,6 @@ warnings.filterwarnings('ignore')
 
 # 配置日志
 logger = setup_logger(__name__)
-
-
 def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
     dfs = raw_df.copy()
     for item_name, df in dfs.items():
@@ -78,6 +78,8 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常现象：不需要care 多少缺失率"
     if field in ['pct_chg'] and rate <= 0.10:
         return "正常"
+    if field in ['market_cap_log','pe_ttm_inv','bm_ratio','momentum_20d'] and rate<=0.05:
+        return '正常'
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
 
@@ -899,30 +901,36 @@ def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
     aligned_df = aligned_df.where(stock_pool_df)
 
     # 步骤2: 根据数据类型应用不同的填充策略
-    if factor_name in HIGH_FREQ_FIELDS:
-        # 高频数据 暂时不ffill，因为在停牌日，交易相关的活动活动（（成交量、换手率 确实是空的），你去ffill之气的那不就大错了；至于fill（0）还是保持nan，让下游自己考虑，这里不提前一棍子打死
-        # aligned_df = aligned_df.where(stock_pool_df).fillna(0)
-        aligned_df = aligned_df
+    # =================================================================
+    # 步骤2: 根据配置字典，应用填充策略 (重构后的核心)
+    # =================================================================
+    strategy = FACTOR_FILL_CONFIG.get(factor_name)
 
-    elif factor_name in SLOW_MOVING_FIELDS:
-        # 缓变数据：先限制前向填充，再应用股票池过滤
-        aligned_df = aligned_df.ffill(limit=2)  # 最多前向填充2天
+    if strategy is None:
+        raise KeyError(f"因子 '{factor_name}' 的填充策略未在 FACTOR_FILL_CONFIG 中定义！请添加。")
 
-    elif factor_name in STATIC_FIELDS:
-        # 静态数据：无限前向填充，再应用股票池过滤
-        aligned_df = aligned_df.ffill()  # 任由他填充又何妨，反正我前期做了自动宽化填充
+    logger.info(f"  > 正在对因子 '{factor_name}' 应用 '{strategy}' 填充策略...")
 
-    elif factor_name in PRICE_FIELDS:
-        # 价格数据：只保留股票池内的数据  单因子测试需要计算收益率，价格数据不能中断 值得深入思考。
-        # 赞成fill理由：。根据标准的基金会计准则，在停牌期间，一只股票的价值并没有消失或变成未知。为了计算每日的投资组合净值，它的价值必须被定义为**“最后一个可获得的公允价值”**，也就是它停牌前的最后一个价格/市值。
-        # 我还是觉得 污染了正确性！ 后期有空再解决 todo
-        # 停牌股票仍需定价来计算组合净值和收益
-        aligned_df = aligned_df.ffill()
-    elif factor_name in tech_fields:
-        aligned_df = aligned_df
-    else:
-        raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
-    return aligned_df
+    if strategy == FILL_STRATEGY_FFILL:
+        # 前向填充：适用于价格、市值、估值、行业等
+        # 这些值在股票不交易时，应保持其最后一个已知值
+        return aligned_df.ffill()
+
+    elif strategy == FILL_STRATEGY_ZERO:
+        # 填充为0：适用于成交量、换手率等交易行为数据
+        # 不交易的日子，这些指标的真实值就是0
+        return aligned_df.fillna(0)
+    elif strategy == FILL_STRATEGY_FFILL_LIMIT2:
+            # 填充为0：适用于成交量、换手率等交易行为数据
+            # 不交易的日子，这些指标的真实值就是0
+            return aligned_df.ffill(limit=2)
+
+    elif strategy == FILL_STRATEGY_NONE:
+        # 不填充：适用于计算出的技术因子
+        # 如果因子因为数据不足而无法计算，就不应凭空创造它的值
+        return aligned_df
+
+    raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
 
 
 def create_data_manager(config_path: str) -> DataManager:

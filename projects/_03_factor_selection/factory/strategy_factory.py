@@ -7,6 +7,7 @@
 import sys
 import traceback
 
+import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Union, Tuple
 from pathlib import Path
@@ -175,7 +176,6 @@ class StrategyFactory:
 
     #really
 
-    # 批量测试！起始。先配置 基础底层target因子，比如价格，。。 然后自己换算出目标因子，然后为给这个factor_data_dict todo
     def batch_test_factors(self,
                            target_factors_dict: Dict[str, pd.DataFrame],
                            target_factors_category_dict: Dict[str, str],
@@ -409,17 +409,7 @@ class StrategyFactory:
 
         # --- 因子计算逻辑的分发 ---
 
-        if 'pe_ttm_inv' == target_factor_name:
-            # PE因子倒数 (E/P)
-            pe_df = raw_data_dict['pe_ttm'].copy()
-            # PE值必须为正才有意义（负的盈利，E/P失去意义）
-            pe_df = pe_df.where(pe_df > 0)
-            factor_df = 1 / pe_df
-            return factor_df, category_type, school
-
-        # --- 【为你补充的三个因子逻辑】 ---
-
-        elif 'bm_ratio' == target_factor_name:
+        if 'bm_ratio' == target_factor_name:
             # 账面市值比 (B/M), 即市净率倒数
             pb_df = raw_data_dict['pb'].copy()
             # PB值必须为正才有意义 (负的净资产，B/M失去意义)
@@ -468,7 +458,53 @@ class StrategyFactory:
 
         # --- 如果有更多因子，在这里继续添加 elif 分支 ---
 
-        raise ValueError(f"因子 '{target_factor_name}' 的计算逻辑尚未定义！")
+        # --- 毕业考题：规模因子 ---
+        elif 'market_cap_log' == target_factor_name:
+            total_mv_df = raw_data_dict['total_mv'].copy()
+            # 对市值取对数，处理极端值，使其分布更平稳
+            factor_df = np.log(total_mv_df.where(total_mv_df > 0))  # 确保市值大于0
+            return factor_df, category_type, school
+
+        # --- 毕业考题：价值因子 ---
+        elif 'pe_ttm_inv' == target_factor_name:
+            pe_df = raw_data_dict['pe_ttm'].copy()
+            # PE为负或0时，其倒数无意义，设为NaN
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+
+        elif 'bm_ratio' == target_factor_name:
+            pb_df = raw_data_dict['pb'].copy()
+            # PB为负或0时（公司净资产为负），其倒数无意义
+            pb_df = pb_df.where(pb_df > 0)
+            factor_df = 1 / pb_df
+            return factor_df, category_type, school
+
+        # --- 毕业考题：动量因子 ---
+        elif 'momentum_20d' == target_factor_name:
+            # 小白解释：动量 = (T-1日价格) / (T-21日价格) - 1
+            # 因为传入的close_df已经是T-1的价格，所以我们只需要再shift(20)即可得到T-21的价格
+            close_df = raw_data_dict['close'].copy()  # 这是T-1价格
+
+            # 获取约20个交易日前的价格 (T-1-20 = T-21)
+            price_20d_ago = close_df.shift(20)
+
+            price_20d_ago = price_20d_ago.where(price_20d_ago > 0)
+            factor_df = (close_df / price_20d_ago) - 1
+            return factor_df, category_type, school
+
+        # --- 其他量价因子 ---
+        elif 'turnover_rate_abnormal_20d' == target_factor_name:
+            turnover_df = raw_data_dict['turnover_rate'].copy()  # T-1日的换手率
+            # 计算过去20日的滚动均值 (T-20 到 T-1)
+            turnover_mean_20d = turnover_df.rolling(window=20, min_periods=10).mean()
+            # 用T-1日的值减去均值
+            factor_df = turnover_df - turnover_mean_20d
+            return factor_df, category_type, school
+
+        # --- 如果有更多因子，在这里继续添加 elif 分支 ---
+
+        raise ValueError(f"因子 '{target_factor_name}' 的计算逻辑尚未在本工厂中定义！")
 
     def get_target_factors_entity(self):
 

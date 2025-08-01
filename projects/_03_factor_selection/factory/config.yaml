@@ -2,7 +2,7 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2024-04-10'
+  start_date: '2018-06-10'
   end_date: '2025-07-10'
 
 # ==============================================================================
@@ -69,7 +69,7 @@ stock_pool_profiles:
 
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'bm_ratio','momentum_2_1','turnover_rate_abnormal_20d' ]
+  fields: [ 'market_cap_log','pe_ttm_inv','bm_ratio','momentum_20d' ]
 
 # 数据预处理设置
 preprocessing:
@@ -80,7 +80,52 @@ preprocessing:
 # 因子定义
 factor_definition:
 
+  # ===============================================
+  #  专题因子一：规模类 (Size) - 【毕业大考题】
+  # ===============================================
+  - name: 'market_cap_log'
+    school: 'fundamentals'
+    category_type: 'size'
+    description: '总市值的自然对数，最经典、最重要的规模因子。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'total_mv' ]
 
+  # ===============================================
+  #  专题因子二：价值类 (Value) - 【毕业大考题】
+  # ===============================================
+  - name: 'pe_ttm_inv'
+    school: 'fundamentals'
+    category_type: 'value'
+    description: '市盈率(PE_TTM)倒数，即E/P，经典的盈利收益率因子。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'pe_ttm' ]
+
+  - name: 'bm_ratio'
+    school: 'fundamentals'
+    category_type: 'value'
+    description: '账面市值比(B/M), 即市净率(PB)倒数，最经典的价值因子。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'pb' ]
+
+  # ===============================================
+  #  专题因子三：动量类 (Momentum) - 【毕业大考题】
+  # ===============================================
+  - name: 'momentum_20d'
+    school: 'trend'
+    category_type: 'momentum'
+    description: '20日动量因子，计算过去20个交易日的收益率，捕捉短期趋势。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'close' ]
+
+  # ===============================================
+  #  其他：量价/微观结构类 (Microstructure)
+  # ===============================================
+  - name: 'turnover_rate_abnormal_20d'
+    school: 'microstructure'
+    category_type: 'liquidity'
+    description: '20日异常换手率。用当日换手率与过去20日均值的差值，捕捉“异动”信号。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'turnover_rate' ]
   # 价值因子
   - name: 'pe_ttm_inv'
     school: 'fundamentals'#基本面派 (价值/成长/质量) #trend 趋势派  #microstructure（量价类因子） 微观派

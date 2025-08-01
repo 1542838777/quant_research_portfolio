@@ -186,7 +186,7 @@ class FactorProcessor:
 
         # --- 阶段三：逐日进行截面回归中性化 ---
         for date in processed_factor.index:
-            # 获取当天待中性化的因子数据（因变量 y）#todo logger
+            logger.info(" 获取当天待中性化的因子数据（因变量 y")
             y = processed_factor.loc[date].dropna()
             if len(y) < 20:  # 确保有足够多的样本进行回归，避免过拟合或回归不稳定 todo 实盘需注意，这设置的20
                 logger.debug(f"    日期 {date.date()} 样本数不足 ({len(y)} < 20)，跳过中性化。")

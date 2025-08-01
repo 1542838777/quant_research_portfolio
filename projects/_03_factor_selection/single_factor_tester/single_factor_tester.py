@@ -104,7 +104,7 @@ class SingleFactorTester:
                                                                                                  need_shift=False)  # 只需要对齐股票就行 dict
         self.circ_mv__shift_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
             factor_name='circ_mv',
-            need_shift=True)  # 只需要对齐股票就行 dict # _prepare_dfs_dict_by_diff_stock_pool(['circ_mv'])#shift+align todo
+            need_shift=True)
         self.pct_chg_beta_shift_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
             base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
 

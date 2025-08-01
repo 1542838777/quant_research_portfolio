@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import yaml
 
-IS_DEBUG_MODE = True
+IS_DEBUG_MODE = False
 
 
 def _load_config(config_path: str) -> Dict[str, Any]:
@@ -32,7 +32,7 @@ def _load_config(config_path: str) -> Dict[str, Any]:
     else:
         print("【信息】当前处于生产模式，所有过滤器已启用。")
         stock_pool_profiles = config['stock_pool_profiles']
-        for name, pool in stock_pool_profiles.items():
+        for  pool in stock_pool_profiles:
             pool = pool[next(iter(pool))]
             pool['filters']['remove_new_stocks'] = True
             pool['filters']['remove_st'] = True
