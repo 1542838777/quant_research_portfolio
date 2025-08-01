@@ -99,7 +99,7 @@ class DataManager:
         Args:
             config_path: 配置文件路径
         """
-        self.st_matrix = None
+        self.st_matrix = None  # 注意 后续用此字段，需要注意前视偏差
         self._tradeable_matrix_by_suspend_resume = None
         self.config = _load_config(config_path)
         self.backtest_start_date = self.config['backtest']['start_date']
@@ -109,7 +109,7 @@ class DataManager:
             self.raw_dfs = {}
             self.stock_pools_dict = None
 
-    def processed_raw_data_dict_by_stock_pool_(self) -> Dict[str, pd.DataFrame]:
+    def prepare_all_data(self) -> Dict[str, pd.DataFrame]:
         """
         优化的两阶段数据处理流水线（只加载一次数据）
 
@@ -139,11 +139,7 @@ class DataManager:
         # === 第二阶段：基于股票池对齐和清洗所有数据 ===
         logger.info("第二阶段：(根据因子门派类别)对齐和填充所有因子数据")
 
-        # 使用权威股票池对齐和填充数据
-        self.processed_raw_data = self._align_many_raw_dfs_by_stock_pool_and_fill(self.raw_dfs)
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被stock_pool_df 动了手脚了（低市值的会被置为nan，
-
-        return self.processed_raw_data
 
     # ok
     def _build_stock_pools_from_loaded_data(self, start_date: str, end_date: str) -> pd.DataFrame:
@@ -184,8 +180,10 @@ class DataManager:
     # 对于 是先 fill 还是先where 的考量 ：还是别先ffill了：极端例子：停牌了99天的，100。 若先ffill那么 这100天都是借来的数据！  如果先where。那么直接统统nan了。在ffill也是nan，更具真实
     # ok
     def _align_many_raw_dfs_by_stock_pool_and_fill(self, raw_dfs: Dict[str, pd.DataFrame],
-                                                   stock_pool_param: pd.DataFrame = None,
+                                                   stock_pool_df: pd.DataFrame,
                                                    ) -> Dict[str, pd.DataFrame]:
+        if stock_pool_df is None or stock_pool_df.empty:
+            raise ValueError("stock_pool_param 必须传入且不能为空的 DataFrame")
         """
         第二阶段：使用权威股票池对齐和清洗所有数据
 
@@ -198,7 +196,8 @@ class DataManager:
         aligned_data = {}
         for factor_name, raw_df in raw_dfs.items():
             # 1. 确定当前因子需要哪个股票池！
-            aligned_df = self._align_one_df_by_stock_pool_and_fill(factor_name, raw_df, stock_pool_param)
+            aligned_df = align_one_df_by_stock_pool_and_fill(factor_name=factor_name, raw_df_param=raw_df,
+                                                             stock_pool_df=stock_pool_df)
             aligned_data[factor_name] = aligned_df
         return aligned_data
 
@@ -421,7 +420,7 @@ class DataManager:
         self.show_stock_nums_for_per_day("6个月内上市的过滤！", aligned_universe)
         return aligned_universe
 
-    # ok
+    # ok 已经处理前视偏差
     def _filter_st_stocks(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
         if self.st_matrix is None:
             raise ValueError("    警告: 未能构建ST状态矩阵，无法过滤ST股票。")
@@ -644,7 +643,7 @@ class DataManager:
         components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
 
         # 时间范围过滤
-        # 大坑啊 ，start_date必须提前6个月！！！ 因为最场6个月才有新的数据！ （新老数据间隔最长可达6个月！）。后面逐日填充成分股信息：原理就是取上次数据进行填充的！
+        # 大坑啊 ，start_date必须提前6个月！！！  两条数据时间跨度间隔（新老数据间隔最长可达6个月！）。后面逐日填充成分股信息：原理就是取上次数据进行填充的！
         extended_start_date = pd.Timestamp(start_date) - pd.DateOffset(months=6)
         mask = (components_df['trade_date'] >= extended_start_date) & \
                (components_df['trade_date'] <= pd.Timestamp(end_date))
@@ -653,66 +652,57 @@ class DataManager:
         # print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
         return components_df
 
+    # ok 已经解决前视偏差
     def _build_dynamic_index_universe(self, stock_pool_df, index_code: str) -> pd.DataFrame:
-        """构建动态指数股票池"""
+        """构建动态指数股票池 (修复前视偏差) 核心：available_components = components_df[components_df['trade_date'] < date]"""
         start_date = self.config['backtest']['start_date']
         end_date = self.config['backtest']['end_date']
 
         # 加载动态成分股数据
         components_df = self._load_dynamic_index_components(index_code, start_date, end_date)
+        # 确保 components_df 中的 trade_date 是 datetime 类型，以便比较
+        components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
 
         # 获取交易日序列
         trading_dates = self.data_loader.get_trading_dates(start_date, end_date)
-
-        # 🔧 修复：创建新的DataFrame，而不是修改原有的
         index_stock_pool_df = stock_pool_df.copy()
 
-        # 逐日填充成分股信息
+        #  填充 ---
         for date in trading_dates:
             if date not in index_stock_pool_df.index:
                 continue
 
-            # 获取当日成分股
+            # 1. 【安全港查询】查找所有在T日之前（不含T日）已经公布的成分股列表
+            #    这是为了确保我们只使用 T-1 及更早的信息
+            available_components = components_df[components_df['trade_date'] < date]
+
+            # 如果历史上没有任何成分股信息，则当天股票池为空
+            if available_components.empty:
+                index_stock_pool_df.loc[date, :] = False
+                continue
+
+            # 2. 从这些可用的历史列表中，找到最近的一次发布的日期
+            latest_available_date = available_components['trade_date'].max()
+
+            # 3. 获取这份最新的、合法的成分股列表
             daily_components = components_df[
-                components_df['trade_date'] == date
+                components_df['trade_date'] == latest_available_date
                 ]['con_code'].tolist()
 
-            if daily_components:
-                # 🔧 修复：在基础股票池的基础上，进一步筛选指数成分股
-                valid_stocks = index_stock_pool_df.columns.intersection(daily_components)
+            # --- 后续逻辑与你原先的相同，它们是正确的 ---
 
-                # 只保留既在基础股票池中，又是指数成分股的股票
-                current_universe = index_stock_pool_df.loc[date].copy()  # 当前基础股票池
-                index_stock_pool_df.loc[date, :] = False  # 先清零
+            # a) 获取当前基础股票池和成分股的交集
+            valid_stocks = index_stock_pool_df.columns.intersection(daily_components)
 
-                # 同时满足两个条件：1)在基础股票池中 2)是指数成分股
-                final_valid_stocks = []
-                for stock in valid_stocks:
-                    if current_universe[stock]:  # 在基础股票池中
-                        final_valid_stocks.append(stock)
+            # b) 清理并填充当日股票池
+            current_universe = index_stock_pool_df.loc[date].copy()
+            index_stock_pool_df.loc[date, :] = False
 
-                index_stock_pool_df.loc[
-                    date, final_valid_stocks] = True  # 以上 强行保证了 一定是有close（即current_universe[stock]为true） 还保证一定是目标成分股
+            # c) valid_stocks 是股票池所有 与当天成分股的并集，现在细看到每一天的股票池，如果股票池：也是true：if current_universe[stock] 则视为当天可 加入到final_valid_stocks
+            final_valid_stocks = [stock for stock in valid_stocks if current_universe[stock]]
+            index_stock_pool_df.loc[date, final_valid_stocks] = True
 
-            else:
-                # 当日无成分股数据，使用最近一次的成分股
-                recent_components = components_df[
-                    components_df['trade_date'] <= date
-                    ]
-                if not recent_components.empty:
-                    latest_date = recent_components['trade_date'].max()
-                    latest_components = recent_components[
-                        recent_components['trade_date'] == latest_date
-                        ]['con_code'].tolist()
-
-                    valid_stocks = index_stock_pool_df.columns.intersection(latest_components)
-                    current_universe = index_stock_pool_df.loc[date].copy()
-
-                    index_stock_pool_df.loc[date, :] = False
-                    final_valid_stocks = [stock for stock in valid_stocks if current_universe[stock]]
-                    index_stock_pool_df.loc[date, final_valid_stocks] = True
         self.show_stock_nums_for_per_day(f'by_成分股指数_filter', index_stock_pool_df)
-
         return index_stock_pool_df
 
     def get_factor_data(self) -> pd.DataFrame:
@@ -815,7 +805,7 @@ class DataManager:
 
         return result
 
-    # ok
+    # ok #ok
     def product_stock_pool(self, stock_pool_config_profile, pool_name):
         """
                 构建动态股票池
@@ -827,7 +817,7 @@ class DataManager:
         if 'close' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
-        final_stock_pool_df = self.raw_dfs['close'].notna()
+        final_stock_pool_df = self.raw_dfs['close'].notna()  # close 有值的地方 ：true
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
         # 第二步：各种过滤！
         # --基础过滤 指数成分股过滤（如果启用）
@@ -890,50 +880,49 @@ class DataManager:
             return 'microstructure_stock_pool'
         raise ValueError('没有定义因子属于哪一门派')
 
-    def _align_one_df_by_stock_pool_and_fill(self, factor_name, raw_df_param,
-                                             stock_pool_param: pd.DataFrame = None):
-        # 定义不同类型数据的填充策略
-        HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate', 'pct_chg']  #
-        SLOW_MOVING_FIELDS = ['pe_ttm', 'pb', 'total_mv', 'circ_mv']  # 缓变数据，限制前向填充
-        STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
-        PRICE_FIELDS = ['close', 'open', 'high', 'low', 'pre_close']  # 价格数据，特殊处理
-        tech_fields = ['momentum_2_1', 'momentum_12_1', 'turnover_rate_abnormal_20d', 'bm_ratio']
-        raw_df = raw_df_param.copy(deep=True)
-        if stock_pool_param is not None:
-            stock_pool_df = stock_pool_param
-        else:
-            stock_pool_df = self.get_stock_pool_by_factor_name(factor_name)
 
-        # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
-        aligned_df = raw_df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
-        aligned_df = aligned_df.sort_index()
-        aligned_df = aligned_df.where(stock_pool_df)
+def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
+                                        stock_pool_df: pd.DataFrame = None):
+    if stock_pool_df is None or stock_pool_df.empty:
+        raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
+    # 定义不同类型数据的填充策略
+    HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate', 'pct_chg']  #
+    SLOW_MOVING_FIELDS = ['pe_ttm', 'pb', 'total_mv', 'circ_mv']  # 缓变数据，限制前向填充
+    STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
+    PRICE_FIELDS = ['close', 'open', 'high', 'low', 'pre_close']  # 价格数据，特殊处理
+    tech_fields = ['momentum_2_1', 'momentum_12_1', 'turnover_rate_abnormal_20d', 'bm_ratio']
+    raw_df = raw_df_param.copy(deep=True)
 
-        # 步骤2: 根据数据类型应用不同的填充策略
-        if factor_name in HIGH_FREQ_FIELDS:
-            # 高频数据 暂时不ffill，因为在停牌日，交易相关的活动活动（（成交量、换手率 确实是空的），你去ffill之气的那不就大错了；至于fill（0）还是保持nan，让下游自己考虑，这里不提前一棍子打死
-            # aligned_df = aligned_df.where(stock_pool_df).fillna(0)
-            aligned_df = aligned_df
+    # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
+    aligned_df = raw_df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
+    aligned_df = aligned_df.sort_index()
+    aligned_df = aligned_df.where(stock_pool_df)
 
-        elif factor_name in SLOW_MOVING_FIELDS:
-            # 缓变数据：先限制前向填充，再应用股票池过滤
-            aligned_df = aligned_df.ffill(limit=2)  # 最多前向填充2天
+    # 步骤2: 根据数据类型应用不同的填充策略
+    if factor_name in HIGH_FREQ_FIELDS:
+        # 高频数据 暂时不ffill，因为在停牌日，交易相关的活动活动（（成交量、换手率 确实是空的），你去ffill之气的那不就大错了；至于fill（0）还是保持nan，让下游自己考虑，这里不提前一棍子打死
+        # aligned_df = aligned_df.where(stock_pool_df).fillna(0)
+        aligned_df = aligned_df
 
-        elif factor_name in STATIC_FIELDS:
-            # 静态数据：无限前向填充，再应用股票池过滤
-            aligned_df = aligned_df.ffill()  # 任由他填充又何妨，反正我前期做了自动宽化填充
+    elif factor_name in SLOW_MOVING_FIELDS:
+        # 缓变数据：先限制前向填充，再应用股票池过滤
+        aligned_df = aligned_df.ffill(limit=2)  # 最多前向填充2天
 
-        elif factor_name in PRICE_FIELDS:
-            # 价格数据：只保留股票池内的数据  单因子测试需要计算收益率，价格数据不能中断 值得深入思考。
-            # 赞成fill理由：。根据标准的基金会计准则，在停牌期间，一只股票的价值并没有消失或变成未知。为了计算每日的投资组合净值，它的价值必须被定义为**“最后一个可获得的公允价值”**，也就是它停牌前的最后一个价格/市值。
-            # 我还是觉得 污染了正确性！ 后期有空再解决 todo
-            # 停牌股票仍需定价来计算组合净值和收益
-            aligned_df = aligned_df.ffill()
-        elif factor_name in tech_fields:
-            aligned_df = aligned_df
-        else:
-            raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
-        return aligned_df
+    elif factor_name in STATIC_FIELDS:
+        # 静态数据：无限前向填充，再应用股票池过滤
+        aligned_df = aligned_df.ffill()  # 任由他填充又何妨，反正我前期做了自动宽化填充
+
+    elif factor_name in PRICE_FIELDS:
+        # 价格数据：只保留股票池内的数据  单因子测试需要计算收益率，价格数据不能中断 值得深入思考。
+        # 赞成fill理由：。根据标准的基金会计准则，在停牌期间，一只股票的价值并没有消失或变成未知。为了计算每日的投资组合净值，它的价值必须被定义为**“最后一个可获得的公允价值”**，也就是它停牌前的最后一个价格/市值。
+        # 我还是觉得 污染了正确性！ 后期有空再解决 todo
+        # 停牌股票仍需定价来计算组合净值和收益
+        aligned_df = aligned_df.ffill()
+    elif factor_name in tech_fields:
+        aligned_df = aligned_df
+    else:
+        raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
+    return aligned_df
 
 
 def create_data_manager(config_path: str) -> DataManager:

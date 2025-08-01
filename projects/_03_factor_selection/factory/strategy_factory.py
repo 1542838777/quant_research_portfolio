@@ -19,7 +19,7 @@ from ..factor_manager.factor_manager import FactorManager
 from ..single_factor_tester.single_factor_tester import SingleFactorTester
 from ..factor_manager.registry.factor_registry import FactorCategory
 from ..multi_factor_optimizer.multi_factor_optimizer import MultiFactorOptimizer
-from ..data_manager.data_manager import DataManager
+from ..data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
 from ..utils.factor_processor import FactorProcessor
 from ..visualization_manager.visualization_manager import VisualizationManager
 
@@ -173,11 +173,6 @@ class StrategyFactory:
             **kwargs
         )
 
-    # return with动态股票池处理好的数据
-    def processed_raw_df_dict_by_stock_pool_processed(self) -> Dict[str, pd.DataFrame]:
-        """加载数据"""
-        data_dict = self.data_manager.processed_raw_data_dict_by_stock_pool_()
-        return data_dict
     #really
 
     # 批量测试！起始。先配置 基础底层target因子，比如价格，。。 然后自己换算出目标因子，然后为给这个factor_data_dict todo
@@ -194,7 +189,6 @@ class StrategyFactory:
         if self.single_factor_tester is None:
             self.single_factor_tester = SingleFactorTester(
                 raw_dfs=self.data_manager.raw_dfs,
-                processed_raw_data=self.data_manager.processed_raw_data,
                 target_factors_dict=target_factors_dict,
                 target_factors_category_dict=target_factors_category_dict,
                 target_factor_school_type_dict=target_factor_school_type_dict,
@@ -492,11 +486,11 @@ class StrategyFactory:
             if need_technical_cal:
                 # 根据门派，找出所需股票池
                 # 自行计算！
-                target_data_df, category_type, school = self.build_technical_factor_entity(target_factor_name)
+                target_data_df, category_type, school = self.build_technical_factor_entity_base_on_shift_and_align_stock_pools(target_factor_name)
 
             else:
                 # 不需要额外学术计算
-                target_data_df, category_type, school = self.build_base_factor_entity(target_factor_name)
+                target_data_df, category_type, school = self.build_base_factor_entity_base_on_shift_and_align_stock_pools(target_factor_name)
             technical_df_dict.update({target_factor_name: target_data_df})
             technical_category_dict.update({target_factor_name: category_type})
             technical_school_dict.update({target_factor_name: school})
@@ -508,29 +502,26 @@ class StrategyFactory:
         factor_definition_dict = {item['name']: item for item in factor_definition}
         return factor_definition_dict.get(target_factor_name)
 
-    def build_technical_factor_entity(self, target_factor_name):
+    # 注意 后续不要重复shift1了
+    def build_technical_factor_entity_base_on_shift_and_align_stock_pools(self, target_factor_name):
         cal_require_base_fields = self.get_one_factor_denifition(target_factor_name)['cal_require_base_fields']
         stock_pool = self.data_manager.get_stock_pool_by_factor_name(target_factor_name)
 
         # 拿出require的原生df 基于同股票池维度对齐
-        require_dfs = {field:self.data_manager.raw_dfs[field] for field in  cal_require_base_fields}
+        require_dfs_shifted = {field:self.data_manager.raw_dfs[field].shift(1) for field in cal_require_base_fields}
         # 自行计算！_align_many_raw_dfs_by_stock_pool_and_fill
         target_df,category,school =  self.get_done_cal_factor_and_category_and_school(
             target_factor_name,
-            require_dfs)
-        return self.data_manager._align_one_df_by_stock_pool_and_fill(factor_name = target_factor_name,
-                                                                      raw_df_param  = target_df, stock_pool_param= stock_pool),category,school
-
-    def build_base_factor_entity(self, target_factor_name):
-        df = self.data_manager.processed_raw_data[target_factor_name]
+            require_dfs_shifted)
+        return align_one_df_by_stock_pool_and_fill(factor_name = target_factor_name,
+                                                                      raw_df_param  = target_df, stock_pool_df= stock_pool),category,school
+    def build_base_factor_entity_base_on_shift_and_align_stock_pools(self, target_factor_name):
+        df = self.data_manager.raw_dfs[target_factor_name].shift(1)
         # category
         category = self.get_category_type(target_factor_name)
-        scholl = self.get_school(target_factor_name)
+        school = self.get_school(target_factor_name)
 
-        return df, category, scholl
-
-
-
+        return df, category, school
 
 class FactorPipeline:
     """因子研究流水线"""
@@ -545,7 +536,7 @@ class FactorPipeline:
         results = {}
 
         # 1. 加载数据
-        data_dict = self.factory.processed_raw_df_dict_by_stock_pool_processed()
+        data_dict = None # self.factory.processed_raw_df_dict_by_stock_pool_processed()
 
         # 2. 创建因子
         factor_dict = {}

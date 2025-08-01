@@ -42,7 +42,7 @@ def main():
     )
     # 2. 加载数据
     logger.info("2. 加载底层原始因子raw_dict数据...")
-    processed_raw_data_dict = factory.data_manager.processed_raw_data_dict_by_stock_pool_()
+    factory.data_manager.prepare_all_data()
 
     # 3. 创建示例因子
     logger.info("3. 创建目标学术因子...")

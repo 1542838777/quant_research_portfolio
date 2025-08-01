@@ -575,7 +575,7 @@ def calculate_max_drawdown_robust(
     return max_drawdown, start_date, end_date
 
 
-# ok
+# ok 传入的必须是 shif之后的！！！！
 def fama_macbeth_regression(
         factor_df: pd.DataFrame,
         price_df: pd.DataFrame,
@@ -614,18 +614,19 @@ def fama_macbeth_regression(
         # 修正：正确计算前向收益率
         forward_returns = price_df.shift(-forward_returns_period) / price_df - 1
 
-        all_dfs_dict = {
-            'factor': factor_df.shift(1),  # 使用T-1日的因子值
+        all_dfs_to_align  = {
+            'factor': factor_df,
             'returns': forward_returns
         }
-
         if weights_df is not None:
-            all_dfs_dict['weights'] = weights_df.shift(1)
-        if neutral_factors is not None:
-            for name, df in neutral_factors.items():
-                all_dfs_dict[name] = df.shift(1)
+            # 将T-1的权重信号加入待对齐字典
+            all_dfs_to_align['weights'] = weights_df
 
-        aligned_dfs = align_dataframes(all_dfs_dict)
+        if neutral_factors is not None:
+            # 将所有T-1的中性化信号加入待对齐字典
+            all_dfs_to_align.update(neutral_factors)
+
+        aligned_dfs = align_dataframes(all_dfs_to_align )
 
         if not all([not df.empty for df in aligned_dfs.values()]):
             raise ValueError("数据对齐后，一个或多个DataFrame为空。请检查输入数据的重叠部分。")
@@ -780,7 +781,7 @@ def fama_macbeth_regression(
 def fama_macbeth(
                       factor_data: pd.DataFrame,
                       close_df: pd.DataFrame,
-                      neutral_dfs: dict[str, pd.DataFrame],
+                      neutral_dfs: Dict[str, pd.DataFrame],
                       forward_periods,
                       circ_mv_df: pd.DataFrame,
                       factor_name: str) -> Tuple[Dict[str, pd.DataFrame],Dict[str, pd.DataFrame]]:

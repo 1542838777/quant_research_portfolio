@@ -70,14 +70,11 @@ class FactorProcessor:
         """
         processed_target_factor_df = target_factor_df.copy()
         auxiliary_dfs = auxiliary_dfs.copy()
-        # 用昨天的数据！
-        processed_target_factor_df = processed_target_factor_df.shift(1)  # 用昨天的数据！
-        for name, df in auxiliary_dfs.items():
-            auxiliary_dfs[name] = df.shift(1)
+
 
         # 步骤1：去极值
         # print("2. 去极值处理...")
-        processed_target_factor_df = self._winsorize(processed_target_factor_df)
+        processed_target_factor_df = self.winsorize(processed_target_factor_df)
 
         # 步骤2：中性化
         if self.preprocessing_config.get('neutralization', {}).get('enable', False):
@@ -96,7 +93,7 @@ class FactorProcessor:
         return processed_target_factor_df
 
     # ok#okdiff
-    def _winsorize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
+    def winsorize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
         """
         去极值处理
         
