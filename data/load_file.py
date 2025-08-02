@@ -1,10 +1,17 @@
+import datetime
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
+import pandas as pd
 import yaml
 
 IS_DEBUG_MODE = False
+
+
+def check_backtest_periods(start_date, end_date):
+    if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):
+        raise ValueError("回测时间太短")
 
 
 def _load_config(config_path: str) -> Dict[str, Any]:
@@ -31,15 +38,16 @@ def _load_config(config_path: str) -> Dict[str, Any]:
 
     else:
         print("【信息】当前处于生产模式，所有过滤器已启用。")
+        check_backtest_periods(config['backtest']['start_date'], config['backtest']['end_date'])
         stock_pool_profiles = config['stock_pool_profiles']
-        for  pool in stock_pool_profiles:
+        for pool in stock_pool_profiles:
             pool = pool[next(iter(pool))]
             pool['filters']['remove_new_stocks'] = True
             pool['filters']['remove_st'] = True
             pool['filters']['adapt_tradeable_matrix_by_suspend_resume'] = True
 
-
     return config
+
 
 def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子测试"):
     """
@@ -70,5 +78,5 @@ def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子�
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n操作已由用户终止。")
-            exit() # 直接退出程序
+            exit()  # 直接退出程序
         print("继续执行调试模式任务...")
