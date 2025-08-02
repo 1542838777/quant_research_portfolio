@@ -103,7 +103,7 @@ def calculate_ic_vectorized(
         raise ValueError("输入的因子或价格数据为空，无法计算IC。")
     for period in forward_periods:
         forward_returns = price_df.shift(-period) / price_df - 1
-
+        forward_returns = forward_returns.clip(-0.15, 0.15)
 
         common_idx = factor_df.index.intersection(forward_returns.index)
         common_cols = factor_df.columns.intersection(forward_returns.columns)
@@ -196,6 +196,8 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
     for period in periods:
         # 计算未来收益率
         forward_returns = price_df.shift(-period) / price_df - 1
+
+        forward_returns = forward_returns.clip(-0.15, 0.15)
 
         # 计算IC
         if use_vectorized:
@@ -309,6 +311,7 @@ def calculate_quantile_returns(
 
         # 1. 计算未来收益率 (向量化)
         forward_returns = price_df.pct_change(periods=period).shift(-period)
+        forward_returns = forward_returns.clip(-0.15, 0.15)
 
         # 2. 数据转换与对齐：从“宽表”到“长表”
         factor_long = factor_df.stack().rename('factor')
@@ -613,6 +616,7 @@ def fama_macbeth_regression(
     try:
         # 修正：正确计算前向收益率
         forward_returns = price_df.shift(-forward_returns_period) / price_df - 1
+        forward_returns = forward_returns.clip(-0.15, 0.15)
 
         all_dfs_to_align  = {
             'factor': factor_df,
