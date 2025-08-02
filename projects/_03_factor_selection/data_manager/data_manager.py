@@ -76,10 +76,8 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
-    if field in ['pct_chg'] and rate <= 0.10:
+    if field in ['pct_chg'] and rate <= 0.20:
         return "正常"
-    if field in ['market_cap_log','pe_ttm_inv','bm_ratio','momentum_20d'] and rate<=0.05:
-        return '正常'
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
 
