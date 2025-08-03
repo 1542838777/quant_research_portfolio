@@ -18,6 +18,8 @@ import sys
 import os
 from pathlib import Path
 
+from projects._03_factor_selection.factor_manager.classifier.factor_classifier import FactorClassifier
+
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
@@ -172,13 +174,7 @@ class FactorProcessor:
             processed_factor = processed_factor - factor_mean
 
         # --- 阶段二：确定本次回归需要中性化的因子列表 ---
-        factors_to_neutralize = []
-        if factor_school == 'fundamentals':
-            factors_to_neutralize = ['market_cap', 'industry']
-        elif factor_school == 'trend':
-            factors_to_neutralize = ['market_cap', 'industry', 'pct_chg_beta']
-        elif factor_school == 'microstructure':
-            factors_to_neutralize = ['market_cap', 'industry']
+        factors_to_neutralize = self.get_regression_need_neutral_factor_list(factor_school,target_factor_name)
 
         if not factors_to_neutralize:
             logger.info(f"    > '{factor_school}' 派因子无需中性化。")
@@ -347,6 +343,31 @@ class FactorProcessor:
                 f"  处理后分布: 均值={all_values.mean():.3f}, 标准差={all_values.std():.3f} （z标准化，均值一定是0）")
             logger.info(f"  分位数: 1%={np.percentile(all_values, 1):.3f}, "
                         f"99%={np.percentile(all_values, 99):.3f}")
+
+    def get_regression_need_neutral_factor_list(self, factor_school,target_factor_name):
+        factors_to_neutralize = []
+        if factor_school == 'fundamentals':
+            factors_to_neutralize = ['market_cap', 'industry']
+        elif factor_school == 'trend':
+            factors_to_neutralize = ['market_cap', 'industry', 'pct_chg_beta']
+        elif factor_school == 'microstructure':
+            factors_to_neutralize = ['market_cap', 'industry']
+
+        #进一步细看
+        if FactorClassifier.belong_market_capitalization_factor(target_factor_name):
+            #移除 市值market_cap
+            factors_to_neutralize.remove('market_cap')
+
+
+        if FactorClassifier.belong_industry_factor(target_factor_name):
+            # 移除 行业
+            factors_to_neutralize.remove('industry')
+        if FactorClassifier.belong_beta_factor(target_factor_name):
+            # 移除 行业
+            factors_to_neutralize.remove('pct_chg_beta')
+            factors_to_neutralize.remove('market_cap')
+        logger.info(f"因子:{target_factor_name}寻找最终用于回归的中性化目标因子为{factors_to_neutralize}")
+        return factors_to_neutralize
 
 
 class FactorCalculator:

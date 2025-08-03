@@ -6,7 +6,10 @@ from typing import Dict, List, Optional, Tuple, Any
 import pandas as pd
 import yaml
 
-IS_DEBUG_MODE = False
+from quant_lib.config.logger_config import log_warning
+
+# RUN_MODE = 'for_fast_test'
+RUN_MODE = ('for_relly_but_one_pool','实测环境-但是只用了沪深300股票池')
 
 
 def check_backtest_periods(start_date, end_date):
@@ -14,8 +17,8 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 
-def _load_config(config_path: str) -> Dict[str, Any]:
-    confirm_production_mode(IS_DEBUG_MODE)
+def _load_local_config(config_path: str) -> Dict[str, Any]:
+    confirm_production_mode(RUN_MODE)
     """加载配置文件"""
     config_file = Path(config_path)
     if config_file.exists():
@@ -27,26 +30,38 @@ def _load_config(config_path: str) -> Dict[str, Any]:
 
     # 根据debug模式 修改内容
     # 在这里，根据总开关来决定你的过滤器配置
-    if IS_DEBUG_MODE:
-        print("【信息】当前处于debug模式，部分过滤器已暂停（为了更快调试代码而已！。")
+    if RUN_MODE[0] =='for_relly_but_one_pool':
+        log_warning(f"【信息】当前处于{RUN_MODE}模式，desp:{RUN_MODE[1]}。")
         stock_pool_profiles = config['stock_pool_profiles']
-        for pool in stock_pool_profiles:
-            pool = pool[next(iter(pool))]
-            pool['filters']['remove_new_stocks'] = False
-            pool['filters']['remove_st'] = False
-            pool['filters']['adapt_tradeable_matrix_by_suspend_resume'] = False
+        first_pool_profile_name = next(iter(stock_pool_profiles))
+        stock_pool_profile = stock_pool_profiles[first_pool_profile_name]
+
+        stock_pool_profile['filters']['remove_new_stocks'] = True
+        stock_pool_profile['filters']['remove_st'] = True
+        stock_pool_profile['filters']['adapt_tradeable_matrix_by_suspend_resume'] = True
+        config['stock_pool_profiles']={first_pool_profile_name: stock_pool_profile}
 
     else:
         print("【信息】当前处于生产模式，所有过滤器已启用。")
         check_backtest_periods(config['backtest']['start_date'], config['backtest']['end_date'])
         stock_pool_profiles = config['stock_pool_profiles']
-        for pool in stock_pool_profiles:
-            pool = pool[next(iter(pool))]
-            pool['filters']['remove_new_stocks'] = True
-            pool['filters']['remove_st'] = True
-            pool['filters']['adapt_tradeable_matrix_by_suspend_resume'] = True
+        for pool_name,pool_config  in stock_pool_profiles.items():
+            pool_config['filters']['remove_new_stocks'] = True
+            pool_config['filters']['remove_st'] = True
+            pool_config['filters']['adapt_tradeable_matrix_by_suspend_resume'] = True
 
     return config
+class stock_pool_profile():
+    pool_name: str
+    index_filter_profile:Dict[str, object]
+class index_filter_profile():
+    enable:bool
+    index_code:str
+
+
+def self_define(stock_pool_profile_list):
+    #实现这里的逻辑 todo
+    return  config
 
 
 def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子测试"):
@@ -80,3 +95,6 @@ def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子�
             print("\n操作已由用户终止。")
             exit()  # 直接退出程序
         print("继续执行调试模式任务...")
+if __name__ == '__main__':
+    config = _load_local_config('config.yaml')
+    config.get('forward_periods', [1, 5, 10, 20])

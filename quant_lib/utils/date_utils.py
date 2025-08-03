@@ -119,26 +119,6 @@ def get_trading_dates(start_date: str, end_date: str) -> List[str]:
     return trading_days
 
 
-def is_trading_day(date: str) -> bool:
-    """
-    判断指定日期是否为交易日
-    
-    Args:
-        date: 日期，格式为'YYYYMMDD'或'YYYY-MM-DD'
-        
-    Returns:
-        是否为交易日
-    """
-    # 标准化日期格式
-    date = date.replace('-', '')
-    
-    # 加载交易日历
-    calendar = _load_or_update_trading_calendar()
-    
-    # 查询是否为交易日
-    is_open = calendar[calendar['cal_date'] == date]['is_open'].values
-    
-    return len(is_open) > 0 and is_open[0] == 1
 
 
 def get_previous_trading_day(date: str, n: int = 1) -> str:

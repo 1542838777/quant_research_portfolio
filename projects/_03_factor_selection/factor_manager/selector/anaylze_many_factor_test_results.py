@@ -1,16 +1,16 @@
-
-from pathlib import Path
 import pandas as pd
 
-from projects._03_factor_selection.factor_selector.factor_selector import FactorSelector
+from projects._03_factor_selection.factor_manager.selector.factor_selector import FactorSelector
 
 
 def choose_top_n_factors():
 
     base_dir = 'workspace/factor_results'  # 你的排行榜文件所在目录
     try:
-        purify_summary_all = pd.read_parquet('../workspace/factor_results/all_single_factor_test_purify_summary.parquet')
-        fm_returns_matrix_all = pd.read_parquet('../workspace/factor_results/all_single_factor_fm_returns_fm_return_series.parquet')
+        purify_summary_all = pd.read_parquet(
+            '../../workspace/factor_results/all_single_factor_test_purify_summary.parquet')
+        fm_returns_matrix_all = pd.read_parquet(
+            '../../workspace/factor_results/all_single_factor_fm_returns_fm_return_series.parquet')
     except FileNotFoundError as e:
         raise ValueError(f"错误：缺少必要的数据文件: {e}")
 

@@ -44,5 +44,4 @@ def align_dataframes(all_dfs_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.Data
         return aligned_dfs_dict
 
     except Exception as e:
-        print(f"数据对齐失败: {e}")
-        return {}
+        raise ValueError(f"数据对齐失败: {e}")

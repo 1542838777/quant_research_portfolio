@@ -15,7 +15,6 @@ from collections import defaultdict
 
 from quant_lib import setup_logger
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
-from quant_lib.utils import get_trading_dates
 
 # 获取模块级别的logger
 logger = setup_logger(__name__)

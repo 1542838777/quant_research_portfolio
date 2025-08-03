@@ -16,11 +16,14 @@ import os
 
 from pandas import DatetimeIndex
 
-from data.load_file import _load_config
+from data.load_file import _load_local_config
 from data.local_data_load import load_index_daily, load_suspend_d_df
 from data.namechange_date_manager import fill_end_date_field
+from projects._03_factor_selection.config.base_config import INDEX_CODES
 from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL, \
     FILL_STRATEGY_ZERO, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT2
+from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
+    calculate_rolling_beta
 from quant_lib.data_loader import DataLoader
 
 # 添加项目根目录到路径
@@ -34,6 +37,8 @@ warnings.filterwarnings('ignore')
 
 # 配置日志
 logger = setup_logger(__name__)
+
+
 def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
     dfs = raw_df.copy()
     for item_name, df in dfs.items():
@@ -76,7 +81,7 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
-    if field in ['pct_chg'] and rate <= 0.20:
+    if field in ['pct_chg', 'beta'] and rate <= 0.20:
         return "正常"
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
@@ -101,7 +106,7 @@ class DataManager:
         """
         self.st_matrix = None  # 注意 后续用此字段，需要注意前视偏差
         self._tradeable_matrix_by_suspend_resume = None
-        self.config = _load_config(config_path)
+        self.config = _load_local_config(config_path)
         self.backtest_start_date = self.config['backtest']['start_date']
         self.backtest_end_date = self.config['backtest']['end_date']
         if need_data_deal:
@@ -167,9 +172,8 @@ class DataManager:
     def build_diff_stock_pools(self) -> pd.DataFrame:
         stock_pool_df_dict = {}
         stock_pool_profiles = self.config['stock_pool_profiles']
-        for universe_profile in stock_pool_profiles:
-            pool_name = next(iter(universe_profile))
-            product_universe = self.product_stock_pool(universe_profile, pool_name)
+        for pool_name, pool_config in stock_pool_profiles.items():
+            product_universe = self.product_stock_pool(pool_config, pool_name)
             stock_pool_df_dict[pool_name] = product_universe
         self.stock_pools_dict = stock_pool_df_dict
 
@@ -821,7 +825,7 @@ class DataManager:
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
         # 第二步：各种过滤！
         # --基础过滤 指数成分股过滤（如果启用）
-        index_config = stock_pool_config_profile[pool_name].get('index_filter', {})
+        index_config = stock_pool_config_profile.get('index_filter', {})
         if index_config.get('enable', False):
             # print(f"    应用指数过滤: {index_config['index_code']}")
             final_stock_pool_df = self._build_dynamic_index_universe(final_stock_pool_df, index_config['index_code'])
@@ -829,7 +833,7 @@ class DataManager:
             valid_stocks = final_stock_pool_df.columns[final_stock_pool_df.any(axis=0)]
             final_stock_pool_df = final_stock_pool_df[valid_stocks]
         # 其他各种指标过滤条件
-        universe_filters = stock_pool_config_profile[pool_name]['filters']
+        universe_filters = stock_pool_config_profile['filters']
 
         # --普适性 过滤 （通用过滤）
         if universe_filters['remove_new_stocks']:
@@ -880,17 +884,31 @@ class DataManager:
             return 'microstructure_stock_pool'
         raise ValueError('没有定义因子属于哪一门派')
 
+    def get_stock_pool_index_by_factor_name(self, factor_name):
+        # 拿到对应pool_name
+        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
+
+        index_filter_config = self.config['stock_pool_profiles'][pool_name]['index_filter']
+        if ~index_filter_config['enable']:
+            return INDEX_CODES['ALL_A']
+        return index_filter_config['index_code']
+
+    def get_stock_pool_name_by_factor_name(self, factor_name):
+        school_code = self.get_school_code_by_factor_name(factor_name)
+        return self.get_stock_pool_name_by_factor_school(school_code)
+
+    # 获取 因子所对应股票池 股票池所有的stock_codes
+    def get_pool_of_factor_name_of_stock_codes(self, target_factor_name):
+        pool = self.get_stock_pool_by_factor_name(factor_name=target_factor_name)
+        return list(pool.columns)
+
 
 def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
                                         stock_pool_df: pd.DataFrame = None):
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
-    HIGH_FREQ_FIELDS = ['turnover', 'volume', 'returns', 'turnover_rate', 'pct_chg']  #
-    SLOW_MOVING_FIELDS = ['pe_ttm', 'pb', 'total_mv', 'circ_mv']  # 缓变数据，限制前向填充
-    STATIC_FIELDS = ['industry', 'list_date']  # 静态数据，无限前向填充
-    PRICE_FIELDS = ['close', 'open', 'high', 'low', 'pre_close']  # 价格数据，特殊处理
-    tech_fields = ['momentum_2_1', 'momentum_12_1', 'turnover_rate_abnormal_20d', 'bm_ratio']
+
     raw_df = raw_df_param.copy(deep=True)
 
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
@@ -898,9 +916,7 @@ def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
     aligned_df = aligned_df.sort_index()
     aligned_df = aligned_df.where(stock_pool_df)
 
-    # 步骤2: 根据数据类型应用不同的填充策略
-    # =================================================================
-    # 步骤2: 根据配置字典，应用填充策略 (重构后的核心)
+    # 步骤2: 根据配置字典，应用填充策略
     # =================================================================
     strategy = FACTOR_FILL_CONFIG.get(factor_name)
 
@@ -919,9 +935,9 @@ def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
         # 不交易的日子，这些指标的真实值就是0
         return aligned_df.fillna(0)
     elif strategy == FILL_STRATEGY_FFILL_LIMIT2:
-            # 填充为0：适用于成交量、换手率等交易行为数据
-            # 不交易的日子，这些指标的真实值就是0
-            return aligned_df.ffill(limit=2)
+        # 填充为0：适用于成交量、换手率等交易行为数据
+        # 不交易的日子，这些指标的真实值就是0
+        return aligned_df.ffill(limit=2)
 
     elif strategy == FILL_STRATEGY_NONE:
         # 不填充：适用于计算出的技术因子
@@ -942,3 +958,16 @@ def create_data_manager(config_path: str) -> DataManager:
         DataManager实例
     """
     return DataManager(config_path)
+
+
+# if __name__ == '__main__':
+#     # dataManager_temp = DataManager(
+#     #     "../factory/config.yaml",
+#     #     need_data_deal=False
+#     # )
+#     #
+#     # calculate_rolling_beta(
+#     #     dataManager_temp.config['backtest']['start_date'],
+#     #     dataManager_temp.config['backtest']['end_date'],
+#     #     dataManager_temp.get_pool_of_factor_name_of_stock_codes('beta')
+#     # )

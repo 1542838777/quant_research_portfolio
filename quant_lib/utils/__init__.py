@@ -6,7 +6,6 @@
 
 from quant_lib.utils.date_utils import (
     get_trading_dates,
-    is_trading_day,
     get_previous_trading_day,
     get_next_trading_day,
     get_month_end_dates
@@ -21,7 +20,6 @@ from quant_lib.utils.file_utils import (
 
 __all__ = [
     'get_trading_dates',
-    'is_trading_day',
     'get_previous_trading_day',
     'get_next_trading_day',
     'get_month_end_dates',

@@ -15,8 +15,9 @@ import yaml
 from datetime import datetime
 import json
 
-from data.load_file import _load_config
+from data.load_file import _load_local_config
 from ..factor_manager.factor_manager import FactorManager
+from ..factor_manager.factor_technical_cal.factor_technical_cal import calculate_rolling_beta
 from ..single_factor_tester.single_factor_tester import SingleFactorTester
 from ..factor_manager.registry.factor_registry import FactorCategory
 from ..multi_factor_optimizer.multi_factor_optimizer import MultiFactorOptimizer
@@ -59,7 +60,7 @@ class StrategyFactory:
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # 加载配置
-        self.config = _load_config(config_path)
+        self.config = _load_local_config(config_path)
         self.config_path = config_path
 
         # 初始化核心组件
@@ -460,9 +461,14 @@ class StrategyFactory:
 
         # --- 毕业考题：规模因子 ---
         elif 'market_cap_log' == target_factor_name:
+            # 获取市值数据
             total_mv_df = raw_data_dict['total_mv'].copy()
-            # 对市值取对数，处理极端值，使其分布更平稳
-            factor_df = np.log(total_mv_df.where(total_mv_df > 0))  # 确保市值大于0
+            # 保证为正数，避免log报错
+            total_mv_df = total_mv_df.where(total_mv_df > 0)
+            # 使用 pandas 自带 log 函数，保持类型一致
+            factor_df = total_mv_df.apply(np.log)
+            # 反向处理因子（仅为了视觉更好看）
+            factor_df = -1 * factor_df
             return factor_df, category_type, school
 
         # --- 毕业考题：价值因子 ---
@@ -501,6 +507,15 @@ class StrategyFactory:
             # 用T-1日的值减去均值
             factor_df = turnover_df - turnover_mean_20d
             return factor_df, category_type, school
+        elif 'beta' == target_factor_name:
+            beta_df = calculate_rolling_beta(
+               self.config['backtest']['start_date'],
+                self.config['backtest']['end_date'],
+                self.data_manager.get_pool_of_factor_name_of_stock_codes(target_factor_name)
+            )
+            beta_df = beta_df * -1
+            return beta_df.shift(1), category_type, school
+        #todo remind 注意 ，自己找的数据（不在raw——df之内的，都要自行shift1）
 
         # --- 如果有更多因子，在这里继续添加 elif 分支 ---
 

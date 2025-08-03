@@ -39,6 +39,7 @@ def download_index_weights():
         '000905.SH',  # 中证500
         '000906.SH',  # 中证800
         '000852.SH',  # 中证1000
+        'ALL_A'#所有大A
     ]
 
     for index_code in index_codes:

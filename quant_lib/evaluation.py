@@ -589,6 +589,7 @@ def fama_macbeth_regression(
     """
     【最终生产版】对单个因子进行Fama-MacBeth回归检验。
     此版本逻辑结构清晰，代码健壮，并使用Newey-West标准误修正t检验，符合学术界和业界的严格标准。
+    return:Series 表示纯因子带来的收益，纯收益
     """
     # 初始化logger
     from quant_lib.config.logger_config import setup_logger

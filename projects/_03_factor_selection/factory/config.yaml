@@ -2,7 +2,7 @@
 
 # 回测时间范围
 backtest:
-  start_date: '2018-06-10'
+  start_date: '2022-01-01'
   end_date: '2025-07-10'
 
 # ==============================================================================
@@ -13,11 +13,11 @@ stock_pool_profiles:
   # 目标: 为“基本面派”和“趋势派”因子，提供一个高容量、高流动性、可实盘的“压力测试”环境。
   # 特点: 基于主流指数（如中证800），进行适度的内部流动性筛选。
   # ----------------------------------------------------------------------------
-  - institutional_stock_pool:
-    # 启用指数过滤，将范围限制在中证800
+  institutional_stock_pool:
+    # 启用指数过滤，
       index_filter:
         enable: true
-        index_code: '000906.SH'  # 中证800指数代码
+        index_code: '000300.SH'  #
 
       filters:
         # --- 普适性风险过滤 (强制性) ---
@@ -41,7 +41,7 @@ stock_pool_profiles:
   # 目标: 为“市场微观派”(量价/情绪)因子，提供一个尽可能广阔，同时剔除了“数据噪音”和“交易幻影”的“淘金”环境。
   # 特点: 基于全A股，设置“地板”式的绝对风控标准。
   # ----------------------------------------------------------------------------
-  - microstructure_stock_pool:
+  microstructure_stock_pool:
     # 禁用指数过滤，使用全市场股票
       index_filter:
         enable: false
@@ -69,7 +69,7 @@ stock_pool_profiles:
 
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'market_cap_log','pe_ttm_inv','bm_ratio','momentum_20d' ]
+  fields: [ 'market_cap_log']
 
 # 数据预处理设置
 preprocessing:
@@ -79,6 +79,7 @@ preprocessing:
 
 # 因子定义
 factor_definition:
+  #基本面派 (价值/成长/质量) #trend 趋势派  #microstructure（量价类因子） 微观派
 
   # ===============================================
   #  专题因子一：规模类 (Size) - 【毕业大考题】
@@ -89,6 +90,14 @@ factor_definition:
     description: '总市值的自然对数，最经典、最重要的规模因子。'
     need_technical_cal: True
     cal_require_base_fields: [ 'total_mv' ]
+
+  - name: 'beta'
+    school: 'trend' # 补充：Beta衡量的是个股与市场趋势的联动性，因此归为趋势(Trend)门派最合适。
+    category_type: 'Risk' # 补充：Beta是衡量系统性风险的核心指标，属于风险(Risk)类别。
+    description: '衡量个股收益率相对于市场基准（如沪深300）收益率的敏感性或波动性。通过将个股收益率对市场收益率进行线性回归得到，其斜率即为Beta值。它是衡量系统性风险的核心指标。'
+    need_technical_cal: True # 补充：Beta的计算需要用到滚动回归，属于复杂的技术计算。
+    cal_require_base_fields: [] #[ 'close', 'benchmark_close' ] # 补充：需要个股收盘价来计算其收益率，同时需要一个市场基准（如指数）的收盘价来计算市场收益率。 还是注释掉吧，我们单独自行计算！，因为raw_Dfs也拿不出benchmark_close_df 而且close也是回测周期内的，我们需要start_buffer不然又很多nana
+
 
   # ===============================================
   #  专题因子二：价值类 (Value) - 【毕业大考题】
@@ -127,12 +136,7 @@ factor_definition:
     need_technical_cal: True
     cal_require_base_fields: [ 'turnover_rate' ]
   # 价值因子
-  - name: 'pe_ttm_inv'
-    school: 'fundamentals'#基本面派 (价值/成长/质量) #trend 趋势派  #microstructure（量价类因子） 微观派
-    category_type: 'value'
-    description: 'PE_TTM倒数因子'
-    need_technical_cal: True
-    cal_require_base_fields: [ 'pe_ttm' ]
+
 
   - name: 'turnover_rate_abnormal_20d'
     school: 'microstructure'
@@ -256,7 +260,7 @@ factor_definition:
 evaluation:
   n_groups: 5  # 分层回测的分组数
   quantiles: 5  # 分层回测的分组数
-  forward_periods: [ 1, 5, 10, 20 ]  # 未来收益率计算的时间周期列表，单位为交易日
+  forward_periods: [ 21 ]  # 未来收益率计算的时间周期列表，单位为交易日
   ic_threshold: 0.02  # IC均值阈值
   ir_threshold: 0.3  # IR阈值
 

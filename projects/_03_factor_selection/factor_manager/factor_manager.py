@@ -227,21 +227,7 @@ class FactorManager:
             factor_data_dict, n_clusters, method, figsize
         )
 
-    ##
 
-    # 全局排序 对所有因子进行综合排序，选出一个比如Top 50的大名单。 ，保证所有因子的个体质量都是顶尖的。
-    #
-    # 在“Top 50的大名单”   中进行分类和相关性分析:
-    #
-    # --对这Top 50的因子进行分类（价值、动量等）。
-    #
-    # --计算这50个因子之间的相关性矩阵。
-    #
-    # --从这50个最优秀的因子中，挑出比如10个，要求这10个因子彼此不相关，并且尽可能覆盖不同的风格类别。
-    #
-    # 例如，发现在动量类里，排名前5的因子相关性都高达0.8，那么你只保留其中综合排名最高的那一个。然后你再去价值类、质量类里做同样的操作。
-    #
-    # 这个混合策略，保证没有错过任何一个在全市场范围内表现优异的因子（质量），又通过后续的步骤保证了最终入选因子的多样性。稳健多因子模型。#
 
     def get_top_factors(self):
 
@@ -327,7 +313,7 @@ class FactorManager:
 
         # 4. 【修正逻辑风险 4】从新数据中提取所有待更新的“主键”
         #    这样即使一次传入多个因子的结果也能正确处理
-        keys_to_update = new_results_df[['factor_name', 'backtest_period']].drop_duplicates()
+        keys_to_update = new_results_df[['factor_name', 'backtest_period','backtest_base_on_index']].drop_duplicates()
 
         # 5. 删除旧记录
         if not existing_leaderboard.empty:
@@ -335,7 +321,7 @@ class FactorManager:
             ##
             # indicator=True
             # 结果就是：新生成_merger列，值要么是both 要么是left_only#
-            merged = existing_leaderboard.merge(keys_to_update, on=['factor_name', 'backtest_period'], how='left',
+            merged = existing_leaderboard.merge(keys_to_update, on=['factor_name', 'backtest_period','backtest_base_on_index'], how='left',
                                                 indicator=True)
             leaderboard_to_keep = merged[merged['_merge'] == 'left_only'].drop(columns=['_merge'])
         else:

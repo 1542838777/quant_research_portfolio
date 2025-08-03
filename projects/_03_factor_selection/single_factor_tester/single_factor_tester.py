@@ -15,6 +15,8 @@ from projects._03_factor_selection.data_manager.data_manager import DataManager,
 
 from quant_lib import logger
 from ..factor_manager.factor_manager import FactorManager
+from ..factor_manager.factor_technical_cal.factor_technical_cal import calculate_rolling_beta
+from ..factor_manager.selector.factor_selector import calculate_factor_score
 
 from ..utils.factor_processor import FactorProcessor
 
@@ -74,14 +76,14 @@ class SingleFactorTester:
             price_data: 价格数据（向后兼容）
             config: 配置字典
         """
-        # 处理配置
+        # 必要检查
         if not config:
             raise RuntimeError("config 没有传递过来！")
         if raw_dfs is None or 'close' not in raw_dfs:
             raise ValueError('close的df是必须的，请写入！')
 
         self.config = config
-        self.test_common_periods = config.get('forward_periods', [1, 5, 10, 20])
+        self.test_common_periods = config['evaluation'].get('forward_periods', [1, 5, 10, 20])
         self.n_quantiles = config.get('quantiles', 5)
         # 初始化因子预处理器
         self.factor_processor = FactorProcessor(self.config)
@@ -246,53 +248,46 @@ class SingleFactorTester:
         return ret_dict
 
     # ok
-    def _prepare_for_neutral_data(self, total_mv_df, industry_df) -> Dict[str, pd.DataFrame]:
+
+
+    def _prepare_for_neutral_data(self, total_mv_df: pd.DataFrame, industry_df: pd.DataFrame) -> Dict[
+        str, pd.DataFrame]:
         """
-         准备辅助数据（市值、行业等）- 最终修正版
-         解决 MultiIndex 丢失的问题
+        准备辅助数据（市值、行业等）
+         1. 通过 stack(dropna=False) 修复了因 shift(1) 导致首日索引丢失的问题。
+         2. 修复了对包含NaN的序列进行排序时产生的TypeError。
          """
+        # 假设 industry_df 传入时已经是 shift(1) 之后的结果
         industry_df = industry_df.replace([None, 'NONE', 'None'], np.nan)
         neutral_dict = {}
-        logger.info("开始准备行业哑变量df。用于后续中性化使用")
+        logger.info("开始准备行业哑变量df，用于后续中性化使用...")
+
         # --- 1. 市值数据 ---
         neutral_dict['total_mv'] = total_mv_df
 
         # --- 2. 行业数据处理 ---
 
-        # 扁平化原始行业数据，
-        # industry_stacked_series 确实带有 (日期, 股票代码) MultiIndex
-        industry_stacked_series = industry_df.stack().dropna()
+        # 使用 stack(dropna=False) 保留第一天的 NaN 数据行，确保索引的完整性。
+        industry_stacked_series = industry_df.stack(dropna=False)
 
-        # 获取所有唯一非NaN行业名称
-        all_industries = sorted(industry_stacked_series.unique())
+        # 【核心修正】: 从包含了NaN的Series中，安全地获取所有唯一的、非NaN的行业名称
+        # 1. 先获取唯一值，结果可能包含 np.nan
+        unique_values_with_nan = industry_stacked_series.unique()
+        # 2. 过滤掉 np.nan。注意要用 pd.notna() 来判断，因为 np.nan != np.nan
+        all_industries = sorted([str(ind) for ind in unique_values_with_nan if pd.notna(ind)])
 
         if not all_industries:
             print("警告：行业数据中未发现任何有效行业名称。")
             return neutral_dict
 
-        # 关键修正：
-        # 将 industry_stacked_series 的数据类型直接设置为 CategoricalDtype
-        # 这样，当 get_dummies 操作这个 Series 时，它会保留原始 Series 的索引
-        # 并且知道所有的可能类别
-        # 小白解释：
-        # CategoricalDtype = 分类数据类型定义：它不仅仅是数据本身，更像是一个“模板”或“规则”。
-        # 当你把一个 Series 转换为这种类型时，Series 仍然保留其索引，但其内部数据遵循 Categorical 的规则。
         industry_categorical_series = industry_stacked_series.astype(
             pd.CategoricalDtype(categories=all_industries)
         )
 
-        # 现在，pd.get_dummies 直接操作这个带有 MultiIndex 的 Series
-        # get_dummies 会自动继承 industry_categorical_series 的 MultiIndex 作为行索引
-        # 并且根据 CategoricalDtype 的类别信息生成正确的哑变量列
-        industry_dummies_df = pd.get_dummies(industry_categorical_series, prefix='industry', dtype=float)
-
-        # 此时 industry_dummies_df 的结构是：
-        #                      industry_TMT  industry_医药  industry_消费
-        # Date        StockCode
-        # 2023-01-01  000001.SZ           1.0          0.0          0.0
-        #             000002.SZ           0.0          1.0          0.0
-        # ...
-        # 它的行索引是 MultiIndex，列是哑变量名称。这是正确的中间状态。
+        # get_dummies 对于 NaN 输入，会生成全为0的哑变量行，这是我们期望的行为
+        industry_dummies_df = pd.get_dummies(industry_categorical_series,
+                                             prefix='industry',
+                                             sparse=True)
 
         final_industry_dummies = {}
 
@@ -301,11 +296,8 @@ class SingleFactorTester:
             # col_name 是 'industry_TMT', 'industry_医药' 等
             # 从 industry_dummies_df 中取出对应列，它是一个 Series，其索引仍然是 (日期, 股票代码) MultiIndex
             one_industry_series = industry_dummies_df[col_name]
-
-            # 对这个 Series 进行 unstack 操作
-            # level=-1 将最内层索引（股票代码）从行索引移动到列索引
             dummy_df_for_one_industry = one_industry_series.unstack(level=-1)
-            # ========================= 关键修正第二步 =========================
+
             # 使用原始 industry_df 的列（所有股票）来 reindex
             # 这会把在 stack() 过程中丢失的股票列加回来
             # fill_value=0 的意思是，这些被加回来的股票，它们在这个行业哑变量中的值是0
@@ -313,7 +305,6 @@ class SingleFactorTester:
                 columns=industry_df.columns,
                 fill_value=0
             )
-            # ================================================================
 
             final_industry_dummies[col_name] = dummy_df_for_one_industry
 
@@ -325,16 +316,17 @@ class SingleFactorTester:
                 del final_industry_dummies[base_industry_col_name]
 
         # --- 5. 处理 NaN：将原始行业为 NaN 的位置对应的哑变量设为 NaN ---
+        # 这一步非常重要，它确保了因为 shift(1) 产生的首日NaN，在哑变量矩阵中也被正确地标记为NaN
         nan_mask_df = industry_df.isna()
 
         for industry_col_key, dummy_df in final_industry_dummies.items():
-            # 这里需要注意，mask 操作要求 dummy_df 和 nan_mask_df 的索引和列对齐
-            # 幸好，我们在循环内部生成的 dummy_df_for_one_industry 的索引和列是和原始 industry_df 对齐的
-            final_industry_dummies[industry_col_key] = dummy_df.mask(nan_mask_df)  # 对应位置替换为nan
+            # dummy_df.mask(nan_mask_df) 会将 nan_mask_df 中为 True 的位置，在 dummy_df 中也设为 NaN
+            final_industry_dummies[industry_col_key] = dummy_df.mask(nan_mask_df)
             final_industry_dummies[industry_col_key] = final_industry_dummies[industry_col_key].astype(float)
 
         neutral_dict.update(final_industry_dummies)
 
+        # 此时，neutral_dict 中所有DataFrame的索引都与原始的 industry_df 完全一致，包含了第一天
         return neutral_dict
 
     def evaluation_score_dict(self,
@@ -380,7 +372,7 @@ class SingleFactorTester:
         cal_score_factor_holistically = self.cal_score_factor_holistically(cal_score_ic, cal_score_quantile,
                                                                            cal_score_fama_macbeth)
         return cal_score_factor_holistically
-
+    #这是最原始的评测，很不准！ 不要参考score，只看看底层的基本数据就行！ 最后的calculate_factor_score是最权威的
     def overrall_summary(self, results: Dict[str, Any]):
 
         ic_analysis_dict = results['ic_analysis']
@@ -426,40 +418,6 @@ class SingleFactorTester:
                      'best_score': max(total_score), **flatten_metrics_dict,
                      'diff_day_perform': rows}}
 
-    def batch_test(self,
-                   factors_dict: Dict[str, pd.DataFrame],
-                   preprocess_method: str = "standard") -> Dict[str, Dict]:
-        """
-        批量测试多个因子
-
-        Args:
-            factors_dict: 因子字典，{因子名称: 因子数据}
-            preprocess_method: 预处理方法
-
-        Returns:
-            批量测试结果字典
-        """
-        logger.info(f"开始批量测试 {len(factors_dict)} 个因子")
-
-        batch_results = {}
-
-        for i, (factor_name, factor_data) in enumerate(factors_dict.items(), 1):
-            print(f"\n进度: {i}/{len(factors_dict)}")
-
-            try:
-                ic_series_periods_dict, quantile_returns_series_periods_dict, factor_returns_series_periods_dict, summary_stats = self.comprehensive_test(
-                    factor_data,
-                    factor_name,
-                    preprocess_method=preprocess_method,
-                    save_results=True
-                )
-
-                batch_results[factor_name] = summary_stats
-
-            except Exception as e:
-                raise ValueError(f"因子 {factor_name} 测试失败: {e}")
-                batch_results[factor_name] = {'error': str(e)}
-        return batch_results
 
     def cal_score_ic(self,
                      ic_mean: float,
@@ -807,6 +765,13 @@ class SingleFactorTester:
             need_data_deal=False
         )
         return dataManager_temp.get_stock_pool_name_by_factor_school(target_school)
+    def get_stock_pool_index_by_factor_school(self, factor_name):
+        dataManager_temp = DataManager(
+            "factory/config.yaml",
+            need_data_deal=False
+        )
+        return dataManager_temp.get_stock_pool_index_by_factor_name(factor_name)
+
 
     def get_stock_pool_name_by_factor_name(self, factor_name):
         school = self.target_school_type_dict[factor_name]
@@ -836,7 +801,7 @@ class SingleFactorTester:
 
         # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
         logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
-        return self.calculate_rolling_beta(
+        return calculate_rolling_beta(
             self.config['backtest']['start_date'],
             self.config['backtest']['end_date'],
             master_stock_list
@@ -851,92 +816,7 @@ class SingleFactorTester:
         return beta_for_this_pool
 
     # ok ok 注意 用的时候别忘了shift（1）
-    def calculate_rolling_beta(
-            self,
-            start_date: str,
-            end_date: str,
-            cur_stock_codes: list,
-            window: int = 60,
-            min_periods: int = 20
-    ) -> pd.DataFrame:
-        """
-        【最终健壮版】计算A股市场上每只股票相对于市场指数的滚动Beta值。
-        此版本修复了数据对齐的隐患。
 
-        Args:
-            start_date (str): 回测开始日期, 格式 'YYYYMMDD'
-            end_date (str): 回测结束日期, 格式 'YYYYMMDD'
-            stock_returns (pd.DataFrame): 股票收益率宽表, index为datetime, values已处理为小数。
-            window (int): 滚动窗口大小（天数）。
-            min_periods (int): 窗口内计算所需的最小观测数。
-
-        Returns:
-            pd.DataFrame: 滚动Beta矩阵 (index=date, columns=stock)。
-        """
-        logger.info(f"开始计算滚动Beta (窗口: {window}天)...")
-
-        # --- 1. 数据获取与准备 ---
-        #  指数提前。但是入参传入的股票是死的，建议重新手动加载。但是考虑是否与股票池对应！ 答案：还是别跟动态股票池进行where了，疑问
-        # 解释：
-        # 为了计算滚动值，我们需要往前多取一些数据作为“缓冲”
-        ##
-        # 滚动历史因子 (Rolling History Factor)
-        # 例子: pct_chg_beta, 动量因子 (Momentum), 滚动波动率 (Volatility)。
-        #
-        # 关键特征: 计算今天的值，需要过去N天连续、干净的历史数据。(所以给他提前buffer)它的计算过程本身就是一个“时间序列”操作。
-        buffer_days = int(window * 1.7) + 5
-        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y%m%d')
-        # 1. Load the long-form DataFrame
-        stock_data_long = load_daily_hfq(buffer_start_date, end_date, cur_stock_codes)
-
-        # 2. It's better to modify the column before pivoting
-        stock_data_long['pct_chg'] = stock_data_long['pct_chg'] / 100
-
-        # 3. Correctly pivot the DataFrame to wide format
-        # The 'columns' argument should be the name of the column containing the stock codes.
-        stock_returns = pd.pivot_table(
-            stock_data_long,
-            index='trade_date',
-            columns='ts_code',  # Use the column name 'ts_code'
-            values='pct_chg'
-        )
-
-        # a) 获取市场指数的每日收益率 是否是自动过滤了 非交易日 yes
-        market_returns_long = load_index_daily(buffer_start_date, end_date).assign(
-            pct_chg=lambda x: x['pct_chg'] / 100)  # pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
-        market_returns = market_returns_long.set_index('trade_date')['pct_chg']
-        market_returns.index = pd.to_datetime(market_returns.index)
-        market_returns.name = 'market_return'  # chong'ming
-
-        # --- 2. 【核心修正】显式数据对齐 ---
-        # logger.info("  > 正在进行数据显式对齐...")
-        # 使用 'left' join，以 stock_returns 的日期为基准
-        # 这会创建一个统一的时间轴，并将市场收益精确地匹配到每个交易日
-        combined_df = stock_returns.join(market_returns, how='left')
-
-        # 更新 market_returns 为对齐后的版本，确保万无一失
-        market_returns_aligned = combined_df.pop('market_return')  # 剔除这列！
-
-        # --- 3. 滚动计算Beta ---
-        # logger.info("  > 正在进行滚动计算...")
-        # Beta = Cov(R_stock, R_market) / Var(R_market)
-
-        # a) 现在，stock_returns 和 market_returns_aligned 的索引是100%对齐的
-        rolling_cov = combined_df.rolling(window=window, min_periods=min_periods).cov(
-            market_returns_aligned)  # 协方差关心的是两组数据之间的关系（描述两个变量之间的关系方向）（是不是都是一起）
-
-        # b) 计算指数收益率的滚动方差
-        rolling_var = market_returns_aligned.rolling(window=window, min_periods=min_periods).var()
-
-        # c) 计算滚动Beta
-        beta_df = rolling_cov.div(rolling_var, axis=0)
-
-        # d) 截取我们需要的最终日期范围
-        final_beta_df = beta_df.loc[start_date:end_date]
-
-        logger.info(f"滚动Beta计算完成，最终矩阵形状: {final_beta_df.shape}")
-
-        return final_beta_df
 
     # ok
     def build_auxiliary_dfs_shift_diff_stock_pools_dict(self):
@@ -1076,8 +956,10 @@ class SingleFactorTester:
 
             summary_row = {
                 'factor_name': factor_name,
+                'test_time':datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'factor_category': factor_category,
                 'backtest_period': self.backtest_period,
+                'backtest_base_on_index':self.get_stock_pool_index_by_factor_school(factor_name),
 
                 'period': period,  # 【BUG已修正】这里应该是单个周期
                 # 收益维度
@@ -1091,11 +973,12 @@ class SingleFactorTester:
                 'is_monotonic_by_group': quantile_stats_periods_dict[period]['is_monotonic_by_group'],
                 'ic_mean': ic_stats_periods_dict[period]['ic_mean']
             }
+            score = calculate_factor_score(summary_row)
+            summary_row['score'] = score
             purify_summary_rows.append(summary_row)
         return purify_summary_rows
 
     def build_fm_return_series_dict(self, fm_factor_returns_series_periods_dict, target_factor_name):
-        periods = fm_factor_returns_series_periods_dict.keys()
         fm_factor_returns = {}
 
         for period, return_series in fm_factor_returns_series_periods_dict.items():
@@ -1221,3 +1104,7 @@ class SingleFactorTester:
         for pool_name, stock_pool_df in self.stock_pools_dict.items():
             df_dict_base_on_diff_pool[pool_name] = df
         return df_dict_base_on_diff_pool
+
+
+if __name__ == '__main__':
+    load_config

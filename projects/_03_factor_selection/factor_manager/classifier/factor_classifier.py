@@ -301,4 +301,32 @@ class FactorClassifier:
         
         ax.set_title('因子相关性热力图', fontsize=14)
         
-        return correlation_matrix, fig 
+        return correlation_matrix, fig
+
+    @staticmethod
+    def belong_market_capitalization_factor(factor_name: str) -> bool:
+        """判断是否为市值类因子"""
+        # 精确匹配常见的市值因子名称
+        exact_matches = ['market_cap_log', 'total_mv', 'circ_mv', 'size']
+        if factor_name in exact_matches:
+            return True
+        # 模糊匹配，覆盖更多变体，例如 'log_market_cap'
+        keyword_matches = ['market_cap', '_mv']
+        if any(keyword in factor_name for keyword in keyword_matches):
+            return True
+        return False
+    @staticmethod
+    def belong_industry_factor(factor_name: str) -> bool:
+        """判断是否为行业类因子"""
+        # 行业因子通常是作为中性化变量，名称比较固定，
+        # 或者是回归时产生的行业哑变量 (如 'industry_TMT')。
+        if factor_name == 'industry' or factor_name.startswith('industry_'):
+            return True
+        return False
+    @staticmethod
+    def belong_beta_factor(factor_name: str) -> bool:
+        """判断是否为Beta类因子"""
+        # Beta因子通常会在名称中包含 'beta' 关键字。
+        if 'beta' in factor_name:
+            return True
+        return False
