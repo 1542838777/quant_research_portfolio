@@ -16,10 +16,10 @@ import os
 
 from pandas import DatetimeIndex
 
-from data.load_file import _load_local_config
 from data.local_data_load import load_index_daily, load_suspend_d_df
 from data.namechange_date_manager import fill_end_date_field
 from projects._03_factor_selection.config.base_config import INDEX_CODES
+from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config
 from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL, \
     FILL_STRATEGY_ZERO, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT2
 from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
@@ -848,7 +848,7 @@ class DataManager:
             final_stock_pool_df = self._filter_tradeable_matrix_by_suspend_resume(final_stock_pool_df)
 
         # 2. 流动性过滤
-        if 'min_liquidity_percentile' in universe_filters:
+        if universe_filters.get('min_liquidity_percentile', 0) > 0:
             # print("    应用流动性过滤...")
             final_stock_pool_df = self._filter_by_liquidity(
                 final_stock_pool_df,
@@ -856,7 +856,7 @@ class DataManager:
             )
 
         # 3. 市值过滤
-        if 'min_market_cap_percentile' in universe_filters:
+        if universe_filters.get('min_market_cap_percentile', 0) > 0:
             # print("    应用市值过滤...")
             final_stock_pool_df = self._filter_by_market_cap(
                 final_stock_pool_df,
@@ -871,11 +871,8 @@ class DataManager:
 
     def get_stock_pool_by_factor_name(self, factor_name):
         school_code = self.get_school_code_by_factor_name(factor_name)
-        if school_code in ['fundamentals', 'trend']:
-            return self.stock_pools_dict['institutional_stock_pool']
-        if school_code in ['microstructure']:
-            return self.stock_pools_dict['microstructure_stock_pool']
-        raise ValueError(f'没有定义因子:{factor_name}属于哪一门派')
+        pool_name = self.get_stock_pool_name_by_factor_school(school_code)
+        return self.stock_pools_dict[pool_name]
 
     def get_stock_pool_name_by_factor_school(self, factor_school):
         if factor_school in ['fundamentals', 'trend']:

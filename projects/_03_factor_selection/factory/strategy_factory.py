@@ -15,7 +15,7 @@ import yaml
 from datetime import datetime
 import json
 
-from data.load_file import _load_local_config
+from ..config.config_file.load_config_file import _load_local_config
 from ..factor_manager.factor_manager import FactorManager
 from ..factor_manager.factor_technical_cal.factor_technical_cal import calculate_rolling_beta
 from ..single_factor_tester.single_factor_tester import SingleFactorTester
