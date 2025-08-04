@@ -8,7 +8,8 @@ import yaml
 
 from projects._03_factor_selection.config.config_file.local_config_file_definition import \
     pool_for_massive_test_CSI800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
-    CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile
+    CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
+    CSI1000_more_filter_profile
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20240701','20250710')
 self_periods = ('20220101','20250710')
@@ -49,6 +50,24 @@ CSI300_more_filter_mode = {
     },
     'period':self_periods,
     'desc': '但是只用了沪深300股票池（）普适性过滤+流动率过滤'
+}
+
+东北证券_CSI300_more_filter_mode = {
+    'mode': 'CSI300_most_basic_profile',
+    'pools': {
+        **CSI300_more_filter_profile
+    },
+    'period':self_periods,
+    'desc': '但是只用了沪深300股票池（）普适性过滤+流动率过滤'
+}
+
+东北证券_CSI1000_more_filter_mode = {
+    'mode': '东北证券_CSI1000_more_filter_mode',
+    'pools': {
+        **CSI1000_more_filter_profile
+    },
+    'period':self_periods,
+    'desc': 'CSI1000（）普适性过滤+流动率过滤'
 }
 CSI300_FFF_most_basic_mode = {
     'mode': 'CSI300_FFF_most_basic_mode',

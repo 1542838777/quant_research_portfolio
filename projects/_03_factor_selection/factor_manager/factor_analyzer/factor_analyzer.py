@@ -103,7 +103,7 @@ class FactorAnalyzer:
 
         # 准备辅助【市值、行业】数据(用于中性值 计算！)
         # self.auxiliary_dfs_shift_diff_stock_polls_dict = self.build_auxiliary_dfs_shift_diff_stock_pools_dict()
-        # self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict = self._prepare_for_neutral_data_dict_shift_diff_stock_pools()
+        # self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict = self.prepare_for_neutral_data_dict_shift_diff_stock_pools()
         # self.check_shape()
 
         # 设置中文字体
@@ -179,14 +179,14 @@ class FactorAnalyzer:
         target_school = self.target_school_type_dict[target_factor_name]
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
         target_factor_shift_df = self.target_factors_dict[target_factor_name]
-
+        # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
         close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
                                                                       need_shift=False)[
             stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
         auxiliary_shift_dfs_base_own_stock_pools = self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
             stock_pool_name]
         prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-        self._prepare_for_neutral_data_dict_shift_diff_stock_pools()[
+        self.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
             stock_pool_name]
         circ_mv_shift_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
             factor_name='circ_mv',
@@ -200,33 +200,7 @@ class FactorAnalyzer:
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs,
             factor_school=target_school
         )
-        # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
-
-        # 2. IC值分析
-        logger.info("\t2. 正式测试 之 IC值分析...")
-        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df,
-                                                                              target_factor_name)
-
-        # 3. 分层回测
-        logger.info("\t3.  正式测试 之 分层回测...")
-        quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(
-            target_factor_processed, close_df, target_factor_name)
-
-        primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
-
-        quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed, close_df, 5,
-                                                                                primary_period_key)
-
-        # 4. Fama-MacBeth回归
-        logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
-        factor_returns_series_periods_dict, fm_stat_results_periods_dict = fama_macbeth(
-            factor_data=target_factor_processed, close_df=close_df, forward_periods=self.test_common_periods,
-            neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_df=circ_mv_shift_df,
-            factor_name=target_factor_name)
-
-        return (ic_series_periods_dict, ic_stats_periods_dict,
-                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
-                factor_returns_series_periods_dict, fm_stat_results_periods_dict)
+        return self.core_three_test(target_factor_processed,target_factor_name, close_df,prepare_for_neutral_shift_base_own_stock_pools_dfs,circ_mv_shift_df)
 
     # ok
     def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
@@ -744,7 +718,7 @@ class FactorAnalyzer:
             }
         }
 
-    def _prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str, pd.DataFrame]]:
+    def prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str, pd.DataFrame]]:
         dict = {}
         for stock_pool_name, df_dict in self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict().items():
             cur = self._prepare_for_neutral_data(df_dict['total_mv'], df_dict['industry'])
@@ -832,41 +806,7 @@ class FactorAnalyzer:
                     target_factor_name=target_factor_name,
                     preprocess_method="standard"
                 ))
-        # 5. 综合评价
-
-        evaluation_score_dict = self.evaluation_score_dict(ic_stats_periods_dict,
-                                                           quantile_stats_periods_dict,
-                                                           fm_stat_results_periods_dict)
-        # 整合结果
-        comprehensive_results = {
-            'factor_name': target_factor_name,
-            'factor_category': self.target_factors_category_dict[target_factor_name],
-            'backtest_period': self.backtest_period,
-            'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'preprocess_method': preprocess_method,
-            'ic_analysis': ic_stats_periods_dict,
-            'quantile_backtest': quantile_stats_periods_dict,
-            'fama_macbeth': fm_stat_results_periods_dict,
-            'evaluate_factor_score': evaluation_score_dict
-        }
-        overrall_summary_stats = self.overrall_summary(comprehensive_results)
-        purify_summary_rows_contain_periods = self.purify_summary_rows_contain_periods(comprehensive_results)
-        fm_return_series_dict = self.build_fm_return_series_dict(factor_returns_series_periods_dict, target_factor_name)
-
-        self.factor_manager._save_results(overrall_summary_stats, file_name_prefix='overrall_summary')
-        self.factor_manager.update_and_save_factor_purify_summary(purify_summary_rows_contain_periods,
-                                                                  file_name_prefix='purify_summary')
-        self.factor_manager.update_and_save_fm_factor_return_matrix(fm_return_series_dict,
-                                                                    file_name_prefix='fm_return_series')
-        # 画图保存
-        self.visualizationManager.plot_single_factor_results(
-            target_factor_name,
-            ic_series_periods_dict,
-            ic_stats_periods_dict,
-            quantile_daily_returns_for_plot_dict,
-            quantile_stats_periods_dict,
-            factor_returns_series_periods_dict,
-            fm_stat_results_periods_dict)
+        overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_name, self.target_factors_category_dict[target_factor_name],"standard",ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict)
 
         return ic_series_periods_dict, quantile_daily_returns_for_plot_dict, factor_returns_series_periods_dict, overrall_summary_stats
 
@@ -893,7 +833,7 @@ class FactorAnalyzer:
                 'test_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'factor_category': factor_category,
                 'backtest_period': self.backtest_period,
-                'backtest_base_on_index': self.factor_manager.get_stock_pool_index_by_factor_name(factor_name),
+                'backtest_base_on_index': comprehensive_results['backtest_base_on_index'],
 
                 'period': period,  # 【BUG已修正】这里应该是单个周期
                 # 收益维度
@@ -946,3 +886,71 @@ class FactorAnalyzer:
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
 
         return results
+
+    def core_three_test(self, target_factor_processed, target_factor_name, close_df,prepare_for_neutral_shift_base_own_stock_pools_dfs,circ_mv_shift_df):
+        # 1. IC值分析
+        logger.info("\t2. 正式测试 之 IC值分析...")
+        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df,
+                                                                              target_factor_name)
+
+        # 2. 分层回测
+        logger.info("\t3.  正式测试 之 分层回测...")
+        quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(
+            target_factor_processed, close_df, target_factor_name)
+
+        primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
+        #这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
+        quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed, close_df, 5,
+                                                                                primary_period_key)
+
+        # 3. Fama-MacBeth回归
+        logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
+        factor_returns_series_periods_dict, fm_stat_results_periods_dict = fama_macbeth(
+            factor_data=target_factor_processed, close_df=close_df, forward_periods=self.test_common_periods,
+            neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_df=circ_mv_shift_df,
+            factor_name=target_factor_name)
+
+        return (ic_series_periods_dict, ic_stats_periods_dict,
+                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
+                factor_returns_series_periods_dict, fm_stat_results_periods_dict)
+
+    def landing_for_core_three_analyzer_result(self,target_factor_name,category,preprocess_method, ic_series_periods_dict, ic_stats_periods_dict,
+                                               quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
+                                               factor_returns_series_periods_dict, fm_stat_results_periods_dict):
+        #  综合评价
+        evaluation_score_dict = self.evaluation_score_dict(ic_stats_periods_dict,
+                                                           quantile_stats_periods_dict,
+                                                           fm_stat_results_periods_dict)
+        # 整合结果
+        comprehensive_results = {
+            'factor_name': target_factor_name,
+            'factor_category': category,
+            'backtest_base_on_index': self.factor_manager.get_stock_pool_index_by_factor_name(target_factor_name),
+            'backtest_period': self.backtest_period,
+            'test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'preprocess_method': preprocess_method,
+            'ic_analysis': ic_stats_periods_dict,
+            'quantile_backtest': quantile_stats_periods_dict,
+            'fama_macbeth': fm_stat_results_periods_dict,
+            'evaluate_factor_score': evaluation_score_dict
+        }
+        overrall_summary_stats = self.overrall_summary(comprehensive_results)
+        purify_summary_rows_contain_periods = self.purify_summary_rows_contain_periods(comprehensive_results)
+        fm_return_series_dict = self.build_fm_return_series_dict(factor_returns_series_periods_dict, target_factor_name)
+
+        self.factor_manager._save_results(overrall_summary_stats, file_name_prefix='overrall_summary')
+        self.factor_manager.update_and_save_factor_purify_summary(purify_summary_rows_contain_periods,
+                                                                  file_name_prefix='purify_summary')
+        self.factor_manager.update_and_save_fm_factor_return_matrix(fm_return_series_dict,
+                                                                    file_name_prefix='fm_return_series')
+        # 画图保存
+        self.visualizationManager.plot_single_factor_results(
+            comprehensive_results['backtest_base_on_index'],
+            target_factor_name,
+            ic_series_periods_dict,
+            ic_stats_periods_dict,
+            quantile_daily_returns_for_plot_dict,
+            quantile_stats_periods_dict,
+            factor_returns_series_periods_dict,
+            fm_stat_results_periods_dict)
+        return overrall_summary_stats

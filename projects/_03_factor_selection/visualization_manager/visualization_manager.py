@@ -124,6 +124,7 @@ class VisualizationManager:
             plt.style.use('default')
 
     def plot_single_factor_results(self,
+                                   backtest_base_on_index,
                                    factor_name: str,
                                    ic_series_periods_dict: Dict[str, pd.Series],
                                    ic_stats_periods_dict: Dict[str, Dict[str, Any]],
@@ -143,7 +144,7 @@ class VisualizationManager:
         # 1. 创建 2x2 图表布局
         fig = plt.figure(figsize=(24, 20))
         gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1])
-        fig.suptitle(f'单因子分析报告 (Factor Tear Sheet): {factor_name}', fontsize=28, y=0.97)
+        fig.suptitle(f'单因子{factor_name}分析报告In_{backtest_base_on_index}', fontsize=28, y=0.97)
 
         # 2. 【左上】IC序列(柱状) + 累计IC(折线) - (维持V2版)
         ax1 = fig.add_subplot(gs[0, 0])
@@ -220,11 +221,10 @@ class VisualizationManager:
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         if save_plots:
             # 假设 self.output_dir 存在
-            plot_path = self.output_dir / f"{factor_name}_evaluation_v3.png"
+            plot_path = self.output_dir / f"{factor_name}_in_{backtest_base_on_index}_{primary_period}_evaluation.png"
             # plot_path = f"{factor_name}_evaluation_v3.png" # 简化版
             plt.savefig(plot_path, dpi=300, bbox_inches='tight')
             plt.close()
-            # log_success(f"保存{factor_name}测评图片")
             return str(plot_path)
         else:
             plt.show()

@@ -863,6 +863,14 @@ class DataManager:
 
         return final_stock_pool_df
 
+    def get_which_field_of_factor_definition_by_factor_name(self, factor_name,which_field):
+        cur_factor_definition = self.get_factor_definition(factor_name)
+        return cur_factor_definition[which_field]
+    def get_factor_definition_df(self):
+        return  pd.DataFrame(self.config['factor_definition'])
+    def get_factor_definition(self,factor_name):
+        all_df = self.get_factor_definition_df()
+        return  all_df[all_df['name'] == factor_name]
 
 def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
                                         stock_pool_df: pd.DataFrame = None):

@@ -51,7 +51,7 @@ class FactorManager:
 
     def __init__(self,
                  data_manager: DataManager=None,
-                 results_dir: str = "workspace/factor_results",
+                 results_dir: str = Path(__file__).parent.parent/"workspace/factor_results",
                  registry_path: str = "factor_registry.json",
                  config: Dict[str, Any] = None):
 
@@ -612,7 +612,7 @@ class FactorManager:
             return  self.build_technical_factor_entity_base_on_shift_and_align_stock_pools(
                 target_factor_name)
 
-        else:
+        else:#属于待合成因子 上游分为合成因子测试 、单因子测试 单因子测试的target_factor不会配置合成因子，所以不会命中这行，无需担心返回none。
              return None,None,None
 
 
