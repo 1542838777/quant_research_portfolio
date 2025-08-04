@@ -79,7 +79,7 @@ class FactorProcessor:
         # print("2. 去极值处理...")
         processed_target_factor_df = self.winsorize(processed_target_factor_df)
 
-        if ~neutralize_after_standardize:
+        if not neutralize_after_standardize:
             # 步骤2：中性化
             if self.preprocessing_config.get('neutralization', {}).get('enable', False):
                 processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,auxiliary_dfs,

@@ -15,10 +15,13 @@ from datetime import datetime
 
 from quant_lib import setup_logger
 from quant_lib.config.logger_config import log_success, log_warning
+from .factor_technical_cal.factor_technical_cal import calculate_rolling_beta
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .classifier.factor_classifier import FactorClassifier
 from .storage.single_storage import add_single_factor_test_result
+from ..config.base_config import INDEX_CODES
+from ..data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
 
 logger = setup_logger(__name__)
 
@@ -47,7 +50,8 @@ class FactorManager:
     """因子管理器类"""
 
     def __init__(self,
-                 results_dir: str = "factor_results",
+                 data_manager: DataManager=None,
+                 results_dir: str = "workspace/factor_results",
                  registry_path: str = "factor_registry.json",
                  config: Dict[str, Any] = None):
 
@@ -59,6 +63,7 @@ class FactorManager:
             results_dir: 测试结果保存目录
             registry_path: 注册表文件路径
         """
+        self.data_manager = data_manager
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -402,3 +407,256 @@ class FactorManager:
         except Exception as e:
             print(f"❌ 保存因子收益矩阵时发生错误: {e}")
             raise e
+
+    def get_target_factors_entity(self):
+
+        technical_df_dict = {}
+        technical_category_dict = {}
+        technical_school_dict = {}
+
+        # 找出所有目标target 因子。
+        # 通过config的标识 找出需要学术计算的因子
+        # 自生的门派，重新align Require的因子，参与计算，返回学术_df
+        target_factors_for_evaluation = self.data_manager.config['target_factors_for_evaluation']['fields']
+
+        for target_factor_name in target_factors_for_evaluation:
+            target_data_df  ,category_type ,school = self.get_factor_df_by_action(target_factor_name)
+            technical_df_dict.update({target_factor_name: target_data_df})
+            technical_category_dict.update({target_factor_name: category_type})
+            technical_school_dict.update({target_factor_name: school})
+
+        return technical_df_dict, technical_category_dict, technical_school_dict
+  # 注意 后续不要重复shift1了
+    def build_technical_factor_entity_base_on_shift_and_align_stock_pools(self, target_factor_name):
+        cal_require_base_fields = self.get_one_factor_denifition(target_factor_name)['cal_require_base_fields']
+        stock_pool = self.get_stock_pool_by_factor_name(target_factor_name)
+
+        # 拿出require的原生df 基于同股票池维度对齐
+        require_dfs_shifted = {field:self.data_manager.raw_dfs[field].shift(1) for field in cal_require_base_fields}
+        # 自行计算！_align_many_raw_dfs_by_stock_pool_and_fill
+        target_df,category,school =  self.get_done_cal_factor_and_category_and_school(
+            target_factor_name,
+            require_dfs_shifted)
+        return align_one_df_by_stock_pool_and_fill(factor_name = target_factor_name,
+                                                                      raw_df_param  = target_df, stock_pool_df= stock_pool),category,school
+    def build_base_factor_entity_base_on_shift_and_align_stock_pools(self, target_factor_name):
+        df = self.data_manager.raw_dfs[target_factor_name].shift(1)
+        # category
+        category = self.get_category_type(target_factor_name)
+        school = self.get_school(target_factor_name)
+
+        return df, category, school
+
+    def get_one_factor_denifition(self, target_factor_name):
+        factor_definition = self.data_manager.config['factor_definition']
+        factor_definition_dict = {item['name']: item for item in factor_definition}
+        return factor_definition_dict.get(target_factor_name)
+
+# 返回目标学术因子 （通过计算base Factor
+    def get_done_cal_factor_and_category_and_school(
+            self,
+            target_factor_name: str,
+            raw_data_dict: Dict[str, pd.DataFrame]
+    ) -> Tuple[pd.DataFrame, str, str]:
+        """
+        【专业版】因子计算工厂。
+        根据因子名称，调用对应的计算逻辑，并返回处理好的因子DataFrame及其元数据。
+        """
+        # --- 在函数开头一次性查找因子定义 ---
+        factor_definitions = pd.DataFrame(self.data_manager.config['factor_definition'])
+        factor_info = factor_definitions[factor_definitions['name'] == target_factor_name]
+
+        if factor_info.empty:
+            raise ValueError(f"在配置文件中未找到因子 '{target_factor_name}' 的定义！")
+
+        # 将Series转换为单个值，方便调用
+        category_type = factor_info['category_type'].iloc[0]
+        school = factor_info['school'].iloc[0]
+
+        logger.info(f"开始计算学术因子: '{target_factor_name}' (门派: {school})")
+
+        # --- 因子计算逻辑的分发 ---
+
+        if 'bm_ratio' == target_factor_name:
+            # 账面市值比 (B/M), 即市净率倒数
+            pb_df = raw_data_dict['pb'].copy()
+            # PB值必须为正才有意义 (负的净资产，B/M失去意义)
+            pb_df = pb_df.where(pb_df > 0)
+            factor_df = 1 / pb_df
+            return factor_df, category_type, school
+
+        elif 'momentum_12_1' == target_factor_name:
+            # 经典12-1月动量
+            close_df = raw_data_dict['close'].copy()
+            # 计算 T-1月 / T-12月 的价格比
+            # 假设每月21个交易日，每年252个交易日
+            price_1m_ago = close_df.shift(21)
+            price_12m_ago = close_df.shift(252)
+
+            # 确保分母不为0或负（虽然股价基本不会）
+            price_12m_ago = price_12m_ago.where(price_12m_ago > 0)
+
+            factor_df = (price_1m_ago / price_12m_ago) - 1
+            return factor_df, category_type, school
+
+        elif 'momentum_2_1' == target_factor_name:
+            # 经典2-1月动量
+            close_df = raw_data_dict['close'].copy()
+            # 计算 T-1月 / T-12月 的价格比
+            # 假设每月21个交易日，每年252个交易日
+            price_1m_ago = close_df.shift(21)
+            price_2m_ago = close_df.shift(21*2)
+
+            # 确保分母不为0或负（虽然股价基本不会）
+            price_2m_ago = price_2m_ago.where(price_2m_ago > 0)
+
+            factor_df = (price_1m_ago / price_2m_ago) - 1
+            return factor_df, category_type, school
+
+        elif 'turnover_rate_abnormal_20d' == target_factor_name:
+            # 异常换手率（20日窗口）
+            turnover_df = raw_data_dict['turnover_rate'].copy()
+
+            # 计算20日滚动均值，min_periods=10确保在数据初期也能尽快产出信号
+            turnover_mean_20d = turnover_df.rolling(window=20, min_periods=10).mean()
+
+            # 用当日值减去均值，得到“超预期”的异动信号
+            factor_df = turnover_df - turnover_mean_20d
+            return factor_df, category_type, school
+
+        # --- 如果有更多因子，在这里继续添加 elif 分支 ---
+
+        # --- 毕业考题：规模因子 ---
+        elif 'market_cap_log' == target_factor_name:
+            # 获取市值数据
+            total_mv_df = raw_data_dict['circ_mv'].copy()
+            # 保证为正数，避免log报错
+            total_mv_df = total_mv_df.where(total_mv_df > 0)
+            # 使用 pandas 自带 log 函数，保持类型一致
+            factor_df = total_mv_df.apply(np.log)
+            # 反向处理因子（仅为了视觉更好看）
+            factor_df = -1 * factor_df
+            return factor_df, category_type, school
+
+        # --- 毕业考题：价值因子 ---
+        elif 'pe_ttm_inv' == target_factor_name:
+            pe_df = raw_data_dict['pe_ttm'].copy()
+            # PE为负或0时，其倒数无意义，设为NaN
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+        elif 'ps_ttm_inv' == target_factor_name:
+            pe_df = raw_data_dict['ps_ttm'].copy()
+            # PE为负或0时，其倒数无意义，设为NaN
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+        elif 'pb_inv' == target_factor_name:
+            pe_df = raw_data_dict['pb'].copy()
+            # PE为负或0时，其倒数无意义，设为NaN
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+
+        elif 'bm_ratio' == target_factor_name:
+            pb_df = raw_data_dict['pb'].copy()
+            # PB为负或0时（公司净资产为负），其倒数无意义
+            pb_df = pb_df.where(pb_df > 0)
+            factor_df = 1 / pb_df
+            return factor_df, category_type, school
+
+        # --- 毕业考题：动量因子 ---
+        elif 'momentum_20d' == target_factor_name:
+            # 小白解释：动量 = (T-1日价格) / (T-21日价格) - 1
+            # 因为传入的close_df已经是T-1的价格，所以我们只需要再shift(20)即可得到T-21的价格
+            close_df = raw_data_dict['close'].copy()  # 这是T-1价格
+
+            # 获取约20个交易日前的价格 (T-1-20 = T-21)
+            price_20d_ago = close_df.shift(20)
+
+            price_20d_ago = price_20d_ago.where(price_20d_ago > 0)
+            factor_df = (close_df / price_20d_ago) - 1
+            return factor_df, category_type, school
+
+        # --- 其他量价因子 ---
+        elif 'turnover_rate_abnormal_20d' == target_factor_name:
+            turnover_df = raw_data_dict['turnover_rate'].copy()  # T-1日的换手率
+            # 计算过去20日的滚动均值 (T-20 到 T-1)
+            turnover_mean_20d = turnover_df.rolling(window=20, min_periods=10).mean()
+            # 用T-1日的值减去均值
+            factor_df = turnover_df - turnover_mean_20d
+            return factor_df, category_type, school
+        elif 'beta' == target_factor_name:
+            beta_df = calculate_rolling_beta(
+               self.data_manager.config['backtest']['start_date'],
+                self.data_manager.config['backtest']['end_date'],
+                self.get_pool_of_factor_name_of_stock_codes(target_factor_name)
+            )
+            beta_df = beta_df * -1
+            return beta_df.shift(1), category_type, school
+        #todo remind 注意 ，自己找的数据（不在raw——df之内的，都要自行shift1）
+
+        # --- 如果有更多因子，在这里继续添加 elif 分支 ---
+
+        raise ValueError(f"因子 '{target_factor_name}' 的计算逻辑尚未在本工厂中定义！")
+
+    def get_factor_df_by_action(self, target_factor_name):
+        technical_calcu = self.get_one_factor_denifition(target_factor_name)['action']
+        if technical_calcu is   None :
+            # 不需要任何操作，是最基础的数据
+            return self.build_base_factor_entity_base_on_shift_and_align_stock_pools(
+                target_factor_name)
+        elif   technical_calcu == 'technical_calcu':
+            # 根据门派，找出所需股票池
+            # 自行计算！
+            return  self.build_technical_factor_entity_base_on_shift_and_align_stock_pools(
+                target_factor_name)
+
+        else:
+             return None,None,None
+
+
+    def get_school_code_by_factor_name(self, factor_name):
+        factor_dict = {item['name']: item for item in self.data_manager.config['factor_definition']}
+        return factor_dict[factor_name]['school']
+
+    def get_stock_pool_by_factor_name(self, factor_name):
+        school_code = self.get_school_code_by_factor_name(factor_name)
+        pool_name = self.get_stock_pool_name_by_factor_school(school_code)
+        return self.data_manager.stock_pools_dict[pool_name]
+
+    def get_stock_pool_name_by_factor_school(self, factor_school):
+        if factor_school in ['fundamentals', 'trend']:
+            return 'institutional_stock_pool'
+        if factor_school in ['microstructure']:
+            return 'microstructure_stock_pool'
+        raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
+
+    def get_stock_pool_index_by_factor_name(self, factor_name):
+        # 拿到对应pool_name
+        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
+
+        index_filter_config = self.data_manager.config['stock_pool_profiles'][pool_name]['index_filter']
+        if  not index_filter_config['enable']:
+            return INDEX_CODES['ALL_A']
+        return index_filter_config['index_code']
+
+    def get_stock_pool_name_by_factor_name(self, factor_name):
+        school_code = self.get_school_code_by_factor_name(factor_name)
+        return self.get_stock_pool_name_by_factor_school(school_code)
+
+    # 获取 因子所对应股票池 股票池所有的stock_codes
+    def get_pool_of_factor_name_of_stock_codes(self, target_factor_name):
+        pool = self.get_stock_pool_by_factor_name(factor_name=target_factor_name)
+        return list(pool.columns)
+
+
+
+    def get_category_type(self, factor_name):
+        factor_definition = self.data_manager.config['factor_definition']
+        return factor_definition[factor_definition['name'] == factor_name]['category_type']
+
+    def get_school(self, factor_name):
+        factor_definition = self.data_manager.config['factor_definition']
+        return factor_definition[factor_definition['name'] == factor_name]['school']
+

@@ -12,13 +12,15 @@ from pandas import Series
 
 from data.local_data_load import load_index_daily, load_daily_hfq
 from projects._03_factor_selection.data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
+from projects._03_factor_selection.visualization_manager import VisualizationManager
 
 from quant_lib import logger
-from ..factor_manager.factor_manager import FactorManager
-from ..factor_manager.factor_technical_cal.factor_technical_cal import calculate_rolling_beta
-from ..factor_manager.selector.factor_selector import calculate_factor_score
+from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
+from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
+    calculate_rolling_beta
+from projects._03_factor_selection.factor_manager.selector.factor_selector import calculate_factor_score
 
-from ..utils.factor_processor import FactorProcessor
+from projects._03_factor_selection.utils.factor_processor import FactorProcessor
 
 import pandas as pd
 import numpy as np
@@ -43,26 +45,24 @@ from quant_lib.evaluation import (
 
 )
 
-# 导入新的可视化管理器
-try:
-    from visualization_manager import VisualizationManager
-except ImportError:
-    VisualizationManager = None
+# # 导入新的可视化管理器
+# try:
+#     from visualization_manager import VisualizationManager
+# except ImportError:
+#     VisualizationManager = None
 
 warnings.filterwarnings('ignore')
 
 
-class SingleFactorTester:
+class FactorAnalyzer:
     """
-    单因子测试器 - 专业版
+    单因子(质检中心 IC分析、分层回测、F-M回归、绘图等）
 
     按照华泰证券标准实现三种测试方法的完整流程
     """
 
     def __init__(self,
-                 raw_dfs: Dict[str, pd.DataFrame] = None,
-                 stock_pools_dict: Dict[str, pd.DataFrame] = None,
-                 config: Dict[str, Any] = None,
+                 factor_manager,
                  target_factors_dict: Dict[str, pd.DataFrame] = None,
                  target_factors_category_dict: Dict[str, Any] = None,
                  target_factor_school_type_dict: Dict[str, Any] = None
@@ -77,17 +77,20 @@ class SingleFactorTester:
             config: 配置字典
         """
         # 必要检查
-        if not config:
+        if not factor_manager:
             raise RuntimeError("config 没有传递过来！")
-        if raw_dfs is None or 'close' not in raw_dfs:
+        self.factor_manager = factor_manager
+        data_manager = factor_manager.data_manager
+        if data_manager is None or 'close' not in data_manager.raw_dfs:
             raise ValueError('close的df是必须的，请写入！')
 
-        self.config = config
-        self.test_common_periods = config['evaluation'].get('forward_periods', [1, 5, 10, 20])
-        self.n_quantiles = config.get('quantiles', 5)
+        config = data_manager.config
+        self.config = data_manager.config
+        self.test_common_periods = self.config['evaluation'].get('forward_periods', [1, 5, 10, 20])
+        self.n_quantiles = self.config.get('quantiles', 5)
         # 初始化因子预处理器
         self.factor_processor = FactorProcessor(self.config)
-        self.stock_pools_dict = stock_pools_dict
+        self.stock_pools_dict = data_manager.stock_pools_dict
 
         # 初始化数据
 
@@ -98,25 +101,23 @@ class SingleFactorTester:
         self.backtest_start_date = config['backtest']['start_date']
         self.backtest_end_date = config['backtest']['end_date']
         self.backtest_period = f"{pd.to_datetime(self.backtest_start_date).strftime('%Y%m%d')} ~ {pd.to_datetime(self.backtest_end_date).strftime('%Y%m%d')}"
-        self.raw_dfs = raw_dfs  # 纯原生 只有dfs间的对齐 除此之外 没有任何过滤，也没有shift（1）
-        self.master_beta_df = self.prepare_master_pct_chg_beta_dataframe()
+        self.raw_dfs = data_manager.raw_dfs  # 纯原生 只有dfs间的对齐 除此之外 没有任何过滤，也没有shift（1）
+        self.visualizationManager = VisualizationManager(
+            output_dir='D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\visualizations'
+        )
+
+        # 决定延迟加载
+        # self.master_beta_df = self.prepare_master_pct_chg_beta_dataframe()
 
         # 基于不同股票池！！！
-        self.close_df_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-                                                                                                 need_shift=False)  # 只需要对齐股票就行 dict
-        self.circ_mv__shift_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            factor_name='circ_mv',
-            need_shift=True)
-        self.pct_chg_beta_shift_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
+        # self.close_df_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',need_shift=False)  # 只需要对齐股票就行 dict
+        # self.circ_mv__shift_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='circ_mv',need_shift=True)
+        # self.pct_chg_beta_shift_diff_stock_pools_dict = self.build_df_dict_base_on_diff_pool_can_set_shift( base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
 
         # 准备辅助【市值、行业】数据(用于中性值 计算！)
-        self.auxiliary_dfs_shift_diff_stock_polls_dict = self.build_auxiliary_dfs_shift_diff_stock_pools_dict()
-        self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict = self._prepare_for_neutral_data_dict_shift_diff_stock_pools()
-        self.check_shape()
-
-        # 创建输出目录
-        # os.makedirs(output_dir, exist_ok=True)
+        # self.auxiliary_dfs_shift_diff_stock_polls_dict = self.build_auxiliary_dfs_shift_diff_stock_pools_dict()
+        # self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict = self._prepare_for_neutral_data_dict_shift_diff_stock_pools()
+        # self.check_shape()
 
         # 设置中文字体
         plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
@@ -194,15 +195,20 @@ class SingleFactorTester:
         """
         logger.info(f"开始测试因子: {target_factor_name}")
         target_school = self.target_school_type_dict[target_factor_name]
-        stock_pool_name = self.get_stock_pool_name_by_factor_school(target_school)
-        stock_pool = self.stock_pools_dict[stock_pool_name]
+        stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
         target_factor_shift_df = self.target_factors_dict[target_factor_name]
 
-        close_df = self.close_df_diff_stock_pools_dict[stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        auxiliary_shift_dfs_base_own_stock_pools = self.auxiliary_dfs_shift_diff_stock_polls_dict[stock_pool_name]
-        prepare_for_neutral_shift_base_own_stock_pools_dfs = self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
+        close_df = self.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+                                                                      need_shift=False)[
+            stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        auxiliary_shift_dfs_base_own_stock_pools = self.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
             stock_pool_name]
-        circ_mv_shift_df = self.circ_mv__shift_diff_stock_pools_dict[stock_pool_name]
+        prepare_for_neutral_shift_base_own_stock_pools_dfs = \
+        self._prepare_for_neutral_data_dict_shift_diff_stock_pools()[
+            stock_pool_name]
+        circ_mv_shift_df = self.build_df_dict_base_on_diff_pool_can_set_shift(
+            factor_name='circ_mv',
+            need_shift=True)[stock_pool_name]
 
         # 1. 因子预处理
         target_factor_processed = self.factor_processor.process_factor(
@@ -226,7 +232,8 @@ class SingleFactorTester:
 
         primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
 
-        quantile_daily_returns_for_plot_dict =  calculate_quantile_daily_returns(target_factor_processed,close_df,  5,primary_period_key)
+        quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed, close_df, 5,
+                                                                                primary_period_key)
 
         # 4. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
@@ -252,7 +259,6 @@ class SingleFactorTester:
         return ret_dict
 
     # ok
-
 
     def _prepare_for_neutral_data(self, total_mv_df: pd.DataFrame, industry_df: pd.DataFrame) -> Dict[
         str, pd.DataFrame]:
@@ -376,7 +382,8 @@ class SingleFactorTester:
         cal_score_factor_holistically = self.cal_score_factor_holistically(cal_score_ic, cal_score_quantile,
                                                                            cal_score_fama_macbeth)
         return cal_score_factor_holistically
-    #这是最原始的评测，很不准！ 不要参考score，只看看底层的基本数据就行！ 最后的calculate_factor_score是最权威的
+
+    # 这是最原始的评测，很不准！ 不要参考score，只看看底层的基本数据就行！ 最后的calculate_factor_score是最权威的
     def overrall_summary(self, results: Dict[str, Any]):
 
         ic_analysis_dict = results['ic_analysis']
@@ -421,7 +428,6 @@ class SingleFactorTester:
                      '回测周期': backtest_period,
                      'best_score': max(total_score), **flatten_metrics_dict,
                      'diff_day_perform': rows}}
-
 
     def cal_score_ic(self,
                      ic_mean: float,
@@ -756,31 +762,12 @@ class SingleFactorTester:
             }
         }
 
-    def _prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str,pd.DataFrame]]:
+    def _prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str, pd.DataFrame]]:
         dict = {}
-        for stock_pool_name, df_dict in self.auxiliary_dfs_shift_diff_stock_polls_dict.items():
+        for stock_pool_name, df_dict in self.build_auxiliary_dfs_shift_diff_stock_pools_dict().items():
             cur = self._prepare_for_neutral_data(df_dict['total_mv'], df_dict['industry'])
             dict[stock_pool_name] = cur
         return dict
-
-    def get_stock_pool_name_by_factor_school(self, target_school):
-        dataManager_temp = DataManager(
-            "factory/config.yaml",
-            need_data_deal=False
-        )
-        return dataManager_temp.get_stock_pool_name_by_factor_school(target_school)
-    def get_stock_pool_index_by_factor_school(self, factor_name):
-        dataManager_temp = DataManager(
-            "factory/config.yaml",
-            need_data_deal=False
-        )
-        return dataManager_temp.get_stock_pool_index_by_factor_name(factor_name)
-
-
-    def get_stock_pool_name_by_factor_name(self, factor_name):
-        school = self.target_school_type_dict[factor_name]
-        pool_name = self.get_stock_pool_name_by_factor_school(school[0])
-        return pool_name
 
     # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     def get_pct_chg_beta_dict(self):
@@ -815,19 +802,19 @@ class SingleFactorTester:
         pool_stocks = self.stock_pools_dict[pool_name].columns
 
         # 直接从主Beta矩阵中按需选取，无需重新计算
-        beta_for_this_pool = self.master_beta_df[pool_stocks]
+        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]
 
         return beta_for_this_pool
 
     # ok ok 注意 用的时候别忘了shift（1）
-
 
     # ok
     def build_auxiliary_dfs_shift_diff_stock_pools_dict(self):
         dfs_dict = self.build_dfs_dict_base_on_diff_pool_name(['total_mv', 'industry'])
         dfs_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
             base_dict=dfs_dict, need_shift=True)
-        pct_chg_beta_dict = self.pct_chg_beta_shift_diff_stock_pools_dict
+        pct_chg_beta_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
+            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
 
         for stock_poll_name, df in pct_chg_beta_dict.items():
             # 补充beta
@@ -923,13 +910,13 @@ class SingleFactorTester:
         purify_summary_rows_contain_periods = self.purify_summary_rows_contain_periods(comprehensive_results)
         fm_return_series_dict = self.build_fm_return_series_dict(factor_returns_series_periods_dict, target_factor_name)
 
-        test_kwargs.get('factor_manager')._save_results(overrall_summary_stats, file_name_prefix='overrall_summary')
-        test_kwargs.get('factor_manager').update_and_save_factor_purify_summary(purify_summary_rows_contain_periods,
-                                                                                file_name_prefix='purify_summary')
-        test_kwargs.get('factor_manager').update_and_save_fm_factor_return_matrix(fm_return_series_dict,
-                                                                                  file_name_prefix='fm_return_series')
+        self.factor_manager._save_results(overrall_summary_stats, file_name_prefix='overrall_summary')
+        self.factor_manager.update_and_save_factor_purify_summary(purify_summary_rows_contain_periods,
+                                                                  file_name_prefix='purify_summary')
+        self.factor_manager.update_and_save_fm_factor_return_matrix(fm_return_series_dict,
+                                                                    file_name_prefix='fm_return_series')
         # 画图保存
-        test_kwargs.get('visualization_manager').plot_single_factor_results(
+        self.visualizationManager.plot_single_factor_results(
             target_factor_name,
             ic_series_periods_dict,
             ic_stats_periods_dict,
@@ -960,10 +947,10 @@ class SingleFactorTester:
 
             summary_row = {
                 'factor_name': factor_name,
-                'test_time':datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'test_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'factor_category': factor_category,
                 'backtest_period': self.backtest_period,
-                'backtest_base_on_index':self.get_stock_pool_index_by_factor_school(factor_name),
+                'backtest_base_on_index': self.factor_manager.get_stock_pool_index_by_factor_name(factor_name),
 
                 'period': period,  # 【BUG已修正】这里应该是单个周期
                 # 收益维度
@@ -1109,3 +1096,27 @@ class SingleFactorTester:
             df_dict_base_on_diff_pool[pool_name] = df
         return df_dict_base_on_diff_pool
 
+    def batch_test_factors(self,
+                           target_factors_dict: Dict[str, pd.DataFrame],
+                           target_factors_category_dict: Dict[str, str],
+                           target_factor_school_type_dict: Dict[str, str],
+                           **test_kwargs) -> Dict[str, Any]:
+        """
+        批量测试因子
+        """
+
+        # 批量测试
+        results = {}
+        for factor_name, factor_data in target_factors_dict.items():
+            try:
+                # 执行测试
+                ic_series_periods_dict, quantile_returns_series_periods_dict, factor_returns_series_periods_dict, summary_stats = (
+                    self.test_single_factor_entity_service(
+                        target_factor_name=factor_name,
+                    ))
+                results[factor_name] = summary_stats
+            except Exception as e:
+                # traceback.print_exc()
+                raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
+
+        return results

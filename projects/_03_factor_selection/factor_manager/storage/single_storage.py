@@ -5,10 +5,10 @@ from pathlib import Path
 current_file = Path(__file__)
 project_root = current_file.parent.parent.parent.parent.parent
 
-print(f"当前文件: {current_file}")
-print(f"项目根目录: {project_root}")
-print(f"utils目录是否存在: {(project_root / 'utils').exists()}")
-print(f"file_utils.py是否存在: {(project_root / 'utils' / 'file_utils.py').exists()}")
+# print(f"当前文件: {current_file}")
+# print(f"项目根目录: {project_root}")
+# print(f"utils目录是否存在: {(project_root / 'utils').exists()}")
+# print(f"file_utils.py是否存在: {(project_root / 'utils' / 'file_utils.py').exists()}")
 
 sys.path.insert(0, str(project_root))
 

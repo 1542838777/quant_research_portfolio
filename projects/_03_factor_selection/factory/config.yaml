@@ -69,7 +69,7 @@ stock_pool_profiles:
 
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'value_composite']
+  fields: [ 'beta']
 
 # 数据预处理设置
 preprocessing:
@@ -88,20 +88,20 @@ factor_definition:
     school: 'fundamentals'
     category_type: 'size'
     description: '总市值的自然对数，最经典、最重要的规模因子。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'circ_mv' ]
   - name: 'value_synthesizer'
     school: 'fundamentals'
     category_type: 'value'
     description: '价值合成因子。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'pe_ttm','pb','ps_ttm' ]
 
   - name: 'beta'
     school: 'trend' # 补充：Beta衡量的是个股与市场趋势的联动性，因此归为趋势(Trend)门派最合适。
     category_type: 'Risk' # 补充：Beta是衡量系统性风险的核心指标，属于风险(Risk)类别。
     description: '衡量个股收益率相对于市场基准（如沪深300）收益率的敏感性或波动性。通过将个股收益率对市场收益率进行线性回归得到，其斜率即为Beta值。它是衡量系统性风险的核心指标。'
-    need_technical_cal: True # 补充：Beta的计算需要用到滚动回归，属于复杂的技术计算。
+    action: 'technical_calcu' # 补充：Beta的计算需要用到滚动回归，属于复杂的技术计算。
     cal_require_base_fields: [] #[ 'close', 'benchmark_close' ] # 补充：需要个股收盘价来计算其收益率，同时需要一个市场基准（如指数）的收盘价来计算市场收益率。 还是注释掉吧，我们单独自行计算！，因为raw_Dfs也拿不出benchmark_close_df 而且close也是回测周期内的，我们需要start_buffer不然又很多nana
 
 
@@ -112,28 +112,34 @@ factor_definition:
     school: 'fundamentals'
     category_type: 'value'
     description: '市盈率(PE_TTM)倒数，即E/P，经典的盈利收益率因子。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'pe_ttm' ]
   - name: 'pb_inv'
     school: 'fundamentals'
     category_type: 'value'
     description: '市净率 pb 倒数 '
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'pb' ]
 
   - name: 'ps_ttm_inv'
     school: 'fundamentals'
     category_type: 'value'
     description: '市销率 ps_ttm 倒数 '
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'ps_ttm' ]
+  - name: 'value_composite'
+    school: 'fundamentals'
+    category_type: 'value'
+    description: '价值合成因子'
+    action: 'composite'
+    cal_require_base_fields: [ 'ps_ttm','pe_ttm','pb' ]
 
 
   - name: 'bm_ratio'
     school: 'fundamentals'
     category_type: 'value'
     description: '账面市值比(B/M), 即市净率(PB)倒数，最经典的价值因子。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'pb' ]
 
   # ===============================================
@@ -143,7 +149,7 @@ factor_definition:
     school: 'trend'
     category_type: 'momentum'
     description: '20日动量因子，计算过去20个交易日的收益率，捕捉短期趋势。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'close' ]
 
   # ===============================================
@@ -153,7 +159,7 @@ factor_definition:
     school: 'microstructure'
     category_type: 'liquidity'
     description: '20日异常换手率。用当日换手率与过去20日均值的差值，捕捉“异动”信号。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'turnover_rate' ]
   # 价值因子
 
@@ -162,20 +168,20 @@ factor_definition:
     school: 'microstructure'
     category_type: 'liquidity'
     description: '当前换手率与过去20日均值的差值，捕捉“异常”换手情况，是更纯粹的量价信号。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'turnover_rate' ] # 需要换手率数据
 
   - name: 'bm_ratio'
     school: 'fundamentals'
     category_type: 'value'
     description: '市净率倒数(Book-to-Market Ratio)，经典的价值因子，衡量账面价值相对市场价值的低估程度。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'pb' ] # 需要市净率数据来计算其倒数
 
   - name: 'close'
     category_type: 'price'
     school: 'microstructure'
-    need_technical_cal: False
+    action: null
     description: '收盘价'
     fields: [ 'close' ]
 
@@ -184,93 +190,93 @@ factor_definition:
     school: 'trend'
     category_type: 'trend'
     description: '过去12个月剔除最近1个月的累计收益率，经典的趋势因子，捕捉中期价格惯性。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'close' ] # 需要后复权收盘价来计算历史收益率
   - name: 'momentum_2_1'
     school: 'trend'
     category_type: 'trend'
     description: '过去2个月剔除最近1个月的累计收益率，经典的趋势因子，捕捉中期价格惯性。'
-    need_technical_cal: True
+    action: 'technical_calcu'
     cal_require_base_fields: [ 'close' ] # 需要后复权收盘价来计算历史收益率
 
   - name: 'pct_chg'
     category_type: 'return'  # <-- 建议修改 (或者 'high_freq')
     school: 'microstructure' # 归为市场微观派是合理的，因为它直接来源于市场交易
-    need_technical_cal: False
+    action: null
     description: '每日收益率（已复权）'
     fields: [ 'pct_chg' ]
 
   - name: 'pb'
     category_type: 'value'
     school: 'fundamentals'
-    need_technical_cal: False
+    action: null
     description: '市净率（PB）'
     fields: [ 'pb' ]
 
   - name: 'pe_ttm'
     category_type: 'value'
     school: 'fundamentals'
-    need_technical_cal: False
+    action: null
     description: 'pe滚动'
     fields: [ 'pe_ttm' ]
 
   - name: 'total_mv'
     category_type: 'size'
     school: 'fundamentals'
-    need_technical_cal: False
+    action: null
     description: '总市值'
     fields: [ 'total_mv' ]
   - name: 'turnover_rate'
     category_type: 'liquidity'
     school: 'microstructure'
-    need_technical_cal: False
+    action: null
     description: '换手率'
     fields: [ 'turnover_rate' ]
 
   - name: 'industry'
     category_type: 'sector'
     school: 'fundamentals'
-    need_technical_cal: False
+    action: null
     description: '行业分类'
     fields: [ 'industry' ]
 
   - name: 'circ_mv'
     category_type: 'size'
     school: 'fundamentals'
-    need_technical_cal: False
+    action: null
     description: '流通市值'
     fields: [ 'circ_mv' ]
 
   - name: 'list_date'
     category_type: 'metadata'
     school: 'fundamentals'
-    need_technical_cal: False
+    action: null
     description: '上市日期'
     fields: [ 'list_date' ]
   - name: 'open'
     category_type: 'price'
     school: 'microstructure'
-    need_technical_cal: False
+    action: null
     description: '开盘价'
     fields: [ 'open' ]
   - name: 'high'
     category_type: 'price'
     school: 'microstructure'
-    need_technical_cal: False
+    action: null
     description: '最高价'
     fields: [ 'high' ]
 
   - name: 'low'
     category_type: 'price'
     school: 'microstructure'
-    need_technical_cal: False
+    action: null
     description: '最低价'
     fields: [ 'low' ]
 
   - name: 'pre_close'
     category_type: 'price'
     school: 'microstructure'
-    need_technical_cal: False
+    action: null
     description: '前收盘价'
     fields: [ 'pre_close' ]
 

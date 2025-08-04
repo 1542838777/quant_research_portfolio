@@ -13,6 +13,9 @@ import traceback
 import pandas as pd
 from typing import Dict
 
+from projects._03_factor_selection.data_manager.data_manager import DataManager
+from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
+from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from projects._03_factor_selection.factor_manager.registry.factor_registry import FactorCategory
 
 # 添加项目根目录到路径
@@ -31,40 +34,27 @@ from quant_lib.config.logger_config import setup_logger
 logger = setup_logger(__name__)
 
 def main():
-    """主函数 - 演示策略工厂的完整使用流程"""
 
-    logger.info("重构后的策略工厂演示 - 完整因子研究流程")
 
-    # 1. 初始化策略工厂
-    factory = StrategyFactory(
-        config_path="factory/config.yaml",
-        workspace_dir="workspace"
-    )
-    # 2. 加载数据
-    logger.info("2. 加载底层原始因子raw_dict数据...")
-    factory.data_manager.prepare_all_data()
+    # 2. 初始化数据仓库
+    logger.info("1. 加载底层原始因子raw_dict数据...")
+    data_manager  = DataManager(config_path='factory/config.yaml')
+    data_manager.prepare_all_data()
 
+    factor_manager  = FactorManager(data_manager)
     # 3. 创建示例因子
     logger.info("3. 创建目标学术因子...")
 
-    target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factory.get_target_factors_entity()
-    # # 4. 定义因子类别映射
-    # factor_category_mapping = {
-    #     'pe_ttm_inv': FactorCategory.VALUE,
-    #     'momentum_20d': FactorCategory.MOMENTUM,
-    #     'momentum_60d': FactorCategory.MOMENTUM,
-    #     'ROE_factor': FactorCategory.QUALITY,
-    #     'ROA_factor': FactorCategory.QUALITY,
-    #     'revenue_growth': FactorCategory.GROWTH,
-    #     'profit_growth': FactorCategory.GROWTH,
-    #     'volatility_20d': FactorCategory.VOLATILITY,
-    #     'volatility_60d': FactorCategory.VOLATILITY
-    # }
+    target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factor_manager.get_target_factors_entity()
+    factor_analyzer = FactorAnalyzer(factor_manager=factor_manager,
+                                     target_factors_dict = target_factors_dict,
+                                     target_factors_category_dict = target_factors_category_dict,
+                                     target_factor_school_type_dict= target_factors_school_dict)
 
     # 6. 批量测试因子
     logger.info("5. 批量测试因子...")
     try:
-        batch_results = factory.batch_test_factors(
+        batch_results = factor_analyzer.batch_test_factors(
             target_factors_dict=target_factors_dict,
             target_factors_category_dict=target_factors_category_dict,
             target_factor_school_type_dict=target_factors_school_dict

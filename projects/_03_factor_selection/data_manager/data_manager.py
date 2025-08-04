@@ -863,40 +863,6 @@ class DataManager:
 
         return final_stock_pool_df
 
-    def get_school_code_by_factor_name(self, factor_name):
-        factor_dict = {item['name']: item for item in self.config['factor_definition']}
-        return factor_dict[factor_name]['school']
-
-    def get_stock_pool_by_factor_name(self, factor_name):
-        school_code = self.get_school_code_by_factor_name(factor_name)
-        pool_name = self.get_stock_pool_name_by_factor_school(school_code)
-        return self.stock_pools_dict[pool_name]
-
-    def get_stock_pool_name_by_factor_school(self, factor_school):
-        if factor_school in ['fundamentals', 'trend']:
-            return 'institutional_stock_pool'
-        if factor_school in ['microstructure']:
-            return 'microstructure_stock_pool'
-        raise ValueError('没有定义因子属于哪一门派')
-
-    def get_stock_pool_index_by_factor_name(self, factor_name):
-        # 拿到对应pool_name
-        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
-
-        index_filter_config = self.config['stock_pool_profiles'][pool_name]['index_filter']
-        if  not index_filter_config['enable']:
-            return INDEX_CODES['ALL_A']
-        return index_filter_config['index_code']
-
-    def get_stock_pool_name_by_factor_name(self, factor_name):
-        school_code = self.get_school_code_by_factor_name(factor_name)
-        return self.get_stock_pool_name_by_factor_school(school_code)
-
-    # 获取 因子所对应股票池 股票池所有的stock_codes
-    def get_pool_of_factor_name_of_stock_codes(self, target_factor_name):
-        pool = self.get_stock_pool_by_factor_name(factor_name=target_factor_name)
-        return list(pool.columns)
-
 
 def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
                                         stock_pool_df: pd.DataFrame = None):

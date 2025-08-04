@@ -38,17 +38,8 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
         factor_df = self.raw_dfs[factor_name].copy()
-        need_technical_cal = self.get_one_factor_denifition(target_factor_name)['need_technical_cal']
-        if need_technical_cal:
-            # 根据门派，找出所需股票池
-            # 自行计算！
-            target_data_df, category_type, school = self.build_technical_factor_entity_base_on_shift_and_align_stock_pools(
-                target_factor_name)
+        ac = self.get_factor_df_by_action(target_factor_name)
 
-        else:
-            # 不需要额外学术计算
-            target_data_df, category_type, school = self.build_base_factor_entity_base_on_shift_and_align_stock_pools(
-                target_factor_name)
 
         # 1. 加载原始因子数据 (这里假设你有方法可以加载)
         # raw_factor_df = self.processor.load_raw_factor(factor_name)
