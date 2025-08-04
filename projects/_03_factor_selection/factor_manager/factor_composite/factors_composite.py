@@ -6,19 +6,22 @@ import pandas as pd
 from typing import List, Dict
 import pandas as pd
 from projects._03_factor_selection.data_manager.data_manager import DataManager
+from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
+from projects._03_factor_selection.utils.factor_processor import FactorProcessor
+from quant_lib import logger
 
 
 class FactorSynthesizer:
-    def __init__(self,data_manager , factor_processor):
+    def __init__(self, factor_manager, factor_processor):
         """
         初始化因子合成器。
         Args:
             factor_processor: 传入你现有的、包含了预处理方法的对象实例。
                               我们假设这个对象有 .winsorize(), ._neutralize(), ._standardize() 等方法。
         """
-        self.processor = factor_processor
-        self.data_manager = data_manager
-        self.raw_dfs = data_manager.raw_dfs
+        self.factor_manager = factor_processor
+        self.processor = FactorProcessor(factor_manager.data_manager.config)
+        self.raw_dfs = factor_manager.raw_dfs
         # 因子方向配置，1为正向，-1为反向。需要根据单因子测试的结果来手动配置。
         self.FACTOR_DIRECTIONS = {
             'pe_ttm_inv': 1,
@@ -37,15 +40,15 @@ class FactorSynthesizer:
         return 最终的df
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
-        factor_df = self.raw_dfs[factor_name].copy()
-        ac = self.get_factor_df_by_action(target_factor_name)
+
+        factor_df = self.factor_manager.get_factor_df_by_action(factor_name)
 
 
         # 1. 加载原始因子数据 (这里假设你有方法可以加载)
         # raw_factor_df = self.processor.load_raw_factor(factor_name)
         # 为演示，我们创建一个虚拟的DataFrame
         # 2. 去极值
-        processed_df = self.processor.winsorize(raw_factor_df)
+        processed_df = self.processor.process_factor(factor_df)
         print(f"  > 步骤1: 去极值完成。")
 
         # 3. 中性化
@@ -112,11 +115,14 @@ if __name__ == '__main__':
     # 1. 实例化你的因子处理器 (假设它叫 'fp')
 
     # 2. 实例化因子合成器
-    config_path = "factory/config.yaml",
 
-    data_manager = DataManager(config_path,True)
+    logger.info("1. 加载底层原始因子raw_dict数据...")
+    data_manager = DataManager(config_path='factory/config.yaml')
     data_manager.prepare_all_data()
-    synthesizer = FactorSynthesizer(data_manager.raw_dfs)
+
+    factor_manager = FactorManager(data_manager)
+
+    synthesizer = FactorSynthesizer(data_manager)
 
     # 3. 定义你要合成的因子列表
     value_factors = ['pe_ttm_inv', 'pb_inv', 'ps_ttm_inv']

@@ -660,3 +660,171 @@ class FactorManager:
         factor_definition = self.data_manager.config['factor_definition']
         return factor_definition[factor_definition['name'] == factor_name]['school']
 
+        # ok
+
+    def build_auxiliary_dfs_shift_diff_stock_pools_dict(self):
+        dfs_dict = self.build_dfs_dict_base_on_diff_pool_name(['total_mv', 'industry'])
+        dfs_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
+            base_dict=dfs_dict, need_shift=True)
+        pct_chg_beta_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
+            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
+
+        for stock_poll_name, df in pct_chg_beta_dict.items():
+            # 补充beta
+            dfs_dict[stock_poll_name].update({'pct_chg_beta': df})
+        return dfs_dict
+
+    def build_dfs_dict_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
+        if isinstance(factor_name_data, str):
+            return self.build_one_df_dict_base_on_diff_pool_name(factor_name_data)
+        if isinstance(factor_name_data, list):
+            dicts = []
+            for factor_name in factor_name_data:
+                pool_df_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
+                dicts.append((factor_name, pool_df_dict))  # 保存因子名和对应的dict
+
+            merged = {}
+            for factor_name, pool_df_dict in dicts:
+                for pool, df in pool_df_dict.items():
+                    if pool not in merged:
+                        merged[pool] = {}
+                    merged[pool][factor_name] = df
+
+            return merged
+
+        raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
+        # 仅仅只是构造一个dict 不做任何处理!
+
+    def build_one_df_dict_base_on_diff_pool_name(self, factor_name):
+        df_dict_base_on_diff_pool = {}
+        df = self.data_manager.raw_dfs[factor_name]
+        for pool_name, stock_pool_df in self.data_manager.stock_pools_dict.items():
+            df_dict_base_on_diff_pool[pool_name] = df
+        return df_dict_base_on_diff_pool
+
+    def build_df_dict_base_on_diff_pool_can_set_shift(self, base_dict=None, factor_name=None, need_shift=True):
+        if base_dict is None:
+            base_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
+        if need_shift:
+            ret = self.do_shift_and_align_for_dict(factor_name, base_dict)
+            return ret
+        else:
+            ret = self.do_align_for_dict(factor_name, base_dict)
+            return ret
+
+    def do_shift_and_align_for_dict(self, factor_name, data_dict):
+        result = {}
+        for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
+            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool)
+            result[stock_name] = ret
+        return result
+
+    def do_align_for_dict(self, factor_name, data_dict):
+        result = {}
+        for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
+            ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
+            result[stock_name] = ret
+        return result
+
+    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool):
+        # 率先shift
+        data_to_deal_by_shifted = self.do_shift(data_to_deal)
+        # 对齐
+        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool)
+        return result
+
+    def do_shift(
+            self,
+            data_to_shift: Union[pd.DataFrame, Dict[str, pd.DataFrame]]
+    ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+        """
+        对输入的数据执行 .shift(1) 操作，智能处理单个DataFrame或DataFrame字典。
+        Args:
+            data_to_shift: 需要进行滞后处理的数据，
+                           可以是一个 pandas DataFrame，
+                           也可以是一个 key为字符串, value为pandas DataFrame的字典。
+        Returns:
+            一个与输入类型相同的新对象，其中所有的DataFrame都已被 .shift(1) 处理。
+        """
+        # --- 情况一：输入是字典 ---
+        if isinstance(data_to_shift, dict):
+            shifted_dict = {}
+            for key, df in data_to_shift.items():
+                if not isinstance(df, pd.DataFrame):
+                    raise ValueError("do_shift失败,dict内部不是df结构")
+                # 对字典中的每个DataFrame执行shift操作
+                shifted_dict[key] = df.shift(1)
+            return shifted_dict
+
+        # --- 情况二：输入是单个DataFrame ---
+        elif isinstance(data_to_shift, pd.DataFrame):
+            return data_to_shift.shift(1)
+
+        # --- 其他情况：输入类型错误，主动报错 ---
+        else:
+            raise TypeError(
+                f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
+                f"但收到的是 {type(data_to_shift).__name__}"
+            )
+
+    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool
+                 ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+        # --- 情况一：输入是字典 ---
+        if isinstance(data_to_align, dict):
+            shifted_dict = {}
+            for key, df in data_to_align.items():
+                if not isinstance(df, pd.DataFrame):
+                    raise ValueError("do_shift失败,dict内部不是df结构")
+                # 对字典中的每个DataFrame执行shift操作
+                shifted_dict[key] = align_one_df_by_stock_pool_and_fill(factor_name=key, raw_df_param=df,
+                                                                        stock_pool_df=stock_pool)
+            return shifted_dict
+
+        # --- 情况二：输入是单个DataFrame ---
+        elif isinstance(data_to_align, pd.DataFrame):
+            return align_one_df_by_stock_pool_and_fill(factor_name=factor_name, raw_df_param=data_to_align,
+                                                       stock_pool_df=stock_pool)
+
+        # --- 其他情况：输入类型错误，主动报错 ---
+        else:
+            raise TypeError(
+                f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
+                f"但收到的是 {type(data_to_align).__name__}"
+            )
+
+
+    # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
+    def get_pct_chg_beta_dict(self):
+        dict = {}
+        for pool_name, _ in self.data_manager.stock_pools_dict.items():
+            beta_df = self.get_pct_chg_beta_data_for_pool(pool_name)
+            dict[pool_name] = beta_df
+        return dict
+
+    def get_pct_chg_beta_data_for_pool(self, pool_name):
+        pool_stocks = self.data_manager.stock_pools_dict[pool_name].columns
+
+        # 直接从主Beta矩阵中按需选取，无需重新计算
+        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]
+
+        return beta_for_this_pool
+    def prepare_master_pct_chg_beta_dataframe(self):
+        """
+        一个在系统初始化时调用的方法，用于生成一份统一的、覆盖所有股票的Beta矩阵。
+        """
+        logger.info("开始准备主Beta矩阵...")
+
+        # 1. 整合所有股票池的股票代码，形成一个总的股票列表
+        all_unique_stocks = set()
+        for stock_pool in self.data_manager.stock_pools_dict.values():
+            all_unique_stocks.update(stock_pool.columns)
+
+        master_stock_list = sorted(list(all_unique_stocks))
+
+        # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
+        logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
+        return calculate_rolling_beta(
+            self.data_manager.config['backtest']['start_date'],
+            self.data_manager.config['backtest']['end_date'],
+            master_stock_list
+        )

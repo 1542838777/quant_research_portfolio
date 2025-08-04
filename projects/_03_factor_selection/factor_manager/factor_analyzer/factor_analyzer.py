@@ -8,32 +8,24 @@
 
 支持批量测试、结果可视化和报告生成
 """
+import os
+import sys
+import warnings
+from datetime import datetime
+from typing import Dict, Tuple, Any
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from pandas import Series
+from scipy import stats
 
-from data.local_data_load import load_index_daily, load_daily_hfq
-from projects._03_factor_selection.data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
-from projects._03_factor_selection.visualization_manager import VisualizationManager
-
-from quant_lib import logger
-from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
     calculate_rolling_beta
 from projects._03_factor_selection.factor_manager.selector.factor_selector import calculate_factor_score
-
 from projects._03_factor_selection.utils.factor_processor import FactorProcessor
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from typing import Dict, List, Optional, Tuple, Any, Union
-import warnings
-import os
-import json
-from datetime import datetime
-import sys
-
-from scipy import stats
+from projects._03_factor_selection.visualization_manager import VisualizationManager
+from quant_lib import logger
 
 n_metrics_pass_rate_key = 'n_metrics_pass_rate'
 
@@ -69,12 +61,7 @@ class FactorAnalyzer:
 
                  ):
         """
-        初始化单因子测试器 - 兼容新架构
-
-        Args:
-            raw_dfs: 数据字典（新架构）
-            price_data: 价格数据（向后兼容）
-            config: 配置字典
+        初始化单因子测试器 -
         """
         # 必要检查
         if not factor_manager:
@@ -146,7 +133,6 @@ class FactorAnalyzer:
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
                                close_df: pd.DataFrame,
-
                                factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         分层回测法测试
@@ -186,10 +172,6 @@ class FactorAnalyzer:
         综合测试 - 执行所有三种测试方法
 
         Args:
-            factor_name: 因子名称
-            preprocess_method: 预处理方法
-            save_results: 是否保存结果
-
         Returns:
             综合测试结果字典
         """
@@ -198,15 +180,15 @@ class FactorAnalyzer:
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
         target_factor_shift_df = self.target_factors_dict[target_factor_name]
 
-        close_df = self.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+        close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
                                                                       need_shift=False)[
             stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        auxiliary_shift_dfs_base_own_stock_pools = self.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
+        auxiliary_shift_dfs_base_own_stock_pools = self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
             stock_pool_name]
         prepare_for_neutral_shift_base_own_stock_pools_dfs = \
         self._prepare_for_neutral_data_dict_shift_diff_stock_pools()[
             stock_pool_name]
-        circ_mv_shift_df = self.build_df_dict_base_on_diff_pool_can_set_shift(
+        circ_mv_shift_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
             factor_name='circ_mv',
             need_shift=True)[stock_pool_name]
 
@@ -764,7 +746,7 @@ class FactorAnalyzer:
 
     def _prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str, pd.DataFrame]]:
         dict = {}
-        for stock_pool_name, df_dict in self.build_auxiliary_dfs_shift_diff_stock_pools_dict().items():
+        for stock_pool_name, df_dict in self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict().items():
             cur = self._prepare_for_neutral_data(df_dict['total_mv'], df_dict['industry'])
             dict[stock_pool_name] = cur
         return dict
@@ -777,49 +759,10 @@ class FactorAnalyzer:
             dict[pool_name] = beta_df
         return dict
 
-    def prepare_master_pct_chg_beta_dataframe(self):
-        """
-        一个在系统初始化时调用的方法，用于生成一份统一的、覆盖所有股票的Beta矩阵。
-        """
-        logger.info("开始准备主Beta矩阵...")
-
-        # 1. 整合所有股票池的股票代码，形成一个总的股票列表
-        all_unique_stocks = set()
-        for stock_pool in self.stock_pools_dict.values():
-            all_unique_stocks.update(stock_pool.columns)
-
-        master_stock_list = sorted(list(all_unique_stocks))
-
-        # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
-        logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
-        return calculate_rolling_beta(
-            self.config['backtest']['start_date'],
-            self.config['backtest']['end_date'],
-            master_stock_list
-        )
-
-    def get_pct_chg_beta_data_for_pool(self, pool_name):
-        pool_stocks = self.stock_pools_dict[pool_name].columns
-
-        # 直接从主Beta矩阵中按需选取，无需重新计算
-        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]
-
-        return beta_for_this_pool
 
     # ok ok 注意 用的时候别忘了shift（1）
 
-    # ok
-    def build_auxiliary_dfs_shift_diff_stock_pools_dict(self):
-        dfs_dict = self.build_dfs_dict_base_on_diff_pool_name(['total_mv', 'industry'])
-        dfs_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=dfs_dict, need_shift=True)
-        pct_chg_beta_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
 
-        for stock_poll_name, df in pct_chg_beta_dict.items():
-            # 补充beta
-            dfs_dict[stock_poll_name].update({'pct_chg_beta': df})
-        return dfs_dict
 
     def check_shape(self):
         pool_names = self.stock_pools_dict.keys()
@@ -828,24 +771,24 @@ class FactorAnalyzer:
             pool_shape_config[pool_name] = self.stock_pools_dict[pool_name].shape
 
         for pool_name, shape in pool_shape_config.items():
-            if shape != self.close_df_diff_stock_pools_dict[pool_name].shape:
+            if shape != self.factor_manager.close_df_diff_stock_pools_dict[pool_name].shape:
                 raise ValueError("形状不一致 ，请必须检查")
-            if shape != self.circ_mv__shift_diff_stock_pools_dict[pool_name].shape:
+            if shape != self.factor_manager.circ_mv__shift_diff_stock_pools_dict[pool_name].shape:
                 raise ValueError("形状不一致 ，请必须检查")
-            if shape != self.pct_chg_beta_shift_diff_stock_pools_dict[pool_name].shape:
+            if shape != self.factor_manager.pct_chg_beta_shift_diff_stock_pools_dict[pool_name].shape:
                 raise ValueError("形状不一致 ，请必须检查")
 
-            if shape != self.auxiliary_dfs_shift_diff_stock_polls_dict[pool_name]['pct_chg_beta'].shape:
+            if shape != self.factor_manager.auxiliary_dfs_shift_diff_stock_polls_dict[pool_name]['pct_chg_beta'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
-            if shape != self.auxiliary_dfs_shift_diff_stock_polls_dict[pool_name]['industry'].shape:
+            if shape != self.factor_manager.auxiliary_dfs_shift_diff_stock_polls_dict[pool_name]['industry'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
-            if shape != self.auxiliary_dfs_shift_diff_stock_polls_dict[pool_name]['total_mv'].shape:
+            if shape != self.factor_manager.auxiliary_dfs_shift_diff_stock_polls_dict[pool_name]['total_mv'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
             #  因为_prepare_for_neutral_data  入参的df 第一行是NAN（shift导致）经过industry_stacked_series = industry_df.stack().dropna() ，最后会少一行，很正常！所以暂且不判断这个长度
             # if shape != self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict[pool_name]['industry_农业综合'].shape:
             #     raise ValueError("形状不一致 ，请必须检查")
 
-            if shape != self.prepare_for_neutral_dfs_shift_diff_stock_pools_dict[pool_name]['total_mv'].shape:
+            if shape != self.factor_manager.prepare_for_neutral_dfs_shift_diff_stock_pools_dict[pool_name]['total_mv'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
 
     def test_single_factor_entity_service(self,
@@ -978,123 +921,6 @@ class FactorAnalyzer:
 
         return fm_factor_returns
 
-    def do_shift(
-            self,
-            data_to_shift: Union[pd.DataFrame, Dict[str, pd.DataFrame]]
-    ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
-        """
-        对输入的数据执行 .shift(1) 操作，智能处理单个DataFrame或DataFrame字典。
-        Args:
-            data_to_shift: 需要进行滞后处理的数据，
-                           可以是一个 pandas DataFrame，
-                           也可以是一个 key为字符串, value为pandas DataFrame的字典。
-        Returns:
-            一个与输入类型相同的新对象，其中所有的DataFrame都已被 .shift(1) 处理。
-        """
-        # --- 情况一：输入是字典 ---
-        if isinstance(data_to_shift, dict):
-            shifted_dict = {}
-            for key, df in data_to_shift.items():
-                if not isinstance(df, pd.DataFrame):
-                    raise ValueError("do_shift失败,dict内部不是df结构")
-                # 对字典中的每个DataFrame执行shift操作
-                shifted_dict[key] = df.shift(1)
-            return shifted_dict
-
-        # --- 情况二：输入是单个DataFrame ---
-        elif isinstance(data_to_shift, pd.DataFrame):
-            return data_to_shift.shift(1)
-
-        # --- 其他情况：输入类型错误，主动报错 ---
-        else:
-            raise TypeError(
-                f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
-                f"但收到的是 {type(data_to_shift).__name__}"
-            )
-
-    def do_shift_and_align_for_dict(self, factor_name, data_dict):
-        result = {}
-        for stock_name, stock_pool in self.stock_pools_dict.items():
-            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool)
-            result[stock_name] = ret
-        return result
-
-    def do_align_for_dict(self, factor_name, data_dict):
-        result = {}
-        for stock_name, stock_pool in self.stock_pools_dict.items():
-            ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
-            result[stock_name] = ret
-        return result
-
-    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool):
-        # 率先shift
-        data_to_deal_by_shifted = self.do_shift(data_to_deal)
-        # 对齐
-        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool)
-        return result
-
-    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool
-                 ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
-        # --- 情况一：输入是字典 ---
-        if isinstance(data_to_align, dict):
-            shifted_dict = {}
-            for key, df in data_to_align.items():
-                if not isinstance(df, pd.DataFrame):
-                    raise ValueError("do_shift失败,dict内部不是df结构")
-                # 对字典中的每个DataFrame执行shift操作
-                shifted_dict[key] = align_one_df_by_stock_pool_and_fill(factor_name=key, raw_df_param=df,
-                                                                        stock_pool_df=stock_pool)
-            return shifted_dict
-
-        # --- 情况二：输入是单个DataFrame ---
-        elif isinstance(data_to_align, pd.DataFrame):
-            return align_one_df_by_stock_pool_and_fill(factor_name=factor_name, raw_df_param=data_to_align,
-                                                       stock_pool_df=stock_pool)
-
-        # --- 其他情况：输入类型错误，主动报错 ---
-        else:
-            raise TypeError(
-                f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
-                f"但收到的是 {type(data_to_align).__name__}"
-            )
-
-    def build_dfs_dict_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
-        if isinstance(factor_name_data, str):
-            return self.build_one_df_dict_base_on_diff_pool_name(factor_name_data)
-        if isinstance(factor_name_data, list):
-            dicts = []
-            for factor_name in factor_name_data:
-                pool_df_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
-                dicts.append((factor_name, pool_df_dict))  # 保存因子名和对应的dict
-
-            merged = {}
-            for factor_name, pool_df_dict in dicts:
-                for pool, df in pool_df_dict.items():
-                    if pool not in merged:
-                        merged[pool] = {}
-                    merged[pool][factor_name] = df
-
-            return merged
-
-        raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
-
-    def build_df_dict_base_on_diff_pool_can_set_shift(self, base_dict=None, factor_name=None, need_shift=True):
-        if base_dict is None:
-            base_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
-        if need_shift:
-            ret = self.do_shift_and_align_for_dict(factor_name, base_dict)
-            return ret
-        else:
-            ret = self.do_align_for_dict(factor_name, base_dict)
-            return ret
-
-    # 仅仅只是构造一个dict 不做任何处理!
-    def build_one_df_dict_base_on_diff_pool_name(self, factor_name):
-        df_dict_base_on_diff_pool = {}
-        df = self.raw_dfs[factor_name]
-        for pool_name, stock_pool_df in self.stock_pools_dict.items():
-            df_dict_base_on_diff_pool[pool_name] = df
-        return df_dict_base_on_diff_pool
 
     def batch_test_factors(self,
                            target_factors_dict: Dict[str, pd.DataFrame],
