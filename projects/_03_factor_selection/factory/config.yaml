@@ -69,7 +69,7 @@ stock_pool_profiles:
 
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'market_cap_log']
+  fields: [ 'value_composite']
 
 # 数据预处理设置
 preprocessing:
@@ -90,6 +90,12 @@ factor_definition:
     description: '总市值的自然对数，最经典、最重要的规模因子。'
     need_technical_cal: True
     cal_require_base_fields: [ 'circ_mv' ]
+  - name: 'value_synthesizer'
+    school: 'fundamentals'
+    category_type: 'value'
+    description: '价值合成因子。'
+    need_technical_cal: True
+    cal_require_base_fields: [ 'pe_ttm','pb','ps_ttm' ]
 
   - name: 'beta'
     school: 'trend' # 补充：Beta衡量的是个股与市场趋势的联动性，因此归为趋势(Trend)门派最合适。
@@ -108,6 +114,20 @@ factor_definition:
     description: '市盈率(PE_TTM)倒数，即E/P，经典的盈利收益率因子。'
     need_technical_cal: True
     cal_require_base_fields: [ 'pe_ttm' ]
+  - name: 'pb_inv'
+    school: 'fundamentals'
+    category_type: 'value'
+    description: '市净率 pb 倒数 '
+    need_technical_cal: True
+    cal_require_base_fields: [ 'pb' ]
+
+  - name: 'ps_ttm_inv'
+    school: 'fundamentals'
+    category_type: 'value'
+    description: '市销率 ps_ttm 倒数 '
+    need_technical_cal: True
+    cal_require_base_fields: [ 'ps_ttm' ]
+
 
   - name: 'bm_ratio'
     school: 'fundamentals'

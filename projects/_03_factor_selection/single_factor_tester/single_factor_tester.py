@@ -39,7 +39,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
     calculate_ic_vectorized,
-    calculate_quantile_returns, fama_macbeth
+    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns
 
 )
 
@@ -224,6 +224,10 @@ class SingleFactorTester:
         quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(
             target_factor_processed, close_df, target_factor_name)
 
+        primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
+
+        quantile_daily_returns_for_plot_dict =  calculate_quantile_daily_returns(target_factor_processed,close_df,  5,primary_period_key)
+
         # 4. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
         factor_returns_series_periods_dict, fm_stat_results_periods_dict = fama_macbeth(
@@ -232,7 +236,7 @@ class SingleFactorTester:
             factor_name=target_factor_name)
 
         return (ic_series_periods_dict, ic_stats_periods_dict,
-                quantile_returns_series_periods_dict, quantile_stats_periods_dict,
+                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
                 factor_returns_series_periods_dict, fm_stat_results_periods_dict)
 
     # ok
@@ -752,7 +756,7 @@ class SingleFactorTester:
             }
         }
 
-    def _prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, pd.DataFrame]:
+    def _prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str,pd.DataFrame]]:
         dict = {}
         for stock_pool_name, df_dict in self.auxiliary_dfs_shift_diff_stock_polls_dict.items():
             cur = self._prepare_for_neutral_data(df_dict['total_mv'], df_dict['industry'])
@@ -892,7 +896,7 @@ class SingleFactorTester:
         #     )
 
         # 执行测试
-        ic_series_periods_dict, ic_stats_periods_dict, quantile_returns_series_periods_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict = \
+        ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict = \
             (
                 self.comprehensive_test(
                     target_factor_name=target_factor_name,
@@ -901,7 +905,7 @@ class SingleFactorTester:
         # 5. 综合评价
 
         evaluation_score_dict = self.evaluation_score_dict(ic_stats_periods_dict,
-                                                           quantile_returns_series_periods_dict,
+                                                           quantile_stats_periods_dict,
                                                            fm_stat_results_periods_dict)
         # 整合结果
         comprehensive_results = {
@@ -929,12 +933,12 @@ class SingleFactorTester:
             target_factor_name,
             ic_series_periods_dict,
             ic_stats_periods_dict,
-            quantile_returns_series_periods_dict,
+            quantile_daily_returns_for_plot_dict,
             quantile_stats_periods_dict,
             factor_returns_series_periods_dict,
             fm_stat_results_periods_dict)
 
-        return ic_series_periods_dict, quantile_returns_series_periods_dict, factor_returns_series_periods_dict, overrall_summary_stats
+        return ic_series_periods_dict, quantile_daily_returns_for_plot_dict, factor_returns_series_periods_dict, overrall_summary_stats
 
     def purify_summary_rows_contain_periods(self, comprehensive_results):
         factor_category = comprehensive_results.get('factor_category', 'Unknown')  # 使用.get增加健壮性
@@ -1105,6 +1109,3 @@ class SingleFactorTester:
             df_dict_base_on_diff_pool[pool_name] = df
         return df_dict_base_on_diff_pool
 
-
-if __name__ == '__main__':
-    load_config

@@ -30,11 +30,13 @@ FACTOR_FILL_CONFIG = {
     'industry': FILL_STRATEGY_FFILL,
     'list_date': FILL_STRATEGY_FFILL,
     # 计算技术类
-    'pe_ttm_inv': FILL_STRATEGY_NONE,
     'bm_ratio': FILL_STRATEGY_NONE,
     'turnover_rate_abnormal_20d': FILL_STRATEGY_NONE,
     'market_cap_log': FILL_STRATEGY_FFILL,
     'momentum_20d': FILL_STRATEGY_NONE,
     'beta': FILL_STRATEGY_FFILL,
+    'pe_ttm_inv': FILL_STRATEGY_FFILL,
+    'pb_inv': FILL_STRATEGY_FFILL,
+    'ps_ttm_inv': FILL_STRATEGY_FFILL,
     # ... 你可以继续添加更多因子
 }

@@ -83,6 +83,8 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常现象：不需要care 多少缺失率"
     if field in ['pct_chg', 'beta'] and rate <= 0.20:
         return "正常"
+    if field in ['ps_ttm'] and rate <= 0.20:
+        return "正常"
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
 
@@ -140,10 +142,6 @@ class DataManager:
         # === 第一阶段：基于已加载数据构建权威股票池 ===
         logger.info("第一阶段：构建两个权威股票池（各种过滤！）")
         self._build_stock_pools_from_loaded_data(start_date, end_date)
-
-        # === 第二阶段：基于股票池对齐和清洗所有数据 ===
-        logger.info("第二阶段：(根据因子门派类别)对齐和填充所有因子数据")
-
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被stock_pool_df 动了手脚了（低市值的会被置为nan，
 
     # ok
@@ -886,7 +884,7 @@ class DataManager:
         pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
 
         index_filter_config = self.config['stock_pool_profiles'][pool_name]['index_filter']
-        if ~index_filter_config['enable']:
+        if  not index_filter_config['enable']:
             return INDEX_CODES['ALL_A']
         return index_filter_config['index_code']
 

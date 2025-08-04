@@ -369,21 +369,6 @@ class StrategyFactory:
         """创建因子流水线"""
         return FactorPipeline(self, factor_configs)
 
-    # 返回目标学术因子 （通过计算base Factor
-    def get_config_target_factor_dict_by_cal_base_factor_batch(self, raw_data_dict: Dict[str, pd.DataFrame]) -> Tuple[
-        Dict[
-            str, pd.DataFrame], Dict[str, str]]:
-        ret_data_dict = {}
-        factor_category_dict = {}
-        # 拿到目标学术因子
-        aca_target_factors = self.config['target_factors_for_evaluation']['fields']
-        for target_factors_for_evaluation in aca_target_factors:
-            target_data_df, category_type, school = self.get_done_cal_factor_and_category_and_school(
-                target_factors_for_evaluation,
-                raw_data_dict)
-            ret_data_dict.update({target_factors_for_evaluation: target_data_df})
-            factor_category_dict.update({target_factors_for_evaluation: category_type})
-        return ret_data_dict, factor_category_dict
 
     # 返回目标学术因子 （通过计算base Factor
     def get_done_cal_factor_and_category_and_school(
@@ -474,6 +459,18 @@ class StrategyFactory:
         # --- 毕业考题：价值因子 ---
         elif 'pe_ttm_inv' == target_factor_name:
             pe_df = raw_data_dict['pe_ttm'].copy()
+            # PE为负或0时，其倒数无意义，设为NaN
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+        elif 'ps_ttm_inv' == target_factor_name:
+            pe_df = raw_data_dict['ps_ttm'].copy()
+            # PE为负或0时，其倒数无意义，设为NaN
+            pe_df = pe_df.where(pe_df > 0)
+            factor_df = 1 / pe_df
+            return factor_df, category_type, school
+        elif 'pb_inv' == target_factor_name:
+            pe_df = raw_data_dict['pb'].copy()
             # PE为负或0时，其倒数无意义，设为NaN
             pe_df = pe_df.where(pe_df > 0)
             factor_df = 1 / pe_df

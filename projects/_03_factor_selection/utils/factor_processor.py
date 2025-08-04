@@ -375,6 +375,8 @@ class FactorProcessor:
             # 移除 行业
             factors_to_neutralize.remove('pct_chg_beta')
             factors_to_neutralize.remove('market_cap')
+        if target_factor_name in  ['pe_ttm_inv','pb_inv','ps_ttm_inv']:
+            factors_to_neutralize.remove('market_cap')
         logger.info(f"因子:{target_factor_name}寻找最终用于回归的中性化目标因子为{factors_to_neutralize}")
         return factors_to_neutralize
 

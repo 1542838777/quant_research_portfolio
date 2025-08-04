@@ -84,6 +84,7 @@ def make_pool_profile(pool_name, Index_filter, index_code,remove_st,remove_new_s
 
 
 CSI300_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',True,True,True, 0, 0)
+CSI300_more_filter_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',True,True,True, 0.1, 0.05)
 CSI300_none_TFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',True,False,False, 0, 0)
 CSI300_none_FTF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,True,False, 0, 0)
 CSI300_none_FFT_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,False,True, 0, 0)

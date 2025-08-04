@@ -135,91 +135,75 @@ class VisualizationManager:
                                    ):
 
         """
-        【V2版】一张图全面展示因子有效性、稳定性、区分度和纯净Alpha。
-        借鉴了研报的视觉设计，同时保留了多周期对比的核心优势。
+        【V3版】最终版因子分析报告。
+        右上角图表已升级为分层累计净值曲线，左下角为F-M纯净Alpha收益。
         """
         logger.info(f"开始绘图for:{factor_name}")
         primary_period = list(ic_series_periods_dict.keys())[-1]
         # 1. 创建 2x2 图表布局
         fig = plt.figure(figsize=(24, 20))
-        gs = gridspec.GridSpec(2, 2, width_ratios=[2, 1], height_ratios=[1, 1])
+        gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1])
         fig.suptitle(f'单因子分析报告 (Factor Tear Sheet): {factor_name}', fontsize=28, y=0.97)
 
-        # 2. 【左上，升级版】IC序列(柱状) + 累计IC(折线)
+        # 2. 【左上】IC序列(柱状) + 累计IC(折线) - (维持V2版)
         ax1 = fig.add_subplot(gs[0, 0])
-        ax1_twin = ax1.twinx()  # 创建次坐标轴
-
-        # a) 绘制核心周期的IC序列柱状图
+        ax1_twin = ax1.twinx()
         primary_ic = ic_series_periods_dict.get(primary_period)
         if primary_ic is not None:
-            # 【关键修改】使用 ax1.bar 替代 plot(kind='bar') 以保留datetime轴
-            ax1.bar(primary_ic.index, primary_ic.values, width=1.0, color='royalblue', alpha=0.6,
-                    label=f'IC序列 ({primary_period})')
-
+            ax1.bar(primary_ic.index, primary_ic.values, width=1.0, color='royalblue', alpha=0.6, label=f'IC序列 ({primary_period})')
         ax1.axhline(0, color='black', linestyle='--', lw=1)
         ax1.set_ylabel('IC值 (单期)', color='royalblue', fontsize=14)
         ax1.tick_params(axis='y', labelcolor='royalblue')
-
-        # b) 在次坐标轴上绘制所有周期的累计IC折线图
         for period, ic_series in ic_series_periods_dict.items():
             ic_series.cumsum().plot(ax=ax1_twin, label=f'累计IC ({period})', lw=2.5)
-
         ax1_twin.set_ylabel('累计IC', fontsize=14)
         ax1.set_title('A. 因子IC序列与累计IC (有效性)', fontsize=18)
-
-        # 【关键升级】应用与研报一致的日期格式
-        ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=6))  # 每6个月一个主刻度
-        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))  # 格式化为 年-月
+        ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
         ax1.tick_params(axis='x', rotation=45)
-
         fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.9))
         ax1.grid(False)
 
-        # 3. 【右上，维持原版】分层年化收益率 (柱状图)
+        # 3. 【右上，核心升级】分层累计净值曲线
         ax2 = fig.add_subplot(gs[0, 1])
-        quantile_annual_returns = pd.DataFrame({
-            period: stats['mean_returns'].drop('TopMinusBottom') * (252 / int(period[:-1]))
-            for period, stats in quantile_stats_periods_dict.items()
-        })
-        quantile_annual_returns.plot(kind='bar', ax=ax2, width=0.8)
-        ax2.set_title('B. 分层年化收益率 (单调性)', fontsize=18)
-        ax2.set_ylabel('年化收益率')
-        ax2.axhline(0, color='black', linestyle='--', lw=1)
-        ax2.tick_params(axis='x', rotation=0)
-        ax2.legend(title='周期')
-        ax2.grid(axis='y')
-
-        # 4. 【左下，升级版】分层累计净值曲线
-        ax3 = fig.add_subplot(gs[1, 0])
         primary_q_returns = quantile_returns_series_periods_dict.get(primary_period)
         if primary_q_returns is not None:
             # a) 绘制多空组合累计收益（灰色区域）
             tmb_cum_returns = (1 + primary_q_returns['TopMinusBottom']).cumprod()
-            ax3.fill_between(tmb_cum_returns.index, 1, tmb_cum_returns, color='grey', alpha=0.3,
-                             label=f'多空组合 ({primary_period})')
+            ax2.fill_between(tmb_cum_returns.index, 1, tmb_cum_returns, color='grey', alpha=0.3, label=f'多空组合 ({primary_period})')
 
             # b) 绘制每个分层的累计净值曲线
-            quantile_cols = [q for q in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'] if q in primary_q_returns.columns]
+            quantile_cols = [q for q in ['Q1','Q2','Q3','Q4','Q5'] if q in primary_q_returns.columns]
             for quantile in quantile_cols:
-                (1 + primary_q_returns[quantile]).cumprod().plot(ax=ax3, label=f'{quantile} ({primary_period})',
-                                                                 lw=2)
+                (1 + primary_q_returns[quantile]).cumprod().plot(ax=ax2, label=f'{quantile} ({primary_period})', lw=2)
 
-        ax3.set_title(f'C. 分层累计净值 ({primary_period})', fontsize=18)
+        ax2.set_title(f'B. 分层累计净值 ({primary_period})', fontsize=18)
+        ax2.set_ylabel('累计净值')
+        ax2.axhline(1, color='black', linestyle='--', lw=1)
+        ax2.legend()
+        ax2.grid(True)
+        ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=6)) # 每年一个主刻度
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        ax2.tick_params(axis='x', rotation=45)
+
+        # 4. 【左下，核心升级】F-M纯净Alpha收益
+        ax3 = fig.add_subplot(gs[1, 0])
+        for period, fm_returns in factor_returns_series_periods_dict.items():
+            (1 + fm_returns).cumprod().plot(ax=ax3, label=f'F-M纯净收益 ({period})', lw=2.5, linestyle='--')
+        ax3.set_title('C. 因子纯净Alpha收益 (Fama-MacBeth)', fontsize=18)
         ax3.set_ylabel('累计净值')
         ax3.axhline(1, color='black', linestyle='--', lw=1)
         ax3.legend()
         ax3.grid(True)
-
-        # 【关键升级】应用与研报一致的日期格式
-        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=6))  # 每6个月一个主刻度
-        ax3.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))  # 格式化为 年-月
+        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        ax3.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
         ax3.tick_params(axis='x', rotation=45)
 
-        # 5. 【右下，维持原版】核心指标汇总 (表格)
+        # 5. 【右下】核心指标汇总 - (维持V2版)
         ax4 = fig.add_subplot(gs[1, 1])
         ax4.axis('off')
         summary_data = []
-        periods = sorted(ic_stats_periods_dict.keys(), key=lambda x: int(x[:-1]))
+        periods = sorted(ic_stats_periods_dict.keys(), key=lambda x: int(x[:-1]) if x[:-1].isdigit() else 99) # 兼容'20d_monthly'
         for period in periods:
             ic_ir = ic_stats_periods_dict.get(period, {}).get('ic_ir', np.nan)
             tmb_sharpe = quantile_stats_periods_dict.get(period, {}).get('tmb_sharpe', np.nan)
@@ -236,10 +220,11 @@ class VisualizationManager:
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         if save_plots:
             # 假设 self.output_dir 存在
-            plot_path = self.output_dir / f"{factor_name}_evaluation_v2.png"  # 简化版
+            plot_path = self.output_dir / f"{factor_name}_evaluation_v3.png"
+            # plot_path = f"{factor_name}_evaluation_v3.png" # 简化版
             plt.savefig(plot_path, dpi=300, bbox_inches='tight')
             plt.close()
-            log_success(f"保存{factor_name}测评图片")
+            # log_success(f"保存{factor_name}测评图片")
             return str(plot_path)
         else:
             plt.show()

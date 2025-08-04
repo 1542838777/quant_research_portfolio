@@ -261,9 +261,12 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
         quantile_means = [mean_returns.get(f'Q{i + 1}', np.nan) for i in range(n_quantiles)]
         is_monotonic_by_group = False
         if not any(np.isnan(q) for q in quantile_means):
-            is_monotonic_by_group = all(
-                quantile_means[i] <= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
-
+            # 检查是否单调递增
+            is_increasing = all(quantile_means[i] <= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
+            # 检查是否单调递减
+            is_decreasing = all(quantile_means[i] >= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
+            # 只要满足其中一种，就认为因子是单调的
+            is_monotonic_by_group = is_increasing or is_decreasing
         # --- 存储结果 ---
         # 'period' 变量用于创建描述性的键，如 '5d'
         quantile_returns_periods_dict[f'{period}d'] = result
@@ -814,3 +817,83 @@ def fama_macbeth(
         fm_stat_results_periods_dict[f'{period}d'] = fm_result
         factor_returns_series_periods_dict[f'{period}d'] = factor_returns_series
     return factor_returns_series_periods_dict,fm_stat_results_periods_dict
+
+
+import pandas as pd
+import numpy as np
+from typing import Dict, Tuple, List
+
+# 假设 logger 已经配置好
+import logging
+
+logger = logging.getLogger(__name__)
+
+#只是用于绘图
+def calculate_quantile_daily_returns(
+        factor_df: pd.DataFrame,
+        price_df: pd.DataFrame,
+        n_quantiles ,
+        primary_period_key
+) -> Dict[str, pd.DataFrame]:
+
+        """
+        【V3 最终版】计算因子分层组合的每日收益率。
+        1. 修正了函数签名，防止因参数位置错误导致的TypeError。
+        2. 增加了对因子数据类型的强制转换，确保qcut函数安全运行。
+
+        Args:
+            factor_df (pd.DataFrame): 因子值DataFrame (index=date, columns=stock)。
+                                      这是T-1日的信息。
+            price_df (pd.DataFrame): 每日收盘价矩阵 (index=date, columns=stock)。
+            n_quantiles (int): (关键字参数) 要划分的分位数数量。
+
+        Returns:
+            Dict[str, pd.DataFrame]: 只有一个key的字典，值是分层组合的每日收益DataFrame。
+        """
+        logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
+
+        # 1. 计算所有股票的【单日】远期收益率 (t -> t+1)
+        forward_returns_1d = price_df.pct_change(periods=1).shift(-1)
+        forward_returns_1d = forward_returns_1d.clip(-0.15, 0.15)
+
+        # 2. 数据转换与对齐
+        factor_long = factor_df.stack().rename('factor')
+        returns_1d_long = forward_returns_1d.stack().rename('return_1d')
+
+        merged_df = pd.concat([factor_long, returns_1d_long], axis=1).dropna()
+
+        if merged_df.empty:
+            logger.warning("  > 因子和单日收益数据没有重叠，无法计算分层收益。")
+            return {primary_period_key: pd.DataFrame()}
+
+        # 3. 确保因子值为数值类型
+        merged_df['factor'] = pd.to_numeric(merged_df['factor'], errors='coerce')
+        merged_df.dropna(subset=['factor'], inplace=True)
+
+        # 4. 稳健的分组
+        merged_df['quantile'] = merged_df.groupby(level=0)['factor'].transform(
+            lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1
+        )
+
+        # 5. 计算各分位数组合的每日平均收益
+        daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])[
+            'return_1d'].mean()
+
+        # 6. 数据转换回“宽表”
+        quantile_returns_wide = daily_quantile_returns.unstack()
+        quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
+
+        # 7. 计算多空组合的每日收益（价差）
+        top_q_col = f'Q{n_quantiles}'
+        bottom_q_col = 'Q1'
+
+        if top_q_col in quantile_returns_wide.columns and bottom_q_col in quantile_returns_wide.columns:
+            quantile_returns_wide['TopMinusBottom'] = quantile_returns_wide[top_q_col] - quantile_returns_wide[
+                bottom_q_col]
+        else:
+            quantile_returns_wide['TopMinusBottom'] = np.nan
+
+        # 8. 返回结果
+        # 我们用一个固定的key，比如 '21d'，让绘图函数能找到它
+        return {primary_period_key: quantile_returns_wide.sort_index(axis=1)}
+
