@@ -89,7 +89,7 @@ factor_definition:
     category_type: 'size'
     description: '总市值的自然对数，最经典、最重要的规模因子。'
     need_technical_cal: True
-    cal_require_base_fields: [ 'total_mv' ]
+    cal_require_base_fields: [ 'circ_mv' ]
 
   - name: 'beta'
     school: 'trend' # 补充：Beta衡量的是个股与市场趋势的联动性，因此归为趋势(Trend)门派最合适。

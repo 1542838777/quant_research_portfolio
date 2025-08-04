@@ -58,7 +58,8 @@ class FactorProcessor:
                        target_factor_name: str,
                        auxiliary_dfs,
                        neutral_dfs,
-                       factor_school: str
+                       factor_school: str,
+                       neutralize_after_standardize: bool = False, #默认是最后标准化
                        ):
         """
         完整的因子预处理流水线
@@ -78,17 +79,25 @@ class FactorProcessor:
         # print("2. 去极值处理...")
         processed_target_factor_df = self.winsorize(processed_target_factor_df)
 
-        # 步骤2：中性化
-        if self.preprocessing_config.get('neutralization', {}).get('enable', False):
-            # print("3. 中性化处理...")
-            processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,auxiliary_dfs,neutral_dfs, factor_school)
+        if ~neutralize_after_standardize:
+            # 步骤2：中性化
+            if self.preprocessing_config.get('neutralization', {}).get('enable', False):
+                processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,auxiliary_dfs,
+                                                              neutral_dfs, factor_school)
+            else:
+                logger.info("2. 跳过中性化处理...")
+            # 步骤3：标准化
+            processed_target_factor_df = self._standardize(processed_target_factor_df)
         else:
-            print("3. 跳过中性化处理...")
-
-        # 步骤3：标准化
-        # print("4. 标准化处理...")
-        processed_target_factor_df = self._standardize(processed_target_factor_df)
-
+            # 步骤2：标准化
+            processed_target_factor_df = self._standardize(processed_target_factor_df)
+            # 步骤3：中性化
+            if self.preprocessing_config.get('neutralization', {}).get('enable', False):
+                # print("3. 中性化处理...")
+                processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name, auxiliary_dfs,
+                                                              neutral_dfs, factor_school)
+            else:
+                logger.info("3. 跳过中性化处理...")
         # 统计处理结果
         self._print_processing_stats(target_factor_df, processed_target_factor_df)
 

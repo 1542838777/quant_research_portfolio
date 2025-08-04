@@ -462,7 +462,7 @@ class StrategyFactory:
         # --- 毕业考题：规模因子 ---
         elif 'market_cap_log' == target_factor_name:
             # 获取市值数据
-            total_mv_df = raw_data_dict['total_mv'].copy()
+            total_mv_df = raw_data_dict['circ_mv'].copy()
             # 保证为正数，避免log报错
             total_mv_df = total_mv_df.where(total_mv_df > 0)
             # 使用 pandas 自带 log 函数，保持类型一致
