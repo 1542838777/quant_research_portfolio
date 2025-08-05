@@ -12,6 +12,7 @@ from yfinance import download
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
+from utils.date.report_date import get_reporting_period_day_list
 
 # --- 2. 全局配置 ---
 START_YEAR = 2018
@@ -136,6 +137,29 @@ def download_stock_info(stock_basic_path):
             stock_basic.to_parquet(stock_basic_path)
     else:
         print("股票基本信息已存在，跳过下载。")
+
+#已有数据'20100101','20250711'
+def download_cashflow():
+    basic_path = LOCAL_PARQUET_DATA_DIR / 'cashflow.parquet'
+
+    if not basic_path.exists():
+        print("--- 正在下载现金流信息 ---")
+        #获取报告期日list
+        reporting_period_day_list = get_reporting_period_day_list('20100101','20250711')
+        all_data_list = []
+        for reporting_period_day in reporting_period_day_list:
+            df = call_pro_tushare_api('cashflow_vip', period=reporting_period_day)
+            all_data_list.append(df)
+
+        # 合并所有季度数据
+        final_df = pd.concat(all_data_list, ignore_index=True)
+        # 关键：优先保留 update_flag == 1 的最新记录
+        final_df = final_df.sort_values(['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False])
+        final_df = final_df.drop_duplicates(subset=['ts_code', 'end_date'], keep='first')
+        final_df.to_parquet(basic_path)
+        print('现金流保存完毕')
+    else:
+        print("现金流已存在，跳过下载。")
 
 
 def download_stock_change_name_details():

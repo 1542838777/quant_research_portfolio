@@ -2,7 +2,8 @@ import pandas as pd
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api
-from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d
+from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d, \
+    download_cashflow
 from quant_lib.tushare.tushare_client import TushareClient
 
 
@@ -19,10 +20,24 @@ def get_fields_map():
         })
     return result
 
+def compare_df_rows(df, index1, index2):
+    """
+    比较 df 中 index1 和 index2 两行，返回它们不一致的列名列表
+    """
+    row1 = df.loc[index1]
+    row2 = df.loc[index2]
 
+    # 比较所有列，找出值不同的列
+    diff_cols = [
+        col for col in df.columns
+        if not (pd.isna(row1[col]) and pd.isna(row2[col])) and row1[col] != row2[col]
+    ]
+    print(f"Index {index1} 与 Index {index2} 不同的列：")
+    print(diff_cols)
+    return diff_cols
 if __name__ == '__main__':
-
-    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
+    download_cashflow()
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'cashflow')
     print(df)
 
     ##
