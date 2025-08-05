@@ -44,7 +44,7 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
-        factor_df,_,_ = self.factor_manager.get_factor_df_by_action(factor_name)
+        factor_df = self.factor_manager.get_backtest_ready_factor(factor_name)
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
         school_code = self.factor_manager.get_school_code_by_factor_name(factor_name)
 

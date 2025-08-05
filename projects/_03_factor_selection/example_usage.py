@@ -45,7 +45,7 @@ def main():
     # 3. 创建示例因子
     logger.info("3. 创建目标学术因子...")
 
-    target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factor_manager.get_target_factors_entity()
+    target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factor_manager.get_backtest_ready_factor_entity()
     factor_analyzer = FactorAnalyzer(factor_manager=factor_manager,
                                      target_factors_dict = target_factors_dict,
                                      target_factors_category_dict = target_factors_category_dict,

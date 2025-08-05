@@ -198,7 +198,7 @@ class DataManager:
         aligned_data = {}
         for factor_name, raw_df in raw_dfs.items():
             # 1. 确定当前因子需要哪个股票池！
-            aligned_df = align_one_df_by_stock_pool_and_fill(factor_name=factor_name, raw_df_param=raw_df,
+            aligned_df = align_one_df_by_stock_pool_and_fill(factor_name=factor_name, df=raw_df,
                                                              stock_pool_df=stock_pool_df)
             aligned_data[factor_name] = aligned_df
         return aligned_data
@@ -872,16 +872,16 @@ class DataManager:
         all_df = self.get_factor_definition_df()
         return  all_df[all_df['name'] == factor_name]
 
-def align_one_df_by_stock_pool_and_fill(factor_name, raw_df_param,
+def align_one_df_by_stock_pool_and_fill(factor_name, df,
                                         stock_pool_df: pd.DataFrame = None):
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
 
-    raw_df = raw_df_param.copy(deep=True)
+    df = df.copy(deep=True)
 
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
-    aligned_df = raw_df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
+    aligned_df = df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
     aligned_df = aligned_df.sort_index()
     aligned_df = aligned_df.where(stock_pool_df)
 
