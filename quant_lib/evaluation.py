@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Union, Tuple, Any
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-from scipy.stats import ttest_1samp
+from scipy.stats import ttest_1samp, spearmanr
 
 # 尝试导入statsmodels，如果没有安装则使用简化版本
 try:
@@ -216,21 +216,16 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
 
 
 # ok
-def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Tuple[Dict[str, pd.DataFrame],Dict[str,  pd.DataFrame]]:
+def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) -> Tuple[
+    Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
     """
-    计算并汇总分层回测的关键性能指标。
+   【V2 升级版】计算并汇总分层回测的关键性能指标。
+   本版本使用 Spearman 秩相关系数来衡量单调性，提供一个连续的评分而不是二元的True/False。
+   """
 
-    Args:
-        results: 一个字典，键是向前看的周期（如1, 5），值是对应的分层收益DataFrame。
-        n_quantiles: 分层回测中使用的分位数数量。
-
-    Returns:
-        一个字典，包含了每个周期的汇总统计指标。
-    """
     quantile_stats_periods_dict = {}
     quantile_returns_periods_dict = {}
 
-    # 修正了循环的写法，'result' 就是当前周期的DataFrame
     for period, result in results.items():
         if result.empty:
             continue
@@ -245,28 +240,25 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
         tmb_mean_period_return = tmb_series.mean()
         tmb_std_period_return = tmb_series.std()
 
-        # ✅ **新增**: 计算年化收益率
-        # 假设数据的基础频率是每日
+        #  计算年化收益率  假设数据的基础频率是每日
         tmb_annual_return = (tmb_mean_period_return / period) * 252 if period > 0 else 0
 
-        # **优化**: 修正夏普比率以适应不同持有期
-        # 夏普比率的年化因子是 sqrt(252 / period)
+        # 修正夏普比率以适应不同持有期 夏普比率的年化因子是 sqrt(252 / period)
         tmb_sharpe = (tmb_mean_period_return / tmb_std_period_return) * np.sqrt(
             252 / period) if tmb_std_period_return > 0 and period > 0 else 0
-
         tmb_win_rate = (tmb_series > 0).mean()
         max_drawdown, mdd_start, mdd_end = calculate_max_drawdown_robust(tmb_series)
 
-        # 单调性检验
+        # --- 【单调性检验 ---
         quantile_means = [mean_returns.get(f'Q{i + 1}', np.nan) for i in range(n_quantiles)]
-        is_monotonic_by_group = False
+        monotonicity_spearman = np.nan  # 默认为NaN
+
+        # 只有在所有组的平均收益都有效时才计算
         if not any(np.isnan(q) for q in quantile_means):
-            # 检查是否单调递增
-            is_increasing = all(quantile_means[i] <= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
-            # 检查是否单调递减
-            is_decreasing = all(quantile_means[i] >= quantile_means[i + 1] for i in range(len(quantile_means) - 1))
-            # 只要满足其中一种，就认为因子是单调的
-            is_monotonic_by_group = is_increasing or is_decreasing
+            # 计算组别序号 [1, 2, 3, 4, 5] 与 组别平均收益 的等级相关性
+            # spearmanr 返回 (相关系数, p值)，我们只需要相关系数
+            monotonicity_spearman, _ = spearmanr(np.arange(1, n_quantiles + 1), quantile_means)
+
         # --- 存储结果 ---
         # 'period' 变量用于创建描述性的键，如 '5d'
         quantile_returns_periods_dict[f'{period}d'] = result
@@ -274,17 +266,19 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
             # 'returns_data': result,
             'mean_returns': mean_returns,
             'tmb_return_period': tmb_mean_period_return,  # 特定周期的平均收益 (例如，5日平均收益)
-            'tmb_annual_return': tmb_annual_return,  # **新增**: 年化后的多空组合收益率
-            'tmb_sharpe': tmb_sharpe,  # **优化**: 周期调整后的夏普比率
+            'tmb_annual_return': tmb_annual_return,  #  年化后的多空组合收益率
+            'tmb_sharpe': tmb_sharpe,  # * 周期调整后的夏普比率
             'tmb_win_rate': tmb_win_rate,
-            'is_monotonic_by_group': is_monotonic_by_group,
-            'max_drawdown': max_drawdown,              # ✅【新增】最大回撤值
-            'mdd_start_date': mdd_start,            # ✅【新增】最大回撤开始日期
-            'mdd_end_date': mdd_end,                # ✅【新增】最大回撤结束日期
-            'quantile_means': quantile_means
+            'max_drawdown': max_drawdown,
+            'mdd_start_date': mdd_start, #最大回撤开始日期
+            'mdd_end_date': mdd_end, #最大回撤结束日期
+            'quantile_means': quantile_means,
+            # 【新增指标】: 用连续的Spearman相关系数代替二元的True/False
+            'monotonicity_spearman': monotonicity_spearman
         }
 
-    return quantile_returns_periods_dict,quantile_stats_periods_dict
+    return quantile_returns_periods_dict, quantile_stats_periods_dict
+
 #ok
 def calculate_quantile_returns(
         factor_df: pd.DataFrame,

@@ -844,7 +844,7 @@ class FactorAnalyzer:
                 'ic_ir': ic_stats_periods_dict[period]['ic_ir'],
                 # 纯净度与独特性维度 (Purity & Uniqueness Dimension) - “是真Alpha还是只是风险暴露
                 'fm_t_statistic': fm_stat_results_periods_dict[period]['t_statistic'],
-                'is_monotonic_by_group': quantile_stats_periods_dict[period]['is_monotonic_by_group'],
+                'monotonicity_spearman': quantile_stats_periods_dict[period]['monotonicity_spearman'],
                 'ic_mean': ic_stats_periods_dict[period]['ic_mean']
             }
             score = calculate_factor_score(summary_row)

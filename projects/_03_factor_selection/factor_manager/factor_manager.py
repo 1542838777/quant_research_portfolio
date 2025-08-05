@@ -453,162 +453,14 @@ class FactorManager:
 
         for target_factor_name in target_factors_for_evaluation:
             # category
-            category = self.get_category_type(target_factor_name)
-            school = self.get_school(target_factor_name)
+            category = self.get_style_category(target_factor_name)
+            school = self.get_school_code_by_factor_name(target_factor_name)
             target_data_df = self.get_backtest_ready_factor(target_factor_name)
             technical_df_dict.update({target_factor_name: target_data_df})
             technical_category_dict.update({target_factor_name: category})
             technical_school_dict.update({target_factor_name: school})
 
         return technical_df_dict, technical_category_dict, technical_school_dict
-
-#
-#
-# # 返回目标学术因子 （通过计算base Factor 留着做计算公司参考，factor_calculator终将完全取代他
-#     def get_done_cal_factor_and_category_and_school(
-#             self,
-#             target_factor_name: str,
-#             raw_data_dict: Dict[str, pd.DataFrame]
-#     ) -> Tuple[pd.DataFrame, str, str]:
-#         """
-#         【专业版】因子计算工厂。
-#         根据因子名称，调用对应的计算逻辑，并返回处理好的因子DataFrame及其元数据。
-#         """
-#         # --- 在函数开头一次性查找因子定义 ---
-#         factor_definitions = pd.DataFrame(self.data_manager.config['factor_definition'])
-#         factor_info = factor_definitions[factor_definitions['name'] == target_factor_name]
-#
-#         if factor_info.empty:
-#             raise ValueError(f"在配置文件中未找到因子 '{target_factor_name}' 的定义！")
-#
-#         # 将Series转换为单个值，方便调用
-#         category_type = factor_info['category_type'].iloc[0]
-#         school = factor_info['school'].iloc[0]
-#
-#         logger.info(f"开始计算学术因子: '{target_factor_name}' (门派: {school})")
-#
-#         # --- 因子计算逻辑的分发 ---
-#         if 'bm_ratio' == target_factor_name:
-#             # 账面市值比 (B/M), 即市净率倒数
-#             pb_df = raw_data_dict['pb'].copy()
-#             # PB值必须为正才有意义 (负的净资产，B/M失去意义)
-#             pb_df = pb_df.where(pb_df > 0)
-#             factor_df = 1 / pb_df
-#             return factor_df, category_type, school
-#
-#         elif 'momentum_12_1' == target_factor_name:
-#             # 经典12-1月动量
-#             close_df = raw_data_dict['close'].copy()
-#             # 计算 T-1月 / T-12月 的价格比
-#             # 假设每月21个交易日，每年252个交易日
-#             price_1m_ago = close_df.shift(21)
-#             price_12m_ago = close_df.shift(252)
-#
-#             # 确保分母不为0或负（虽然股价基本不会）
-#             price_12m_ago = price_12m_ago.where(price_12m_ago > 0)
-#
-#             factor_df = (price_1m_ago / price_12m_ago) - 1
-#             return factor_df, category_type, school
-#
-#         elif 'momentum_2_1' == target_factor_name:
-#             # 经典2-1月动量
-#             close_df = raw_data_dict['close'].copy()
-#             # 计算 T-1月 / T-12月 的价格比
-#             # 假设每月21个交易日，每年252个交易日
-#             price_1m_ago = close_df.shift(21)
-#             price_2m_ago = close_df.shift(21*2)
-#
-#             # 确保分母不为0或负（虽然股价基本不会）
-#             price_2m_ago = price_2m_ago.where(price_2m_ago > 0)
-#
-#             factor_df = (price_1m_ago / price_2m_ago) - 1
-#             return factor_df, category_type, school
-#
-#         elif 'turnover_rate_abnormal_20d' == target_factor_name:
-#             # 异常换手率（20日窗口）
-#             turnover_df = raw_data_dict['turnover_rate'].copy()
-#
-#             # 计算20日滚动均值，min_periods=10确保在数据初期也能尽快产出信号
-#             turnover_mean_20d = turnover_df.rolling(window=20, min_periods=10).mean()
-#
-#             # 用当日值减去均值，得到“超预期”的异动信号
-#             factor_df = turnover_df - turnover_mean_20d
-#             return factor_df, category_type, school
-#
-#         # --- 如果有更多因子，在这里继续添加 elif 分支 ---
-#
-#         # --- 毕业考题：规模因子 ---
-#         elif 'market_cap_log' == target_factor_name:
-#             # 获取市值数据
-#             total_mv_df = raw_data_dict['circ_mv'].copy()
-#             # 保证为正数，避免log报错
-#             total_mv_df = total_mv_df.where(total_mv_df > 0)
-#             # 使用 pandas 自带 log 函数，保持类型一致
-#             factor_df = total_mv_df.apply(np.log)
-#             # 反向处理因子（仅为了视觉更好看）
-#             factor_df = -1 * factor_df
-#             return factor_df, category_type, school
-#
-#         # --- 毕业考题：价值因子 ---
-#         elif 'pe_ttm_inv' == target_factor_name:
-#             pe_df = raw_data_dict['pe_ttm'].copy()
-#             # PE为负或0时，其倒数无意义，设为NaN
-#             pe_df = pe_df.where(pe_df > 0)
-#             factor_df = 1 / pe_df
-#             return factor_df, category_type, school
-#         elif 'ps_ttm_inv' == target_factor_name:
-#             pe_df = raw_data_dict['ps_ttm'].copy()
-#             # PE为负或0时，其倒数无意义，设为NaN
-#             pe_df = pe_df.where(pe_df > 0)
-#             factor_df = 1 / pe_df
-#             return factor_df, category_type, school
-#         elif 'pb_inv' == target_factor_name:
-#             pe_df = raw_data_dict['pb'].copy()
-#             # PE为负或0时，其倒数无意义，设为NaN
-#             pe_df = pe_df.where(pe_df > 0)
-#             factor_df = 1 / pe_df
-#             return factor_df, category_type, school
-#
-#         elif 'bm_ratio' == target_factor_name:
-#             pb_df = raw_data_dict['pb'].copy()
-#             # PB为负或0时（公司净资产为负），其倒数无意义
-#             pb_df = pb_df.where(pb_df > 0)
-#             factor_df = 1 / pb_df
-#             return factor_df, category_type, school
-#
-#         # --- 毕业考题：动量因子 ---
-#         elif 'momentum_20d' == target_factor_name:
-#             # 小白解释：动量 = (T-1日价格) / (T-21日价格) - 1
-#             # 因为传入的close_df已经是T-1的价格，所以我们只需要再shift(20)即可得到T-21的价格
-#             close_df = raw_data_dict['close'].copy()  # 这是T-1价格
-#
-#             # 获取约20个交易日前的价格 (T-1-20 = T-21)
-#             price_20d_ago = close_df.shift(20)
-#
-#             price_20d_ago = price_20d_ago.where(price_20d_ago > 0)
-#             factor_df = (close_df / price_20d_ago) - 1
-#             return factor_df, category_type, school
-#
-#         # --- 其他量价因子 ---
-#         elif 'turnover_rate_abnormal_20d' == target_factor_name:
-#             turnover_df = raw_data_dict['turnover_rate'].copy()  # T-1日的换手率
-#             # 计算过去20日的滚动均值 (T-20 到 T-1)
-#             turnover_mean_20d = turnover_df.rolling(window=20, min_periods=10).mean()
-#             # 用T-1日的值减去均值
-#             factor_df = turnover_df - turnover_mean_20d
-#             return factor_df, category_type, school
-#         elif 'beta' == target_factor_name:
-#             beta_df = calculate_rolling_beta(
-#                self.data_manager.config['backtest']['start_date'],
-#                 self.data_manager.config['backtest']['end_date'],
-#                 self.get_pool_of_factor_name_of_stock_codes(target_factor_name)
-#             )
-#             beta_df = beta_df * -1
-#             return beta_df, category_type, school
-
-        # --- 如果有更多因子，在这里继续添加 elif 分支 ---
-
-        # raise ValueError(f"因子 '{target_factor_name}' 的计算逻辑尚未在本工厂中定义！")
 
     def get_backtest_ready_factor(self, factor_name):
        df = self.get_factor(factor_name)
@@ -620,8 +472,7 @@ class FactorManager:
 
 
     def get_school_code_by_factor_name(self, factor_name):
-        factor_dict = {item['name']: item for item in self.data_manager.config['factor_definition']}
-        return factor_dict[factor_name]['school']
+        return self.get_school_by_style_category(self.get_style_category(factor_name))
 
     def get_stock_pool_by_factor_name(self, factor_name):
         school_code = self.get_school_code_by_factor_name(factor_name)
@@ -634,6 +485,49 @@ class FactorManager:
         if factor_school in ['microstructure']:
             return 'microstructure_stock_pool'
         raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
+
+    def get_school_by_style_category(self,style_category: str) -> str:
+        """
+        根据因子风格(style_category)，返回其所属的投资门派(school)。
+        这是连接因子定义与业务逻辑（如选择股票池）的核心枢纽。
+
+        Args:
+            style_category (str): 因子定义中的风格类别。
+
+        Returns:
+            str: 'fundamentals', 'trend', or 'microstructure'.
+
+        Raises:
+            ValueError: 如果输入的style_category未被定义。
+        """
+        # 定义从“风格”到“门派”的映射关系
+        # 这是我们系统的“唯一真实来源”
+        SCHOOL_MAP = {
+            # === 基本面派 (fundamentals) ===
+            # 源于公司财务报表或其内在属性，反映了公司的长期价值。
+            'value': 'fundamentals',
+            'quality': 'fundamentals',
+            'growth': 'fundamentals',
+            'size': 'fundamentals',
+            'sector': 'fundamentals',
+
+            # === 趋势派 (trend) ===
+            # 反映了价格在历史序列中的行为模式和风险特征。
+            'momentum': 'trend',
+            'risk': 'trend',  # Beta和波动率描述了股票在趋势中的行为特征和敏感度
+
+            # === 微观派 (microstructure) ===
+            # 直接来源于市场的实际交易行为（价格、成交量、换手率）。
+            'liquidity': 'microstructure',
+            'price': 'microstructure',
+            'return': 'microstructure'
+        }
+        school = SCHOOL_MAP.get(style_category)
+
+        if school is None:
+            raise ValueError(
+                f"无法识别的因子风格 '{style_category}'，请在 get_school_by_style_category 函数中定义其门派。")
+        return school
 
     def get_stock_pool_index_by_factor_name(self, factor_name):
         # 拿到对应pool_name
@@ -655,13 +549,11 @@ class FactorManager:
 
 
 
-    def get_category_type(self, factor_name):
+    def get_style_category(self, factor_name):
         factor_definition = pd.DataFrame(self.data_manager.config['factor_definition'])
-        return factor_definition[factor_definition['name'] == factor_name]['category_type'].iloc[0]
+        return factor_definition[factor_definition['name'] == factor_name]['style_category'].iloc[0]
 
-    def get_school(self, factor_name):
-        factor_definition = pd.DataFrame(self.data_manager.config['factor_definition'])
-        return factor_definition[factor_definition['name'] == factor_name]['school'].iloc[0]
+
 
     # ok
     def build_auxiliary_dfs_shift_diff_stock_pools_dict(self):

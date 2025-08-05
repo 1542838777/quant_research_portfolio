@@ -154,7 +154,7 @@ if __name__ == '__main__':
     ic_series_periods_dict, ic_stats_periods_dict,quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,factor_returns_series_periods_dict, fm_stat_results_periods_dict =     factor_analyzer.core_three_test(value_composite_df, factor_name,close_df,
                                 prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df)
     #landing 存储宝贵的测试结果
-    category = data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,'category_type').iloc[0]
+    category = data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,'style_category').iloc[0]
     overrall_summary_stats = factor_analyzer.landing_for_core_three_analyzer_result(factor_name,category, "standard",
                                                                      ic_series_periods_dict, ic_stats_periods_dict,
                                                                      quantile_daily_returns_for_plot_dict,

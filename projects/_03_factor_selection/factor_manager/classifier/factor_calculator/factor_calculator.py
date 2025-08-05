@@ -163,7 +163,7 @@ class FactorCalculator:
         )
         return beta_df * -1
 
-    def _calculate_pe_ttm_inv(self) -> pd.DataFrame:
+    def _calculate_ep_ratio(self) -> pd.DataFrame:
         pe_ttm_raw_df = self.factor_manager.get_factor('pe_ttm').copy()
         # PE为负或0时，其倒数无意义，设为NaN
         pe_ttm_raw_df = pe_ttm_raw_df.where(pe_ttm_raw_df > 0)

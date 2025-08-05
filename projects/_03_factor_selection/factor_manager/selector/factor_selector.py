@@ -60,7 +60,7 @@ def calculate_factor_score(purify_summary: Union[pd.Series, dict]) -> float:
     fm_t_stat = purify_summary.get('fm_t_statistic', 0)
     tmb_sharpe = purify_summary.get('tmb_sharpe', 0)
     tmb_max_drawdown = purify_summary.get('tmb_max_drawdown', 0)
-    is_monotonic = purify_summary.get('is_monotonic_by_group', False)
+    monotonicity_spearman = purify_summary.get('monotonicity_spearman')
 
     # --- 关键升级：自动判断因子方向 ---
     # 优先使用IC均值的符号判断。如果IC均值接近0，则使用t统计量的符号辅助判断。
@@ -120,12 +120,20 @@ def calculate_factor_score(purify_summary: Union[pd.Series, dict]) -> float:
 
     score += max(0, perf_score)
 
-    # 5. 单调性分 (满分10)
-    if is_monotonic:
-        score += 10
+    # 5. 单调性分 (满分10) - 根据Spearman相关系数进行分级评分
+    if monotonicity_spearman is not None and pd.notna(monotonicity_spearman):
+        # 我们关心的是单调性的强度，所以取绝对值
+        mono_abs = abs(monotonicity_spearman)
+
+        # 只有当单调性达到中等强度(0.5)以上时，才开始加分
+        if mono_abs >= 0.5:
+            # 直接将Spearman相关系数乘以总分10，得到一个连续的分数
+            # 这样 mono_abs=0.5 得5分, mono_abs=1.0 得10分
+            # 这是一个简单、直观且精细的评分方式
+            score += mono_abs * 10
+        # 低于0.5，我们认为单调性不显著，不额外加分
 
     return score
-
 ##
 # 第一阶段：质量打分 - 使用我提供的“专业级因子评分体系”对每个因子进行绝对打分。
 #
