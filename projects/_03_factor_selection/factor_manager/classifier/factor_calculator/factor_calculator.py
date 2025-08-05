@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any
 
-from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq
+from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df
 from quant_lib import logger
 
 
@@ -13,6 +13,13 @@ class FactorCalculator:
     它将所有的计算细节从 FactorManager 中分离出来，使得代码更清晰、更易于扩展。
     只做纯粹的计算，shift 以及对齐where股票池，下游自己处理！！！ remind
     """
+
+    ##
+    #
+    # caclulate_函数 ，无需关心对齐，反正下游会align where 动态股票池！
+    #   -so 就安心计算就行！
+    #
+    # #
 
     def __init__(self, factor_manager):
         """
@@ -25,58 +32,117 @@ class FactorCalculator:
         # 可以通过 factor_manager.get_factor() 来获取基础因子，并利用其缓存机制。
         self.factor_manager = factor_manager
         print("FactorCalculator (因子计算器) 已准备就绪。")
-
+    #主要字段：n_cashflow_act：经营活动产生的现金流量净额 进行滚动平均
+    #代码大篇幅主要处理脏数据！多来自于ipo，因为股票未上市前，用的不准确的数据！
     def _calculate_cashflow_ttm(self) -> pd.DataFrame:
         """
-        【生产级】计算滚动12个月的经营活动现金流净额 (TTM)。
-        """
-        # --- 步骤〇：从DataManager获取原材料 ---
-        try:
-            # 通过 factor_manager 间接访问 data_manager
-            cashflow_df = self.factor_manager.data_manager.get_raw_data('cashflow')
-        except KeyError:
-            raise ValueError("错误: DataManager中缺少 'cashflow' 原始数据。")
+           【】计算滚动12个月的经营活动现金流净额 (TTM)。
 
-        print("    > 正在计算 cashflow_ttm...")
+           输入:
+           - cashflow_df: 原始现金流量表数据，包含['ann_date', 'ts_code', 'end_date', 'n_cashflow_act']
+           - all_trading_dates: 一个包含所有交易日日期的pd.DatetimeIndex，用于构建最终的日度因子矩阵。
 
-        # --- 步骤一：获取并处理单季度现金流 ---
-        cashflow_df = cashflow_df.sort_values(by=['ts_code', 'end_date'])
-        cashflow_df['n_cashflow_act_single_q'] = cashflow_df.groupby('ts_code')['n_cashflow_act'].diff()
-        is_q1 = pd.to_datetime(cashflow_df['end_date']).dt.month == 3
-        cashflow_df.loc[is_q1, 'n_cashflow_act_single_q'] = cashflow_df.loc[is_q1, 'n_cashflow_act']
+           输出:
+           - 一个以交易日为索引(index)，股票代码为列(columns)的日度TTM因子矩阵。
+           """
+        print("--- 开始执行生产级TTM因子计算 ---")
+        cashflow_df = load_cashflow_df()
 
-        # --- 步骤二：计算滚动TTM值 ---
-        cashflow_df['cashflow_ttm'] = cashflow_df.groupby('ts_code')['n_cashflow_act_single_q'].rolling(
+        # === 步骤一：创建完美的季度时间标尺 ===
+        print("2. 创建时间标尺以处理数据断点...")
+        scaffold_min_max_end_date_df = cashflow_df.groupby('ts_code')['end_date'].agg(['min', 'max'])
+
+        full_date_dfs = []
+        for ts_code, row in scaffold_min_max_end_date_df.iterrows():
+            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')#所有的报告期日（季度最后一日
+            full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, 'end_date': date_range}))
+
+        full_dates_df = pd.concat(full_date_dfs)
+
+        # === 步骤二：数据对齐 ===
+        print("3. 将原始数据合并到时间标尺上...")
+        merged_df = pd.merge(full_dates_df, cashflow_df, on=['ts_code', 'end_date'], how='left')
+
+        # === 步骤三：安全地计算单季度值 ===
+        print("4. 安全计算单季度现金流...")
+        # 使用ffill填充缺失的累计值，这对于处理IPO前只有年报的情况至关重要
+        merged_df['n_cashflow_act_filled'] = merged_df.groupby('ts_code')['n_cashflow_act'].ffill()
+        merged_df['n_cashflow_act_single_q'] = merged_df.groupby('ts_code')['n_cashflow_act_filled'].diff()
+
+        is_q1 = merged_df['end_date'].dt.month == 3
+        # Q1的值必须用原始值覆盖，且只在原始值存在(notna)时操作
+        merged_df.loc[is_q1 & merged_df['n_cashflow_act'].notna(), 'n_cashflow_act_single_q'] = merged_df.loc[
+            is_q1, 'n_cashflow_act']
+
+        # === 步骤四：安全地计算TTM ===
+        print("5. 安全计算滚动TTM值...")
+        merged_df['cashflow_ttm'] = merged_df.groupby('ts_code')['n_cashflow_act_single_q'].rolling(
             window=4, min_periods=4
         ).sum().reset_index(level=0, drop=True)
 
-        # --- 步骤三：构建以公告日为索引的TTM宽表 ---
-        ttm_df = cashflow_df[['ts_code', 'ann_date', 'cashflow_ttm']].dropna()
-        ttm_df['ann_date'] = pd.to_datetime(ttm_df['ann_date'])
+        # ================================================================= #
+        # --- 以下是您之前省略，但对于构建因子库至关重要的部分 ---
+        # ================================================================= #
 
-        cashflow_ttm_wide = ttm_df.pivot(index='ann_date', columns='ts_code', values='cashflow_ttm')
+        # === 步骤五：构建以公告日为索引的TTM长表 ===
+        print("6. 整理并过滤有效TTM值...")
+        # 关键：只有当'ann_date'和'cashflow_ttm'同时存在时，这个数据点才是一个有效的、可用于交易的“事件”
+        ttm_long_df = merged_df[['ts_code', 'ann_date','end_date', 'cashflow_ttm']].dropna()
+        if ttm_long_df.empty:
+            raise ValueError("警告: _calculate_cashflow_ttm 计算后没有产生任何有效的TTM数据点。")
 
-        # --- 步骤四：将TTM数据填充到每个交易日 ---
-        all_trading_dates = self.factor_manager.data_manager.get_trading_dates()
-        cashflow_ttm_daily = cashflow_ttm_wide.reindex(all_trading_dates).ffill()
+        # === 步骤六：透视 (Pivot) ===
+        print("7. 执行透视操作(Pivot)，将长表转换为宽表...")
+        # 我们需要保留end_date用于后续的排序判断，确保pivot_table的'last'能取到正确的值
+        ttm_long_df = ttm_long_df.sort_values(by=['ts_code', 'end_date'])
+        # 目标：将“事件驱动”的数据(一行代表一次财报公布)转换为“时间序列”的宽表
+        # 索引(index)是事件发生的日期(ann_date)，列(columns)是股票代码
+        cashflow_ttm_wide = ttm_long_df.pivot_table(
+            index='ann_date',
+            columns='ts_code',
+            values='cashflow_ttm',
+            aggfunc='last'  # 使用'last'，因为数据已按end_date排序，'last'会选取最新的财报
+        )
 
+        # === 步骤七：重索引 (Reindex) & 前向填充 (Forward Fill) ===
+        print("8. 对齐到交易日历并进行前向填充(ffill)...")
+        # Reindex: 将稀疏的公告日数据，扩展到全部交易日上。非公告日的TTM值此时为NaN
+        # ffill: 用最近一次已知的TTM值，填充未来的交易日。
+        #      这完美模拟了真实情况：一个财报的效力会持续，直到下一个新财报出来为止。
+        cashflow_ttm_daily = cashflow_ttm_wide.reindex(self.factor_manager.data_manager.trading_dates()).ffill()
+
+        print("--- 因子计算完成 ---")
         return cashflow_ttm_daily
 
-    def _calculate_cfp_ratio(self) -> pd.DataFrame:
+    def _calculate_cashflow_ttm_total_mv_ratio(self) -> pd.DataFrame:
         """
-        计算现金流市值比 (cfp_ratio = cashflow_ttm / total_mv)
-        """
+            计算现金流市值比 (cfp_ratio = cashflow_ttm / total_mv)
+            包含风险控制和健壮性处理。
+            """
         print("    > 正在计算 cfp_ratio...")
         # --- 步骤一：获取依赖的因子 ---
         cashflow_ttm_df = self.factor_manager.get_factor('cashflow_ttm')
         total_mv_df = self.factor_manager.get_factor('total_mv')
 
-        # --- 步骤二：对齐并计算 ---
-        common_stocks = total_mv_df.columns.intersection(cashflow_ttm_df.columns)
-        common_dates = total_mv_df.index.intersection(cashflow_ttm_df.index)
+        # --- 步骤二：对齐数据 (使用 .align) ---
+        mv_aligned, ttm_aligned = total_mv_df.align(cashflow_ttm_df, join='inner', axis=None)
 
-        cfp_ratio_df = cashflow_ttm_df.loc[common_dates, common_stocks] / total_mv_df.loc[common_dates, common_stocks]
+        # --- 步骤三：风险控制与预处理 (核心) ---
+        # 1. 过滤小市值公司：这是不可逾越的纪律 （市值小，表示分母小，更容易被操控，比如现金突然多了10w，但是市值为1，那不是猛增10w倍率
+        #    在实盘中，这个阈值甚至可能是20亿(2e9)或30亿(3e9)
+        mv_aligned[mv_aligned < 1e8] = np.nan
 
+        # 2. 过滤掉退市或长期停牌等市值为0或负的异常情况 ！
+        mv_aligned[mv_aligned <= 0] = np.nan
+
+        # --- 步骤四：计算因子 ---
+        cfp_ratio_df = ttm_aligned / mv_aligned
+
+        # --- 步骤五：后处理，清除计算过程中产生的inf ---
+        # 在除法运算后，对无穷大值进行处理，统一替换为NaN
+        cfp_ratio_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        print("    > cfp_ratio 计算完成，已包含风险控制。")
         return cfp_ratio_df
 
     def _calculate_bm_ratio(self) -> pd.DataFrame:
@@ -111,7 +177,6 @@ class FactorCalculator:
         factor_df = circ_mv_df.apply(np.log)
         # 反向处理因子（仅为了视觉更好看）
         return factor_df * -1
-
 
 def calculate_rolling_beta(
         start_date: str,

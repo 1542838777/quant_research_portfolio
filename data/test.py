@@ -36,9 +36,10 @@ def compare_df_rows(df, index1, index2):
     print(diff_cols)
     return diff_cols
 if __name__ == '__main__':
-    download_cashflow()
-    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'cashflow')
-    print(df)
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'cashflow.parquet')
+    df['end_date'] = pd.to_datetime(df['end_date'])
+    df = df[df['end_date']>= pd.to_datetime('2025') ]
+    print(list(df.columns))
 
     ##
     #

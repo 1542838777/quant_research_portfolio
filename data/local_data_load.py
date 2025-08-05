@@ -1,3 +1,5 @@
+import random
+
 import pandas as pd
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
@@ -19,6 +21,18 @@ def load_daily_hfq(start_date, end_date, cur_stock_codes):
     if cur_stock_codes:
         return df[df['ts_code'].isin(cur_stock_codes)]
     return df
+def load_cashflow_df():
+    cashflow_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'cashflow.parquet')
+    cashflow_df['ann_date'] = pd.to_datetime(cashflow_df['ann_date'])
+    cashflow_df['end_date'] = pd.to_datetime(cashflow_df['end_date'])
+    cashflow_df = cashflow_df.sort_values(by=['ts_code', 'end_date']).drop_duplicates(subset=['ts_code', 'end_date'])
+    #随机取5个股票的df
+    ts_codes = random.sample(cashflow_df['ts_code'].unique().tolist(),5)
+    ts_codes.append('003031.SZ')
+    df = cashflow_df[cashflow_df['ts_code'].isin(ts_codes)]
+    df  =df[['ann_date','ts_code','end_date','n_cashflow_act']]
+    return df
+
 
 
 def load_suspend_d_df():

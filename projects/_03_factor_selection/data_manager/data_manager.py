@@ -115,15 +115,14 @@ class DataManager:
             self.data_loader = DataLoader(data_path=LOCAL_PARQUET_DATA_DIR)
             self.raw_dfs = {}
             self.stock_pools_dict = None
+            self.trading_dates = self.data_loader.get_trading_dates(self.backtest_start_date, self.backtest_end_date)
 
-    def prepare_all_data(self) -> Dict[str, pd.DataFrame]:
+    def prepare_basic_data(self) -> Dict[str, pd.DataFrame]:
         """
         优化的两阶段数据处理流水线（只加载一次数据）
-
         Returns:
             处理后的数据字典
         """
-
         # 获取时间范围
         start_date = self.config['backtest']['start_date']
         end_date = self.config['backtest']['end_date']
@@ -167,7 +166,7 @@ class DataManager:
 
         self.build_diff_stock_pools()
 
-    def build_diff_stock_pools(self) -> pd.DataFrame:
+    def build_diff_stock_pools(self):
         stock_pool_df_dict = {}
         stock_pool_profiles = self.config['stock_pool_profiles']
         for pool_name, pool_config in stock_pool_profiles.items():
@@ -213,15 +212,18 @@ class DataManager:
 
             'close',
             'pb',  # 为了计算价值类因子
-            'total_mv', 'turnover_rate',  # 为了过滤 很差劲的股票 仅此而已，不会作其他计算 、'total_mv'还可 用于计算中性化
+            'total_mv', 'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
             'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
             'list_date',  # 上市日期,
 
-            'open', 'high', 'low', 'pre_close'  # 为了计算次日是否一字马涨停
+            'open', 'high', 'low', 'pre_close',  # 为了计算次日是否一字马涨停
+            'pe_ttm',   # 懒得写calcu 直接在这里生成就好
         ])
-
-        # 目标因子所需基础字段
+        #鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
+        #解决办法：
+        # 我决定 这不需要了，自行在factor_calculator里面 自定义_calcu—函数 更清晰！
+        #最新解决办法 加一个cal_require_base_fields_from_daily标识就可以了
         target_factors_for_evaluation = self.config['target_factors_for_evaluation']
         required_fields.update(self.get_cal_base_factors(target_factors_for_evaluation['fields']))
 
@@ -796,13 +798,13 @@ class DataManager:
 
     # 输入学术因子，返回计算所必须的base 因子
     def get_cal_base_factors(self, target_factors: list[str]) -> set:
-        factor_df = pd.DataFrame(self.config['factor_definition'])  # 将 list[dict] 转为 DataFrame
+        factor_definition_df = pd.DataFrame(self.config['factor_definition'])  # 将 list[dict] 转为 DataFrame
         result = set()
 
         for target_factors_for_evaluation in target_factors:
-            matched = factor_df[factor_df['name'] == target_factors_for_evaluation]
-            if not matched.empty:
-                base_fields = matched.iloc[0]['cal_require_base_fields']
+            factor_definition = factor_definition_df[factor_definition_df['name'] == target_factors_for_evaluation]
+            if not factor_definition.empty and factor_definition['cal_require_base_fields_from_daily'].iloc[0]:
+                base_fields = factor_definition.iloc[0]['cal_require_base_fields']
                 result.update(base_fields)  # 用 update 合并列表到 set
 
         return result

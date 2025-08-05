@@ -89,8 +89,8 @@ class DataLoader:
         mask = (self.trade_cal['cal_date'] >= start_date) & \
                (self.trade_cal['cal_date'] <= end_date) & \
                (self.trade_cal['is_open'] == 1)
-        return pd.to_datetime(self.trade_cal[mask]['cal_date'].unique())
-
+        dates = pd.to_datetime(self.trade_cal.loc[mask, 'cal_date'].unique())
+        return pd.DatetimeIndex(sorted(dates))  # 显式排序，确保有序
     def _build_field_map_to_file_name(self) -> Dict[str, str]:
         """
         构建字段到数据源的映射
