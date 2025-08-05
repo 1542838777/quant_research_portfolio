@@ -1,7 +1,7 @@
 # 因子选择配置文件
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'ep_ratio']
+  fields: [ 'value_composite']
 # 回测时间范围
 backtest:
   start_date: '2022-01-01'
@@ -205,9 +205,9 @@ factor_definition:
     cal_require_base_fields_from_daily: False # 因为依赖了非日频的财报数据
   - name: 'value_composite'
     style_category: 'value'
-    description: '价值合成因子，通过对bm_ratio, ep_ratio, cfp_ratio等多个价值因子进行打分、标准化后再合成，旨在创建一个更稳健的价值度量。'
+    description: '价值合成因子，通过对bm_ratio, ep_ratio, sp_ratio等多个价值因子进行打分、标准化后再合成，旨在创建一个更稳健的价值度量。'
     action: 'composite' # 表明这是一个合成因子
-    cal_require_base_fields: ['bm_ratio', 'ep_ratio', 'cfp_ratio']
+    cal_require_base_fields: ['bm_ratio', 'sp_ratio', 'ep_ratio']
     cal_require_base_fields_from_daily: False # 依赖于计算后的因子
 
   # === 质量 (Quality) === - 【新增核心类别】

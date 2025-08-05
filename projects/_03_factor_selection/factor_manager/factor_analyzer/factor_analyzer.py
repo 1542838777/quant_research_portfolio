@@ -82,7 +82,7 @@ class FactorAnalyzer:
         # 初始化数据
 
         self.target_factors_dict = target_factors_dict
-        self.target_factors_category_dict = target_factors_category_dict
+        self.target_factors_style_category_dict = target_factors_category_dict
         self.target_school_type_dict = target_factor_school_type_dict
 
         self.backtest_start_date = config['backtest']['start_date']
@@ -177,6 +177,7 @@ class FactorAnalyzer:
         """
         logger.info(f"开始测试因子: {target_factor_name}")
         target_school = self.target_school_type_dict[target_factor_name]
+        style_category = self.target_factors_style_category_dict[target_factor_name]
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
         target_factor_shift_df = self.target_factors_dict[target_factor_name]
         # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
@@ -198,7 +199,7 @@ class FactorAnalyzer:
             target_factor_name=target_factor_name,
             auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs,
-            factor_school=target_school
+            style_category=style_category
         )
         return self.core_three_test(target_factor_processed,target_factor_name, close_df,prepare_for_neutral_shift_base_own_stock_pools_dfs,circ_mv_shift_df)
 
@@ -806,7 +807,7 @@ class FactorAnalyzer:
                     target_factor_name=target_factor_name,
                     preprocess_method="standard"
                 ))
-        overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_name, self.target_factors_category_dict[target_factor_name],"standard",ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict)
+        overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_name, self.target_factors_style_category_dict[target_factor_name], "standard", ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict)
 
         return ic_series_periods_dict, quantile_daily_returns_for_plot_dict, factor_returns_series_periods_dict, overrall_summary_stats
 

@@ -114,7 +114,7 @@ class FactorCalculator:
         print("--- 因子计算完成 ---")
         return cashflow_ttm_daily
 
-    def _calculate_cashflow_ttm_total_mv_ratio(self) -> pd.DataFrame:
+    def _calculate_cfp_ratio(self) -> pd.DataFrame:
         """
             计算现金流市值比 (cfp_ratio = cashflow_ttm / total_mv)
             包含风险控制和健壮性处理。
@@ -168,6 +168,13 @@ class FactorCalculator:
         # PE为负或0时，其倒数无意义，设为NaN
         pe_ttm_raw_df = pe_ttm_raw_df.where(pe_ttm_raw_df > 0)
         return 1 / pe_ttm_raw_df
+
+
+    def _calculate_sp_ratio(self) -> pd.DataFrame:
+        ps_ttm_raw_df = self.factor_manager.get_factor('ps_ttm').copy()
+        # PE为负或0时，其倒数无意义，设为NaN
+        ps_ttm_raw_df = ps_ttm_raw_df.where(ps_ttm_raw_df > 0)
+        return 1 / ps_ttm_raw_df
 
     def _calculate_market_cap_log_by_circ_mv(self) -> pd.DataFrame:
         circ_mv_df = self.factor_manager.get_factor('circ_mv').copy()

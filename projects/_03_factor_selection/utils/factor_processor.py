@@ -18,7 +18,9 @@ import sys
 import os
 from pathlib import Path
 
+from projects._03_factor_selection.config.base_config import FACTOR_STYLE_RISK_MODEL
 from projects._03_factor_selection.factor_manager.classifier.factor_classifier import FactorClassifier
+from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent
@@ -58,7 +60,7 @@ class FactorProcessor:
                        target_factor_name: str,
                        auxiliary_dfs,
                        neutral_dfs,
-                       factor_school: str,
+                       style_category: str,
                        neutralize_after_standardize: bool = False, #默认是最后标准化
                        ):
         """
@@ -83,7 +85,7 @@ class FactorProcessor:
             # 步骤2：中性化
             if self.preprocessing_config.get('neutralization', {}).get('enable', False):
                 processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,auxiliary_dfs,
-                                                              neutral_dfs, factor_school)
+                                                              neutral_dfs, style_category)
             else:
                 logger.info("2. 跳过中性化处理...")
             # 步骤3：标准化
@@ -95,7 +97,7 @@ class FactorProcessor:
             if self.preprocessing_config.get('neutralization', {}).get('enable', False):
                 # print("3. 中性化处理...")
                 processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name, auxiliary_dfs,
-                                                              neutral_dfs, factor_school)
+                                                              neutral_dfs, style_category)
             else:
                 logger.info("3. 跳过中性化处理...")
         # 统计处理结果
@@ -152,7 +154,7 @@ class FactorProcessor:
                     target_factor_name:str,
                     auxiliary_dfs: Dict[str, pd.DataFrame],
                     neutral_dfs: Dict[str, pd.DataFrame],
-                    factor_school: str  # <-- 新增的关键参数：因子门派
+                    style_category: str
                     ) -> pd.DataFrame:
         """
          根据因子所属的“门派”，自动选择最合适的中性化方案。
@@ -169,7 +171,7 @@ class FactorProcessor:
         neutralization_config = self.preprocessing_config.get('neutralization', {})
         if not neutralization_config.get('enable', False):
             return factor_data
-
+        factor_school = FactorManager.get_school_by_style_category( style_category)
         logger.info(f"  > 正在对 '{factor_school}' 派因子 '{target_factor_name}' 进行中性化处理...")
         processed_factor = factor_data.copy()
 
@@ -183,7 +185,7 @@ class FactorProcessor:
             processed_factor = processed_factor - factor_mean
 
         # --- 阶段二：确定本次回归需要中性化的因子列表 ---
-        factors_to_neutralize = self.get_regression_need_neutral_factor_list(factor_school,target_factor_name)
+        factors_to_neutralize = self.get_regression_need_neutral_factor_list(style_category,target_factor_name)
 
         if not factors_to_neutralize:
             logger.info(f"    > '{factor_school}' 派因子无需中性化。")
@@ -353,30 +355,44 @@ class FactorProcessor:
             logger.info(f"  分位数: 1%={np.percentile(all_values, 1):.3f}, "
                         f"99%={np.percentile(all_values, 99):.3f}")
 
-    def get_regression_need_neutral_factor_list(self, factor_school,target_factor_name):
-        factors_to_neutralize = []
-        if factor_school == 'fundamentals':
-            factors_to_neutralize = ['market_cap', 'industry']
-        elif factor_school == 'trend':
-            factors_to_neutralize = ['market_cap', 'industry', 'pct_chg_beta']
-        elif factor_school == 'microstructure':
-            factors_to_neutralize = ['market_cap', 'industry']
-
-        #进一步细看
-        if FactorClassifier.belong_market_capitalization_factor(target_factor_name):
-            #移除 市值market_cap
-            factors_to_neutralize.remove('market_cap')
 
 
-        if FactorClassifier.belong_industry_factor(target_factor_name):
-            # 移除 行业
-            factors_to_neutralize.remove('industry')
-        if FactorClassifier.belong_beta_factor(target_factor_name):
-            # 移除 行业
-            factors_to_neutralize.remove('pct_chg_beta')
-            factors_to_neutralize.remove('market_cap')
-        if target_factor_name in  ['pe_ttm_inv','pb_inv','ps_ttm_inv']:
-            factors_to_neutralize.remove('market_cap')
-        logger.info(f"因子:{target_factor_name}寻找最终用于回归的中性化目标因子为{factors_to_neutralize}")
-        return factors_to_neutralize
+    def get_regression_need_neutral_factor_list(self, style_category,target_factor_name):
+        """
+           【V2专业版】根据因子门派和目标因子名称，动态获取需要用于中性化的因子列表。
+
+           此版本修复了旧版本的所有问题：
+           1. 采用配置字典，易于扩展。
+           2. 移除了所有硬编码的特例，采用通用逻辑。
+           3. 使用健壮的方式移除元素，避免程序崩溃。
+           """
+        # 1. 根据因子门派，从配置中获取基础的中性化列表
+        base_neutralization_list = FACTOR_STYLE_RISK_MODEL.get(style_category, FACTOR_STYLE_RISK_MODEL['default'])
+
+        logger.info(
+            f"因子 '{target_factor_name}' (style列别: {style_category}) 的初始中性化列表为: {base_neutralization_list}")
+
+        # 2. 【核心逻辑】: 动态排除 - 防止因子对自己进行中性化
+        # 使用列表推导式，这是一种更Pythonic、更健壮的方式
+        final_list = []
+        for risk_factor in base_neutralization_list:
+            # 检查市值
+            if risk_factor == 'market_cap' and FactorClassifier.is_size_factor(target_factor_name):
+                logger.info(f"  - 目标是市值因子，已从中性化列表中移除 'market_cap'")
+                continue  # 跳过，不加入final_list
+
+            # 检查行业
+            if risk_factor == 'industry' and FactorClassifier.is_industry_factor(target_factor_name):
+                logger.info(f"  - 目标是行业因子，已从中性化列表中移除 'industry'")
+                continue
+
+            # 检查Beta
+            if risk_factor == 'pct_chg_beta' and FactorClassifier.is_beta_factor(target_factor_name):
+                logger.info(f"  - 目标是Beta因子，已从中性化列表中移除 'pct_chg_beta'")
+                continue
+
+            final_list.append(risk_factor)
+
+        logger.info(f"最终用于回归的中性化目标因子为: {final_list}\n")
+        return final_list
 

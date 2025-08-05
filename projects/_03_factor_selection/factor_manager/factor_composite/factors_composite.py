@@ -27,9 +27,9 @@ class FactorSynthesizer:
         self.raw_dfs = factor_manager.data_manager.raw_dfs
         # 因子方向配置，1为正向，-1为反向。需要根据单因子测试的结果来手动配置。
         self.FACTOR_DIRECTIONS = {
-            'pe_ttm_inv': 1,
-            'pb_inv': 1,
-            'ps_ttm_inv': 1,
+            'ep_ratio': 1,
+            'bm_ratio': 1,
+            'sp_ratio': 1,
             # ... 其他因子
         }
 
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     config_path = Path(__file__).parent.parent.parent / 'factory' / 'config.yaml'
 
     data_manager = DataManager(config_path)
-    data_manager.prepare_all_data()
+    data_manager.prepare_basic_data()
 
     factor_manager = FactorManager(data_manager)
     factor_analyzer = FactorAnalyzer(factor_manager= factor_manager)

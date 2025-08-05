@@ -485,8 +485,8 @@ class FactorManager:
         if factor_school in ['microstructure']:
             return 'microstructure_stock_pool'
         raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
-
-    def get_school_by_style_category(self,style_category: str) -> str:
+    @staticmethod
+    def get_school_by_style_category(style_category: str) -> str:
         """
         根据因子风格(style_category)，返回其所属的投资门派(school)。
         这是连接因子定义与业务逻辑（如选择股票池）的核心枢纽。
