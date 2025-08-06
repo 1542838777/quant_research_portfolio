@@ -67,6 +67,7 @@ def compare_local_and_net():
     local_hfq_ret = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
     daily_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic')
     namechange = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'namechange.parquet')
+    suspend_d = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
     stock_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
     final_indicator_vip = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'final_indicator_vip')
 

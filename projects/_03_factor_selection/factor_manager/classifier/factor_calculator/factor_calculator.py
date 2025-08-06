@@ -17,7 +17,8 @@ class FactorCalculator:
     ##
     #
     # caclulate_函数 ，无需关心对齐，反正下游会align where 动态股票池！
-    #   -so 就安心计算就行！
+    #  注意：涉及到rolling shift 操作，需要关注数据连续性。要考虑填充！
+    #   ---ex：close可能是空的，因为停牌日就是空的，是nan，我们可以适当ffill
     #
     # #
 
@@ -32,8 +33,79 @@ class FactorCalculator:
         # 可以通过 factor_manager.get_factor() 来获取基础因子，并利用其缓存机制。
         self.factor_manager = factor_manager
         print("FactorCalculator (因子计算器) 已准备就绪。")
-    #主要字段：n_cashflow_act：经营活动产生的现金流量净额 进行滚动平均
-    #代码大篇幅主要处理脏数据！多来自于ipo，因为股票未上市前，用的不准确的数据！
+
+    def _calculate_market_cap_log_by_circ_mv(self) -> pd.DataFrame:
+        circ_mv_df = self.factor_manager.get_factor('circ_mv').copy()
+        # 保证为正数，避免log报错
+        circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
+        # 使用 pandas 自带 log 函数，保持类型一致
+        factor_df = circ_mv_df.apply(np.log)
+        # 反向处理因子（仅为了视觉更好看）
+        return factor_df * -1
+
+    # === 规模 (Size) ===
+    def _calculate_market_cap_log(self) -> pd.DataFrame:
+        """
+        计算对数总市值。
+
+        金融逻辑:
+        市值的原始分布是严重右偏的（少数巨头公司市值极大），直接使用会受到极端值的影响。
+        取对数可以使数据分布更接近正态分布，降低极端值的影响，是处理规模因子的标准做法。
+        """
+        print("    > 正在计算因子: market_cap_log...")
+        # 1. 从FactorManager获取原始市值因子
+        total_mv_df = self.factor_manager.get_factor('total_mv')
+        # 2. 对所有数值应用自然对数。np.log会自动处理整个DataFrame。
+        #    对于任何非正数，np.log会返回-inf或nan，后续处理中会被当做无效值。
+        log_mv_df = np.log(total_mv_df)
+        return log_mv_df
+
+    # === 价值 (Value) ===
+    def _calculate_bm_ratio(self) -> pd.DataFrame:
+        """
+        计算账面市值比 (Book-to-Market Ratio)，即市净率(PB)的倒数。
+
+        金融逻辑:
+        这是Fama-French三因子模型中的核心价值衡量指标。高BM比率意味着公司的账面价值
+        相对于其市场价格更高，可能被市场低估。
+        """
+        print("    > 正在计算因子: bm_ratio...")
+        pb_df = self.factor_manager.get_factor('pb')
+        pb_df_positive = pb_df.where(pb_df > 0)
+        bm_ratio_df = 1 / pb_df_positive
+        return bm_ratio_df
+
+    def _calculate_ep_ratio(self) -> pd.DataFrame:
+        """
+        计算盈利收益率 (Earnings Yield)，即市盈率(PE_TTM)的倒数。
+
+        金融逻辑:
+        衡量投资者每投入一元市值，可以获得多少公司盈利。它比PE更能直观地
+        与债券收益率等其他资产回报率进行比较。
+        """
+        print("    > 正在计算因子: ep_ratio...")
+        pe_ttm_df = self.factor_manager.get_factor('pe_ttm')
+        pe_df_positive = pe_ttm_df.where(pe_ttm_df > 0)
+        ep_ratio_df = 1 / pe_df_positive
+        return ep_ratio_df
+
+    def _calculate_sp_ratio(self) -> pd.DataFrame:
+        """
+        计算销售收益率 (Sales Yield)，即市销率(PS_TTM)的倒数。
+
+        金融逻辑:
+        衡量投资者每投入一元市值，可以获得多少销售收入。这个指标对于那些
+        处于快速扩张期但尚未盈利的成长型公司（PE为负）尤其有价值。
+        """
+        print("    > 正在计算因子: sp_ratio...")
+        ps_ttm_df = self.factor_manager.get_factor('ps_ttm')
+        ps_df_positive = ps_ttm_df.where(ps_ttm_df > 0)
+        sp_ratio_df = 1 / ps_df_positive
+        return sp_ratio_df
+
+        # 主要字段：n_cashflow_act：经营活动产生的现金流量净额 进行滚动平均
+        # 代码大篇幅主要处理脏数据！多来自于ipo，因为股票未上市前，用的不准确的数据！
+
     def _calculate_cashflow_ttm(self) -> pd.DataFrame:
         """
            【】计算滚动12个月的经营活动现金流净额 (TTM)。
@@ -54,7 +126,7 @@ class FactorCalculator:
 
         full_date_dfs = []
         for ts_code, row in scaffold_min_max_end_date_df.iterrows():
-            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')#所有的报告期日（季度最后一日
+            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')  # 所有的报告期日（季度最后一日
             full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, 'end_date': date_range}))
 
         full_dates_df = pd.concat(full_date_dfs)
@@ -87,7 +159,7 @@ class FactorCalculator:
         # === 步骤五：构建以公告日为索引的TTM长表 ===
         print("6. 整理并过滤有效TTM值...")
         # 关键：只有当'ann_date'和'cashflow_ttm'同时存在时，这个数据点才是一个有效的、可用于交易的“事件”
-        ttm_long_df = merged_df[['ts_code', 'ann_date','end_date', 'cashflow_ttm']].dropna()
+        ttm_long_df = merged_df[['ts_code', 'ann_date', 'end_date', 'cashflow_ttm']].dropna()
         if ttm_long_df.empty:
             raise ValueError("警告: _calculate_cashflow_ttm 计算后没有产生任何有效的TTM数据点。")
 
@@ -113,6 +185,7 @@ class FactorCalculator:
 
         print("--- 因子计算完成 ---")
         return cashflow_ttm_daily
+
 
     def _calculate_cfp_ratio(self) -> pd.DataFrame:
         """
@@ -145,16 +218,122 @@ class FactorCalculator:
         print("    > cfp_ratio 计算完成，已包含风险控制。")
         return cfp_ratio_df
 
-    def _calculate_bm_ratio(self) -> pd.DataFrame:
+    # === 质量 (Quality) ===
+    def _calculate_roe_ttm(self) -> pd.DataFrame:
         """
-        【新增示例】计算市净率倒数 (bm_ratio = 1 / pb)
-        """
-        print("    > 正在计算 bm_ratio...")
-        pb_df = self.factor_manager.get_factor('pb')  # pb是原始因子
-        pb_df_positive = pb_df.where(pb_df > 0)  # 过滤掉负值和0
-        bm_ratio_df = 1 / pb_df_positive
-        return bm_ratio_df
+        计算滚动12个月的净资产收益率 (ROE_TTM)。
 
+        金融逻辑:
+        ROE是衡量公司为股东创造价值效率的核心指标。高ROE意味着公司能用更少的
+        股东资本创造出更多的利润，是“好生意”的标志。
+
+        注意: 这是一个依赖财报数据的复杂因子，其计算逻辑与 cashflow_ttm 类似。
+              你需要确保你的 DataManager 能够提供包含 'net_profit' 和 'total_equity'
+              的季度财务报表数据。
+        """
+        print("    > 正在计算因子: roe_ttm...")
+        # 此处为占位符逻辑，你需要替换为与 _calculate_cashflow_ttm 类似的
+        # 从原始财报计算单季 -> 滚动求和TTM -> 按公告日对齐 的完整流程。
+        # 依赖的原始字段: net_profit (净利润), total_equity (股东权益)
+        print("      > [警告] _calculate_roe_ttm 使用的是占位符实现！")
+        total_mv_df = self.factor_manager.get_factor('total_mv')
+        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+
+    def _calculate_gross_margin_ttm(self) -> pd.DataFrame:
+        """
+        计算滚动12个月的销售毛利率。
+
+        金融逻辑:
+        毛利率反映了公司产品的定价能力和成本控制能力，是公司“护城河”的体现。
+        持续的高毛利率通常意味着强大的品牌或技术优势。
+        """
+        print("    > 正在计算因子: gross_margin_ttm...")
+        # 同样，这是一个需要从财报数据计算的复杂因子。
+        # 依赖的原始字段: revenue (营业收入), op_cost (营业成本)
+        print("      > [警告] _calculate_gross_margin_ttm 使用的是占位符实现！")
+        total_mv_df = self.factor_manager.get_factor('total_mv')
+        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+
+    def _calculate_debt_to_assets(self) -> pd.DataFrame:
+        """
+        计算资产负债率。
+
+        金融逻辑:
+        衡量公司的财务杠杆水平。适度的杠杆可以提高股东回报，但过高的杠杆
+        则意味着巨大的财务风险。这是一个衡量公司稳健性的重要指标。
+        """
+        print("    > 正在计算因子: debt_to_assets...")
+        # 这是一个可以直接从最新财报获取的“时点”指标，不需要计算TTM。
+        # 但同样需要处理财报发布延迟。
+        # 依赖的原始字段: total_debt (总负债), total_assets (总资产)
+        print("      > [警告] _calculate_debt_to_assets 使用的是占位符实现！")
+        total_mv_df = self.factor_manager.get_factor('total_mv')
+        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+
+    # === 成长 (Growth) ===
+    def _calculate_net_profit_growth_yoy(self) -> pd.DataFrame:
+        """
+        计算净利润同比增长率 (Year-over-Year)。
+
+        金融逻辑:
+        衡量公司盈利能力的增长速度，是成长性的核心体现。
+        """
+        print("    > 正在计算因子: net_profit_growth_yoy...")
+        # 需要获取当季的单季净利润，和去年同期的单季净利润进行比较。
+        # 这是一个非常复杂的计算，涉及到财报数据的滞后和对齐。
+        # 依赖的原始字段: net_profit_single_q
+        print("      > [警告] _calculate_net_profit_growth_yoy 使用的是占位符实现！")
+        total_mv_df = self.factor_manager.get_factor('total_mv')
+        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+
+    def _calculate_revenue_growth_yoy(self) -> pd.DataFrame:
+        """
+        计算营业收入同比增长率 (Year-over-Year)。
+
+        金融逻辑:
+        衡量公司市场规模和业务扩张的速度。营收增长通常是利润增长的先行指标。
+        """
+        print("    > 正在计算因子: revenue_growth_yoy...")
+        # 逻辑与净利润同比增长类似。
+        # 依赖的原始字段: revenue_single_q
+        print("      > [警告] _calculate_revenue_growth_yoy 使用的是占位符实现！")
+        total_mv_df = self.factor_manager.get_factor('total_mv')
+        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+
+    # === 动量 (Momentum) ===
+    def _calculate_momentum_12_1(self) -> pd.DataFrame:
+        """
+        计算过去12个月剔除最近1个月的累计收益率 (Momentum 12-1)。
+
+        金融逻辑:
+        这是最经典的动量因子，由Jegadeesh和Titman提出。它剔除了最近一个月的
+        短期反转效应，旨在捕捉更稳健的中期价格惯性。
+        """
+        print("    > 正在计算因子: momentum_12_1...")
+        # 1. 获取收盘价
+        close_df = self.factor_manager.get_factor('close').copy(deep=True)
+        close_df.ffill(axis=0, inplace=True)
+        # 2. 计算 T-21 (约1个月前) 的价格 与 T-252 (约1年前) 的价格之间的收益率
+        #    shift(21) 获取的是约1个月前的价格
+        #    shift(252) 获取的是约12个月前的价格
+        momentum_df = close_df.shift(21) / close_df.shift(252) - 1
+        return momentum_df
+
+    def _calculate_momentum_20d(self) -> pd.DataFrame:
+        """
+        计算20日动量/收益率。
+
+        金融逻辑:
+        捕捉短期（约一个月）的价格惯性，即所谓的“强者恒强”。
+        """
+        print("    > 正在计算因子: momentum_20d...")
+        close_df = self.factor_manager.get_factor('close').copy(deep=True)
+        # close_df.reset_index(trading_index = self.factor_manager.data_manager.trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
+        close_df.ffill(axis=0, inplace=True)
+        momentum_df = close_df.pct_change(periods=20)
+        return momentum_df
+
+    # === 风险 (Risk) ===
     def _calculate_beta(self) -> pd.DataFrame:
         beta_df = calculate_rolling_beta(
             self.factor_manager.data_manager.config['backtest']['start_date'],
@@ -163,27 +342,59 @@ class FactorCalculator:
         )
         return beta_df * -1
 
-    def _calculate_ep_ratio(self) -> pd.DataFrame:
-        pe_ttm_raw_df = self.factor_manager.get_factor('pe_ttm').copy()
-        # PE为负或0时，其倒数无意义，设为NaN
-        pe_ttm_raw_df = pe_ttm_raw_df.where(pe_ttm_raw_df > 0)
-        return 1 / pe_ttm_raw_df
+    def _calculate_volatility_120d(self) -> pd.DataFrame:
+        """
+        计算120日年化波动率。
 
+        金融逻辑:
+        衡量个股在过去约半年内的价格波动风险。经典的“低波动异象”认为，
+        低波动率的股票长期来看反而有更高的风险调整后收益。
+        """
+        print("    > 正在计算因子: volatility_120d...")
+        pct_chg_df = self.factor_manager.get_factor('pct_chg').copy(deep=True)
+        pct_chg_df.fillna(0, inplace=True)
 
-    def _calculate_sp_ratio(self) -> pd.DataFrame:
-        ps_ttm_raw_df = self.factor_manager.get_factor('ps_ttm').copy()
-        # PE为负或0时，其倒数无意义，设为NaN
-        ps_ttm_raw_df = ps_ttm_raw_df.where(ps_ttm_raw_df > 0)
-        return 1 / ps_ttm_raw_df
+        rolling_std_df = pct_chg_df.rolling(window=120, min_periods=60).std()
+        annualized_vol_df = rolling_std_df * np.sqrt(252)
+        return annualized_vol_df
 
-    def _calculate_market_cap_log_by_circ_mv(self) -> pd.DataFrame:
-        circ_mv_df = self.factor_manager.get_factor('circ_mv').copy()
-        # 保证为正数，避免log报错
-        circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
-        # 使用 pandas 自带 log 函数，保持类型一致
-        factor_df = circ_mv_df.apply(np.log)
-        # 反向处理因子（仅为了视觉更好看）
-        return factor_df * -1
+    # === 流动性 (Liquidity) ===
+    def _calculate_turnover_rate_monthly_mean(self) -> pd.DataFrame:
+        """
+        计算月平均换手率（21日滚动平均）。
+
+        金融逻辑:
+        衡量股票在近一个月的平均交易活跃度。过高或过低的换手率都可能包含特定信息。
+        """
+        print("    > 正在计算因子: turnover_rate_monthly_mean...")
+        turnover_df = self.factor_manager.get_factor('turnover_rate').copy(deep=True)
+        turnover_df.fillna(0, inplace=True)
+
+        # 使用21个交易日近似一个月
+        monthly_mean_turnover_df = turnover_df.rolling(window=21, min_periods=15).mean()
+        return monthly_mean_turnover_df
+
+    def _calculate_liquidity_amihud(self) -> pd.DataFrame:
+        """
+        计算Amihud非流动性指标。
+
+        金融逻辑:
+        衡量单位成交额能引起多大的价格波动，公式为 abs(收益率) / 成交额。
+        该值越大，说明股票的流动性越差，交易的冲击成本越高。
+        """
+        print("    > 正在计算因子: liquidity_amihud...")
+        # 1. 获取依赖数据
+        pct_chg_df = self.factor_manager.get_factor('pct_chg')
+        # 假设你的DataManager可以提供以“元”为单位的日成交额'amount'
+        amount_df = self.factor_manager.get_factor('amount')
+
+        # 2. 【核心风险控制】: 将成交额为0的替换为一个极小值，防止除以0
+        amount_df_safe = amount_df.where(amount_df > 0, 1e-9)
+
+        # 3. 计算Amihud指标
+        amihud_df = pct_chg_df.abs() / amount_df_safe
+        return amihud_df
+
 
 def calculate_rolling_beta(
         start_date: str,

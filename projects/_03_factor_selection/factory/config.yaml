@@ -1,7 +1,36 @@
 # 因子选择配置文件
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
-  fields: [ 'value_composite']
+  fields:
+    # === 规模 (Size) ===
+    - 'market_cap_log'
+
+    # === 价值 (Value) ===
+    - 'bm_ratio'
+    - 'ep_ratio'
+    - 'sp_ratio'
+    - 'cfp_ratio'
+
+    # === 质量 (Quality) ===
+    - 'roe_ttm'
+    - 'gross_margin_ttm'
+    - 'debt_to_assets'
+
+    # === 成长 (Growth) ===
+    - 'net_profit_growth_yoy'
+    - 'revenue_growth_yoy'
+
+    # === 动量 (Momentum) ===
+    - 'momentum_12_1'
+    - 'momentum_20d'
+
+    # === 风险 (Risk / Volatility) ===
+    - 'beta'
+    - 'volatility_120d'
+
+    # === 流动性 (Liquidity) ===
+    - 'turnover_rate_monthly_mean'
+    - 'liquidity_amihud'
 # 回测时间范围
 backtest:
   start_date: '2022-01-01'
@@ -264,7 +293,7 @@ factor_definition:
     description: '贝塔系数，衡量个股相对于市场基准的系统性风险。（你到底是跟着别人屁股后面转，还是凭自己的真本事 （用到协同'
     action: 'technical_calcu'
     cal_require_base_fields: ['pct_chg', 'benchmark_pct_chg']
-    cal_require_base_fields_from_daily: True
+    cal_require_base_fields_from_daily: False
   - name: 'volatility_120d'
     style_category: 'risk'
     description: '120日年化波动率，衡量个股自身的价格波动风险。低波动股票有时反而有超额收益。'

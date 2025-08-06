@@ -7,6 +7,8 @@ FILL_STRATEGY_FFILL = 'ffill'       # 前向填充
 FILL_STRATEGY_FFILL_LIMIT2 = 'ffill(limit=2)'       # 前向填充
 FILL_STRATEGY_ZERO = 'zero_fill'    # 填充为0
 FILL_STRATEGY_NONE = 'no_fill'      # 不进行任何填充
+FILL_STRATEGY_CONDITIONAL_ZERO = 'conditional_zero' # 条件填充0 #todo 有空在实现，不要紧，用于判断pct_chg 在当且仅当确认停牌的状态下，才可以fillna(0) .turnover_rate逻辑同理
+
 # 定义每个数据字段对应的策略
 # 当未来有新因子时，你只需要在这里加一行，而不用修改函数代码
 FACTOR_FILL_CONFIG = {

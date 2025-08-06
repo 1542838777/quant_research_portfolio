@@ -119,7 +119,7 @@ class DataLoader:
                     if (col == 'name') & (
                             logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
                         continue
-                    if (col in ['close', 'open', 'high', 'low', 'pre_close', 'pct_chg']) & (
+                    if (col in ['close', 'open', 'high', 'low', 'pre_close', 'pct_chg','amount']) & (
                             logical_name != 'daily_hfq'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据
                         continue
                     if col not in field_to_files_map:

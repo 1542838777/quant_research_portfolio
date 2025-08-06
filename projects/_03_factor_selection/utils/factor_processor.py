@@ -393,6 +393,10 @@ class FactorProcessor:
 
             final_list.append(risk_factor)
 
+        #临时的 记得删除
+        if target_factor_name in ['bm_ratio', 'ep_ratio', 'sp_ratio','beta']:
+            if 'market_cap' in final_list:
+                final_list.remove('market_cap')
         logger.info(f"最终用于回归的中性化目标因子为: {final_list}\n")
         return final_list
 

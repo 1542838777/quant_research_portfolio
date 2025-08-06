@@ -46,7 +46,7 @@ class FactorSynthesizer:
 
         factor_df = self.factor_manager.get_backtest_ready_factor(factor_name)
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
-        school_code = self.factor_manager.get_school_code_by_factor_name(factor_name)
+        style_category = self.factor_manager.get_style_category(factor_name)
 
         #加载必要数据
 
@@ -63,7 +63,7 @@ class FactorSynthesizer:
             target_factor_name=factor_name,
             auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs,
-            factor_school=school_code,neutralize_after_standardize=False)
+            style_category=style_category,neutralize_after_standardize=False)
         return processed_df
 
     def synthesize_composite_factor(self,
