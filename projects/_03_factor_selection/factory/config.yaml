@@ -31,7 +31,7 @@ target_factors_for_evaluation:
 #    # === 流动性 (Liquidity) ===
 #    - 'turnover_rate_monthly_mean'
 #    - 'liquidity_amihud'
-      - 'value_composite'
+      - 'beta'
 
 # 回测时间范围
 backtest:
