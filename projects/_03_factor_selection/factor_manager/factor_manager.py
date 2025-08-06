@@ -4,22 +4,21 @@
 整合因子注册表、分类器和存储功能，提供统一的因子管理接口。
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Any, Union, Tuple
-import logging
-from pathlib import Path
 import json
 import os
-from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Union, Tuple
+
+import numpy as np
+import pandas as pd
 
 from quant_lib import setup_logger
-from quant_lib.config.logger_config import log_success, log_warning
+from quant_lib.config.logger_config import log_warning
 from .classifier.factor_calculator.factor_calculator import FactorCalculator
+from .classifier.factor_classifier import FactorClassifier
 from .factor_technical_cal.factor_technical_cal import calculate_rolling_beta
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
-from .classifier.factor_classifier import FactorClassifier
 from .storage.single_storage import add_single_factor_test_result
 from ..config.base_config import INDEX_CODES
 from ..data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
@@ -468,7 +467,7 @@ class FactorManager:
        # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1
        df=df.shift(1)
        return align_one_df_by_stock_pool_and_fill(factor_name=factor_name,
-                                                  df=df, stock_pool_df=pool)
+                                                  df=df, stock_pool_df=pool,_existence_matrix = self.data_manager._existence_matrix)
 
 
     def get_school_code_by_factor_name(self, factor_name):
@@ -587,8 +586,7 @@ class FactorManager:
             return merged
 
         raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
-        # 仅仅只是构造一个dict 不做任何处理!
-
+    # 仅仅只是构造一个dict 不做任何处理!
     def build_one_df_dict_base_on_diff_pool_name(self, factor_name):
         df_dict_base_on_diff_pool = {}
         df = self.data_manager.raw_dfs[factor_name]
@@ -600,16 +598,16 @@ class FactorManager:
         if base_dict is None:
             base_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
         if need_shift:
-            ret = self.do_shift_and_align_for_dict(factor_name, base_dict)
+            ret = self.do_shift_and_align_for_dict(factor_name =factor_name , data_dict = base_dict,  _existence_matrix = self.data_manager._existence_matrix)
             return ret
         else:
             ret = self.do_align_for_dict(factor_name, base_dict)
             return ret
 
-    def do_shift_and_align_for_dict(self, factor_name, data_dict):
+    def do_shift_and_align_for_dict(self, factor_name=None, data_dict=None,_existence_matrix:pd.DataFrame=None):
         result = {}
         for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
-            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool)
+            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool,_existence_matrix = _existence_matrix)
             result[stock_name] = ret
         return result
 
@@ -620,11 +618,11 @@ class FactorManager:
             result[stock_name] = ret
         return result
 
-    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool):
+    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,_existence_matrix:pd.DataFrame=None):
         # 率先shift
         data_to_deal_by_shifted = self.do_shift(data_to_deal)
         # 对齐
-        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool)
+        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool,_existence_matrix = _existence_matrix)
         return result
 
     def do_shift(
@@ -661,7 +659,7 @@ class FactorManager:
                 f"但收到的是 {type(data_to_shift).__name__}"
             )
 
-    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool
+    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool, _existence_matrix:pd.DataFrame=None
                  ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
         # --- 情况一：输入是字典 ---
         if isinstance(data_to_align, dict):
@@ -671,13 +669,13 @@ class FactorManager:
                     raise ValueError("do_shift失败,dict内部不是df结构")
                 # 对字典中的每个DataFrame执行shift操作
                 shifted_dict[key] = align_one_df_by_stock_pool_and_fill(factor_name=key, df=df,
-                                                                        stock_pool_df=stock_pool)
+                                                                        stock_pool_df=stock_pool,_existence_matrix = _existence_matrix)
             return shifted_dict
 
         # --- 情况二：输入是单个DataFrame ---
         elif isinstance(data_to_align, pd.DataFrame):
             return align_one_df_by_stock_pool_and_fill(factor_name=factor_name, df=data_to_align,
-                                                       stock_pool_df=stock_pool)
+                                                       stock_pool_df=stock_pool,_existence_matrix = _existence_matrix)
 
         # --- 其他情况：输入类型错误，主动报错 ---
         else:

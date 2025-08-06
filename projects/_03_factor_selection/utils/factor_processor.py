@@ -222,12 +222,14 @@ class FactorProcessor:
             # --- 场景二：分行业去极值 (高质量做法) ---
             print("  执行分行业去极值...")
             # 1. 确保因子和行业数据对齐
-            factor_aligned, industry_aligned = factor_data.align(industry_df, join='inner', axis=1)
+            factor_aligned, industry_aligned = factor_data.align(industry_df, join='left', axis=1)
 
             # 2. 将数据堆叠成长格式，便于按天和行业分组
             factor_long = factor_aligned.stack(dropna=False).rename('factor')
             industry_long = industry_aligned.stack(dropna=False).rename('industry')
-            combined = pd.concat([factor_long, industry_long], axis=1)
+            #在合并后，丢弃那些没有因子值 或 没有行业值的行
+            #    这确保只在信息完备的数据上进行去极值
+            combined = pd.concat([factor_long, industry_long], axis=1).dropna(subset=['factor', 'industry'])
 
             # 3. [核心修正] 使用更直接的 groupby().transform()
             # 我们直接按照索引的第0层(日期)和'industry'列进行分组
@@ -385,54 +387,54 @@ class FactorProcessor:
                 raise ValueError(f"  警告: 日期 {date.date()} 中性化回归失败: {e}。该日因子数据将标记为NaN。") #raise
         return processed_factor
 
-    # ok
-    def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
-        """
-        标准化处理
-        
-        Args:
-            factor_data: 因子数据
-            
-        Returns:
-            标准化后的因子数据
-        """
-        standardization_config = self.preprocessing_config.get('standardization', {})
-        method = standardization_config.get('method', 'zscore')
-
-        processed_factor = factor_data.copy()
-
-        if method == 'zscore':
-            # print("  使用Z-Score标准化 (健壮版)")
-            mean = processed_factor.mean(axis=1)
-            std = processed_factor.std(axis=1)
-
-            # 识别std=0的安全隐患
-            std_is_zero_mask = (std == 0)
-
-            # 先进行标准化（会产生inf）
-            processed_factor = processed_factor.sub(mean, axis=0).div(std, axis=0)
-
-            # 将std=0的行，结果安全地设为0
-            processed_factor[std_is_zero_mask] = 0.0
-
-            return processed_factor
-
-        elif method == 'rank':
-            print("  使用排序标准化 (健壮版)")
-
-            # 识别只有一个有效值的边界情况
-            valid_counts = processed_factor.notna().sum(axis=1)
-            single_value_mask = (valid_counts == 1)
-
-            # 正常计算排名
-            ranks = processed_factor.rank(axis=1, pct=True)
-            processed_factor = 2 * ranks - 1
-
-            # 将只有一个有效值的行，结果安全地设为0
-            processed_factor[single_value_mask] = 0.0
-            return processed_factor
-
-        raise RuntimeError("请指定标准化方式")
+    # # ok
+    # def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
+    #     """
+    #     标准化处理
+    #
+    #     Args:
+    #         factor_data: 因子数据
+    #
+    #     Returns:
+    #         标准化后的因子数据
+    #     """
+    #     standardization_config = self.preprocessing_config.get('standardization', {})
+    #     method = standardization_config.get('method', 'zscore')
+    #
+    #     processed_factor = factor_data.copy()
+    #
+    #     if method == 'zscore':
+    #         # print("  使用Z-Score标准化 (健壮版)")
+    #         mean = processed_factor.mean(axis=1)
+    #         std = processed_factor.std(axis=1)
+    #
+    #         # 识别std=0的安全隐患
+    #         std_is_zero_mask = (std == 0)
+    #
+    #         # 先进行标准化（会产生inf）
+    #         processed_factor = processed_factor.sub(mean, axis=0).div(std, axis=0)
+    #
+    #         # 将std=0的行，结果安全地设为0
+    #         processed_factor[std_is_zero_mask] = 0.0
+    #
+    #         return processed_factor
+    #
+    #     elif method == 'rank':
+    #         print("  使用排序标准化 (健壮版)")
+    #
+    #         # 识别只有一个有效值的边界情况
+    #         valid_counts = processed_factor.notna().sum(axis=1)
+    #         single_value_mask = (valid_counts == 1)
+    #
+    #         # 正常计算排名
+    #         ranks = processed_factor.rank(axis=1, pct=True)
+    #         processed_factor = 2 * ranks - 1
+    #
+    #         # 将只有一个有效值的行，结果安全地设为0
+    #         processed_factor[single_value_mask] = 0.0
+    #         return processed_factor
+    #
+    #     raise RuntimeError("请指定标准化方式")
 
     def _zscore_series(self, series: pd.Series) -> pd.Series:
         """【辅助函数】对单个Series(如单日全市场或单日单行业)进行Z-Score标准化"""
@@ -469,20 +471,12 @@ class FactorProcessor:
     # --------------------------------------------------------------------------
     #  主函数 (Main Function) - 负责决策与调度
     # --------------------------------------------------------------------------
-
+    #ok
     def _standardize_robust(self, factor_data: pd.DataFrame, industry_df: pd.DataFrame = None) -> pd.DataFrame:
         """
-        因子标准化函数。
+        【V2.0-重构版】因子标准化函数。
         支持全市场或分行业的Z-Score和排序标准化。
-
-        Args:
-            factor_data (pd.DataFrame): 因子数据 (index=date, columns=stock)。
-            industry_df (pd.DataFrame, optional): 行业分类数据 (格式同上)。
-                                                  如果提供此参数，则自动执行分行业标准化。
-                                                  默认为 None，执行全市场标准化。
-
-        Returns:
-            pd.DataFrame: 标准化后的因子数据。
+        此版本修复了数据对齐和groupby计算的隐患。
         """
         standardization_config = self.preprocessing_config.get('standardization', {})
         method = standardization_config.get('method', 'zscore')
@@ -496,28 +490,33 @@ class FactorProcessor:
             raise ValueError(f"未知的标准化方法: {method}")
 
         if industry_df is None:
-            # --- 场景一：全市场标准化 ---
+            # --- 场景一：全市场标准化 (逻辑正确，保持不变) ---
             print("  执行全市场标准化...")
-            # 对每一天(每一行)应用指定的标准化辅助函数
             return factor_data.apply(calc_func, axis=1)
         else:
-            # --- 场景二：分行业标准化 ---
+            # --- 场景二：分行业标准化 (进行全面修正) ---
             print("  执行分行业标准化...")
-            # 1. 确保因子和行业数据对齐
-            factor_aligned, industry_aligned = factor_data.align(industry_df, join='inner', axis=1)
+
+            # 1. 【修正一】使用 'left' join，以保留所有因子数据中的股票，防止数据丢失
+            #    这是解决最终结果中出现过多NaN的关键。
+            factor_aligned, industry_aligned = factor_data.align(industry_df, join='left', axis=1)
 
             # 2. 将数据堆叠成长格式，便于按天和行业分组
             factor_long = factor_aligned.stack(dropna=False).rename('factor')
             industry_long = industry_aligned.stack(dropna=False).rename('industry')
-            combined = pd.concat([factor_long, industry_long], axis=1).dropna(subset=['factor'])
 
-            # 3. 按天(level=0)分组，在每天内部再按'industry'分组，对每个[天,行业]的小series进行处理
-            processed_factor = combined.groupby(level=0).apply(
-                lambda day_df: day_df.groupby('industry')['factor'].transform(calc_func)
-            )
+            # 3. 【修正二】增强dropna，丢弃因子值为空 或 行业分类为空 的行
+            #    这是配合 'left' join 必须做的质量控制。
+            combined = pd.concat([factor_long, industry_long], axis=1).dropna(subset=['factor', 'industry'])
 
-            # 4. 将处理后的长格式数据转回宽格式矩阵
-            #    注意：要reindex回原始的factor_data的索引和列，以保证形状完全一致
+            # 4. 【核心修正】使用一步到位的 groupby().transform()，替代危险的 groupby().apply()
+            #    这彻底解决了 'ValueError: cannot include dtype 'M' in a buffer' 的崩溃问题。
+            #    并且性能更高，逻辑更直接。
+            #    pd.Grouper(level=0) 是一种标准的分组方式，意为“按索引的第0层（即日期）分组”。
+            processed_factor = combined.groupby([pd.Grouper(level=0), 'industry'])['factor'].transform(calc_func)
+
+            # 5. 【保持正确】将处理后的长格式数据转回宽格式矩阵
+            #    这一步的逻辑是正确的，它能保证最终输出的DataFrame形状与输入完全一致。
             return processed_factor.unstack().reindex(index=factor_data.index, columns=factor_data.columns)
 
     def _print_processing_stats(self,

@@ -312,7 +312,7 @@ class FactorCalculator:
         print("    > 正在计算因子: momentum_12_1...")
         # 1. 获取收盘价
         close_df = self.factor_manager.get_factor('close').copy(deep=True)
-        close_df.ffill(axis=0, inplace=True)
+        # close_df.ffill(axis=0, inplace=True) #反驳：如果人家停牌一年，你非fill前一年的数据，那误差太大了 不行！
         # 2. 计算 T-21 (约1个月前) 的价格 与 T-252 (约1年前) 的价格之间的收益率
         #    shift(21) 获取的是约1个月前的价格
         #    shift(252) 获取的是约12个月前的价格
@@ -329,7 +329,7 @@ class FactorCalculator:
         print("    > 正在计算因子: momentum_20d...")
         close_df = self.factor_manager.get_factor('close').copy(deep=True)
         # close_df.reset_index(trading_index = self.factor_manager.data_manager.trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
-        close_df.ffill(axis=0, inplace=True)
+        # close_df.ffill(axis=0, inplace=True)
         momentum_df = close_df.pct_change(periods=20)
         return momentum_df
 
@@ -352,7 +352,7 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: volatility_120d...")
         pct_chg_df = self.factor_manager.get_factor('pct_chg').copy(deep=True)
-        pct_chg_df.fillna(0, inplace=True)
+        # pct_chg_df.fillna(0, inplace=True)
 
         rolling_std_df = pct_chg_df.rolling(window=120, min_periods=60).std()
         annualized_vol_df = rolling_std_df * np.sqrt(252)
@@ -368,7 +368,7 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: turnover_rate_monthly_mean...")
         turnover_df = self.factor_manager.get_factor('turnover_rate').copy(deep=True)
-        turnover_df.fillna(0, inplace=True)
+        # turnover_df.fillna(0, inplace=True)
 
         # 使用21个交易日近似一个月
         monthly_mean_turnover_df = turnover_df.rolling(window=21, min_periods=15).mean()

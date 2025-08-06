@@ -20,8 +20,9 @@ from data.local_data_load import load_index_daily, load_suspend_d_df
 from data.namechange_date_manager import fill_end_date_field
 from projects._03_factor_selection.config.base_config import INDEX_CODES
 from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config
-from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL, \
-    FILL_STRATEGY_ZERO, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT2
+from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL_UNLIMITED, \
+    FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
+
 from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
     calculate_rolling_beta
 from quant_lib.data_loader import DataLoader
@@ -63,8 +64,10 @@ def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
 
 def _get_nan_comment(field: str, rate: float) -> str:
     logger.info(f"field：{field}在原始raw_df 确实占比为：{rate}")
+    if field in ['delist_date']:
+        return f"{field} in 白名单，这类因子缺失率很高很正常"
     if rate >= 0.5:
-        raise f"field:{field}缺失率超过50% 必须检查"
+        raise ValueError(f'field:{field}缺失率超过50% 必须检查')
     """根据字段名称和缺失率，提供专家诊断意见"""
     if field in ['pe_ttm', 'pe', 'pb',
                  'pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
@@ -77,7 +80,7 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常现象：不需要care 多少缺失率"
     if field in ['circ_mv', 'close', 'total_mv',
                  'turnover_rate', 'open', 'high', 'low',
-                 'pre_close','amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+                 'pre_close', 'amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
@@ -116,6 +119,7 @@ class DataManager:
             self.raw_dfs = {}
             self.stock_pools_dict = None
             self.trading_dates = self.data_loader.get_trading_dates(self.backtest_start_date, self.backtest_end_date)
+            self._existence_matrix = None
 
     def prepare_basic_data(self) -> Dict[str, pd.DataFrame]:
         """
@@ -170,7 +174,7 @@ class DataManager:
         stock_pool_df_dict = {}
         stock_pool_profiles = self.config['stock_pool_profiles']
         for pool_name, pool_config in stock_pool_profiles.items():
-            product_universe = self.product_stock_pool(pool_config, pool_name)
+            product_universe = self.create_stock_pool(pool_config, pool_name)
             stock_pool_df_dict[pool_name] = product_universe
         self.stock_pools_dict = stock_pool_df_dict
 
@@ -216,14 +220,15 @@ class DataManager:
             'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
             'list_date',  # 上市日期,
+            'delist_date',  # 退市日期,用于构建标准动态股票池
 
             'open', 'high', 'low', 'pre_close',  # 为了计算次日是否一字马涨停
-            'pe_ttm','ps_ttm',   # 懒得写calcu 直接在这里生成就好
+            'pe_ttm', 'ps_ttm',  # 懒得写calcu 直接在这里生成就好
         ])
-        #鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
-        #解决办法：
+        # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
+        # 解决办法：
         # 我决定 这不需要了，自行在factor_calculator里面 自定义_calcu—函数 更清晰！
-        #最新解决办法 加一个cal_require_base_fields_from_daily标识就可以了
+        # 最新解决办法 加一个cal_require_base_fields_from_daily标识就可以了
         target_factors_for_evaluation = self.config['target_factors_for_evaluation']
         required_fields.update(self.get_cal_base_factors(target_factors_for_evaluation['fields']))
 
@@ -255,6 +260,52 @@ class DataManager:
 
                 if negative_ratio > 0:
                     print(f"    警告: {field_name} 存在 {negative_ratio:.2%} 的非正值")
+
+    # ok 这支股票在这一天是否已上市且未退市_df
+    def build_existence_matrix(self) -> pd.DataFrame:
+        """
+        根据每日更新的上市/退市日期面板，构建每日“存在性”矩阵。
+        """
+        logger.info("    正在构建股票“存在性”矩阵..")
+        # 1. 获取作为输入的上市和退市日期面板
+        list_date_panel = self.raw_dfs.get('list_date')
+        delist_date_panel = self.raw_dfs.get('delist_date')
+
+        if list_date_panel is None or delist_date_panel is None:
+            raise ValueError("缺少'list_date'或'delist_date'面板数据，无法构建存在性矩阵。")
+
+        # 2. 【核心】向量化构建布尔掩码 (Boolean Masks)
+
+        # a. 创建一个“基准日期”矩阵，用于比较
+        #    该矩阵的每个单元格[date, stock]的值，就是该单元格的日期'date'
+        #    这允许我们将每个单元格的“当前日期”与它的上市/退市日期进行比较
+        dates_matrix = pd.DataFrame(
+            data=np.tile(list_date_panel.index.values, (len(list_date_panel.columns), 1)).T,
+            index=list_date_panel.index,
+            columns=list_date_panel.columns
+        )
+
+        # b. 构建“是否已上市”的掩码 (after_listing_mask)
+        #    直接比较两个相同形状的DataFrame
+        #    如果 当前日期 >= 上市日期, 则为True
+        after_listing_mask = (dates_matrix >= list_date_panel)
+
+        # c. 构建“是否未退市”的掩码 (before_delisting_mask)
+        #    同样，先用一个遥远的未来日期填充NaT（未退市的情况）
+        future_date = pd.Timestamp('2200-01-01')
+        delist_dates_filled = delist_date_panel.fillna(future_date)
+
+        #    如果 当前日期 < 退市日期, 则为True
+        before_delisting_mask = (dates_matrix < delist_dates_filled)
+
+        # 4. 合并掩码，得到最终的“存在性”矩阵
+        #    一个股票当天“存在”，当且仅当它“已上市” AND “未退市”
+        existence_matrix = after_listing_mask & before_delisting_mask
+
+        logger.info("    股票“存在性”矩阵构建完毕。")
+        # 建议将此矩阵缓存起来，因为它在一次回测中是不变的
+        self._existence_matrix = existence_matrix
+        return existence_matrix
 
     def build_tradeable_matrix_by_suspend_resume(
             self,
@@ -448,6 +499,49 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_ST状态(判定来自于name的变化历史)_filter', aligned_universe)
 
         return aligned_universe
+
+    # ok
+    #
+    def _filter_by_existence(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        【V3.0-优化版】基于预先构建好的“存在性”矩阵，进行最高效的过滤。
+        此过滤器同时处理了“未上市”和“已退市”两种情况，是存在性检验的唯一入口。
+        """
+        logger.info("    应用统一的存在性过滤 (上市 & 退市)...")
+
+        # 1. 获取或构建权威的存在性矩阵 (应该已被缓存)
+        #    这个矩阵已经包含了所有上市/退市的完整信息。
+        if self._existence_matrix is None:
+            self._existence_matrix = self.build_existence_matrix()
+
+        existence_matrix = self._existence_matrix
+
+        # 2. 【核心】应用T-1原则
+        #    将整个“存在性”状态矩阵向前移动一天。
+        #    这样在T日决策时，使用的就是T-1日该股票是否存在的信息。
+        existence_mask_shifted = existence_matrix.shift(1, fill_value=False)
+
+        # 3. 安全对齐并应用过滤器
+        #    fill_value=False 表示，如果一个股票在您的基础池中，
+        #    但不在我们的存在性矩阵的考虑范围内，我们默认它不存在。
+        aligned_pool, aligned_existence_mask = stock_pool_df.align(
+            existence_mask_shifted,
+            join='left',
+            axis=None,
+            fill_value=False
+        )
+
+        filtered_pool = aligned_pool & aligned_existence_mask
+
+        # 4. 统计日志
+        original_count = stock_pool_df.sum().sum()
+        filtered_count = filtered_pool.sum().sum()
+        delisted_removed_count = original_count - filtered_count
+        logger.info(
+            f"      existence上市退市股票过滤(: 在整个回测期间，共移除了 {delisted_removed_count:.0f} 个'已退市'的股票次（股票累计非existence天数）")
+        self.show_stock_nums_for_per_day('by_统一存在性_filter', filtered_pool)
+
+        return filtered_pool
 
     # 适配停经历复牌事件的可交易股票池 ok
     def _filter_tradeable_matrix_by_suspend_resume(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
@@ -656,9 +750,9 @@ class DataManager:
         # print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
         return components_df
 
-    # ok 已经解决前视偏差
+    # ok 已经解决前视偏差 在于：available_components = components_df[components_df['trade_date'] < date]
     def _build_dynamic_index_universe(self, stock_pool_df, index_code: str) -> pd.DataFrame:
-        """构建动态指数股票池 (修复前视偏差) 核心：available_components = components_df[components_df['trade_date'] < date]"""
+        """构建动态指数股票池 """
         start_date = self.config['backtest']['start_date']
         end_date = self.config['backtest']['end_date']
 
@@ -810,7 +904,7 @@ class DataManager:
         return result
 
     # ok #ok
-    def product_stock_pool(self, stock_pool_config_profile, pool_name):
+    def create_stock_pool(self, stock_pool_config_profile, pool_name):
         """
                 构建动态股票池
                 Returns:
@@ -823,6 +917,10 @@ class DataManager:
 
         final_stock_pool_df = self.raw_dfs['close'].notna()  # close 有值的地方 ：true
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
+        # 【第一道防线：存在性过滤 - 必须置于最前！】
+        # -------------------------------------------------------------------------
+        if stock_pool_config_profile.get('remove_not_existence', True):
+            final_stock_pool_df = self._filter_by_existence(final_stock_pool_df)
         # 第二步：各种过滤！
         # --基础过滤 指数成分股过滤（如果启用）
         index_config = stock_pool_config_profile.get('index_filter', {})
@@ -865,17 +963,20 @@ class DataManager:
 
         return final_stock_pool_df
 
-    def get_which_field_of_factor_definition_by_factor_name(self, factor_name,which_field):
+    def get_which_field_of_factor_definition_by_factor_name(self, factor_name, which_field):
         cur_factor_definition = self.get_factor_definition(factor_name)
         return cur_factor_definition[which_field]
-    def get_factor_definition_df(self):
-        return  pd.DataFrame(self.config['factor_definition'])
-    def get_factor_definition(self,factor_name):
-        all_df = self.get_factor_definition_df()
-        return  all_df[all_df['name'] == factor_name]
 
-def align_one_df_by_stock_pool_and_fill(factor_name, df,
-                                        stock_pool_df: pd.DataFrame = None):
+    def get_factor_definition_df(self):
+        return pd.DataFrame(self.config['factor_definition'])
+
+    def get_factor_definition(self, factor_name):
+        all_df = self.get_factor_definition_df()
+        return all_df[all_df['name'] == factor_name]
+
+
+def align_one_df_by_stock_pool_and_fill(factor_name=None, df=None,
+                                        stock_pool_df: pd.DataFrame = None, _existence_matrix: pd.DataFrame = None):
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
@@ -896,19 +997,21 @@ def align_one_df_by_stock_pool_and_fill(factor_name, df,
 
     logger.info(f"  > 正在对因子 '{factor_name}' 应用 '{strategy}' 填充策略...")
 
-    if strategy == FILL_STRATEGY_FFILL:
+    if strategy == FILL_STRATEGY_FFILL_UNLIMITED:
         # 前向填充：适用于价格、市值、估值、行业等
         # 这些值在股票不交易时，应保持其最后一个已知值
         return aligned_df.ffill()
 
-    elif strategy == FILL_STRATEGY_ZERO:
+    elif strategy == FILL_STRATEGY_CONDITIONAL_ZERO:
         # 填充为0：适用于成交量、换手率等交易行为数据
         # 不交易的日子，这些指标的真实值就是0
-        return aligned_df.fillna(0)
-    elif strategy == FILL_STRATEGY_FFILL_LIMIT2:
-        # 填充为0：适用于成交量、换手率等交易行为数据
-        # 不交易的日子，这些指标的真实值就是0
-        return aligned_df.ffill(limit=2)
+        if _existence_matrix is not None:
+            return aligned_df.where(_existence_matrix, 0)  # 数据为nan，但是一看 是不可交易的（停牌），停牌导致的 我认为可填0
+        return aligned_df  # 不填充~
+    elif strategy == FILL_STRATEGY_FFILL_LIMIT_5:
+        return aligned_df.ffill(limit=5)
+    elif strategy == FILL_STRATEGY_FFILL_LIMIT_65:
+        return aligned_df.ffill(limit=65)
 
     elif strategy == FILL_STRATEGY_NONE:
         # 不填充：适用于计算出的技术因子
@@ -929,7 +1032,6 @@ def create_data_manager(config_path: str) -> DataManager:
         DataManager实例
     """
     return DataManager(config_path)
-
 
 # if __name__ == '__main__':
 #     # dataManager_temp = DataManager(

@@ -107,8 +107,12 @@ class FactorSynthesizer:
         from functools import reduce
         composite_factor_df = reduce(lambda left, right: left.add(right, fill_value=0), processed_factors)
 
-        # 对最终结果再做一次标准化，使其成为一个标准的风格因子暴露
-        composite_factor_df = self.processor._standardize(composite_factor_df)
+        # 对最终结果再做一次标准化，使其成为一个标准的风格因子暴露 全市场
+        ##
+        # 子因子层面 (Stage 1)：分行业处理，目的是深入到每个行业内部，剔除噪音，挖掘纯粹的相对强弱。
+        #
+        # 复合因子层面 (Stage 2)：全市场处理，目的是将这些纯粹的信号整合后，进行全局定标，使其成为一个可以跨行业直接比较、并用于最终投资组合构建的标准化风格暴露。#
+        composite_factor_df = self.processor._standardize_robust(composite_factor_df)
 
         print(f"\n复合因子 '{composite_factor_name}' 合成成功！")
 
