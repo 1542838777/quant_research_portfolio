@@ -1,6 +1,7 @@
 import random
 
 import pandas as pd
+from vectorbt.utils.docs import to_doc
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 
@@ -27,11 +28,11 @@ def load_cashflow_df():
     cashflow_df['end_date'] = pd.to_datetime(cashflow_df['end_date'])
     cashflow_df = cashflow_df.sort_values(by=['ts_code', 'end_date']).drop_duplicates(subset=['ts_code', 'end_date'])
     #随机取5个股票的df
-    ts_codes = random.sample(cashflow_df['ts_code'].unique().tolist(),5)
-    ts_codes.append('003031.SZ')
-    df = cashflow_df[cashflow_df['ts_code'].isin(ts_codes)]
-    df  =df[['ann_date','ts_code','end_date','n_cashflow_act']]
-    return df
+    # ts_codes = random.sample(cashflow_df['ts_code'].unique().tolist(),5)
+    # ts_codes.append('003031.SZ')
+    # df = cashflow_df[cashflow_df['ts_code'].isin(ts_codes)]
+    cashflow_df  =cashflow_df[['ann_date','ts_code','end_date','n_cashflow_act']]#todo 考虑 过滤会有问题吗 ，我只是为了节省内存
+    return cashflow_df
 
 
 

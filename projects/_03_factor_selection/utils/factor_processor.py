@@ -57,6 +57,7 @@ class FactorProcessor:
     # ok
     def process_factor(self,
                        target_factor_df: pd.DataFrame,
+                       industry_df: pd.DataFrame,
                        target_factor_name: str,
                        auxiliary_dfs,
                        neutral_dfs,
@@ -79,7 +80,7 @@ class FactorProcessor:
 
         # 步骤1：去极值
         # print("2. 去极值处理...")
-        processed_target_factor_df = self.winsorize(processed_target_factor_df)
+        processed_target_factor_df = self.winsorize_robust(processed_target_factor_df,industry_df)
 
         if not neutralize_after_standardize:
             # 步骤2：中性化
@@ -89,10 +90,10 @@ class FactorProcessor:
             else:
                 logger.info("2. 跳过中性化处理...")
             # 步骤3：标准化
-            processed_target_factor_df = self._standardize(processed_target_factor_df)
+            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,industry_df)
         else:
             # 步骤2：标准化
-            processed_target_factor_df = self._standardize(processed_target_factor_df)
+            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,industry_df)
             # 步骤3：中性化
             if self.preprocessing_config.get('neutralization', {}).get('enable', False):
                 # print("3. 中性化处理...")
@@ -105,48 +106,150 @@ class FactorProcessor:
 
         return processed_target_factor_df
 
-    # ok#okdiff
-    def winsorize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
+    # # ok#ok
+    # def winsorize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
+    #     """
+    #     去极值处理
+    #
+    #     Args:
+    #         factor_data: 因子数据
+    #
+    #     Returns:
+    #         去极值后的因子数据
+    #     """
+    #     winsorization_config = self.preprocessing_config.get('winsorization', {})
+    #     method = winsorization_config.get('method', 'mad')
+    #
+    #     processed_factor = factor_data.copy()
+    #
+    #     if method == 'mad':
+    #         # 中位数绝对偏差法 (Median Absolute Deviation)
+    #         threshold = winsorization_config.get('mad_threshold', 5)
+    #         # print(f"  使用MAD方法，阈值倍数: {threshold}")
+    #
+    #         # 向量化计算每日的中位数和MAD
+    #         median = factor_data.median(axis=1)
+    #         mad = (factor_data.sub(median, axis=0)).abs().median(axis=1)
+    #
+    #         # 向量化计算每日的上下边界
+    #         upper_bound = median + threshold * mad
+    #         lower_bound = median - threshold * mad
+    #
+    #         # 向量化clip，axis=0确保按行广播边界
+    #         return factor_data.clip(lower_bound, upper_bound, axis=0)
+    #     elif method == 'quantile':
+    #         # 分位数法
+    #         quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
+    #         print(f"  使用分位数方法，范围: {quantile_range}")
+    #         # 向量化计算每日的分位数边界
+    #         bounds = factor_data.quantile(q=quantile_range, axis=1).T  # .T转置是为了方便后续clip
+    #         lower_bound = bounds.iloc[:, 0]
+    #         upper_bound = bounds.iloc[:, 1]
+    #         return factor_data.clip(lower_bound, upper_bound, axis=0)
+    #
+    #     return processed_factor
+
+    def _winsorize_mad_series(self, series: pd.Series, threshold: float) -> pd.Series:
         """
-        去极值处理
-        
+        【辅助函数】对单个Series(如单日单行业)进行MAD去极值。
+        """
+        # 1. 剔除NaN值进行计算
+        valid_series = series.dropna()
+        if valid_series.empty:
+            return series
+
+        # 2. 计算中位数和MAD
+        median = valid_series.median()
+        # MAD (Median Absolute Deviation from the sample's median)
+        mad = (valid_series - median).abs().median()
+
+        # 3. [核心修正] 处理零MAD问题
+        # 如果MAD为0，说明大部分数据点都等于中位数，此时不应进行去极值操作，否则会把所有值变成中位数。
+        if mad == 0:
+            return series  # 直接返回原序列
+
+        # 4. [核心修正] 引入统计学校正因子1.4826
+        # 1.4826 是高斯分布(正态分布)MAD与标准差之间的换算系数。
+        # 这样做使得 mad_threshold=3 大致等价于 3-sigma。
+        const = 1.4826
+        upper_bound = median + threshold * const * mad
+        lower_bound = median - threshold * const * mad
+
+        # 5. 使用clip进行去极值
+        return series.clip(lower_bound, upper_bound)
+
+    def _winsorize_quantile_series(self, series: pd.Series, quantile_range: list) -> pd.Series:
+        """
+        【辅助函数】对单个Series进行分位数去极值。
+        """
+        valid_series = series.dropna()
+        if valid_series.empty:
+            return series
+
+        lower_q, upper_q = min(quantile_range), max(quantile_range)
+        lower_bound = valid_series.quantile(lower_q)
+        upper_bound = valid_series.quantile(upper_q)
+
+        return series.clip(lower_bound, upper_bound)
+
+    def winsorize_robust(self, factor_data: pd.DataFrame, industry_df: pd.DataFrame = None) -> pd.DataFrame:
+        """
+         去极值处理函数。
+        支持全市场或分行业的MAD和分位数法。
         Args:
-            factor_data: 因子数据
-            
+            factor_data (pd.DataFrame): 因子数据 (index=date, columns=stock)。
+            industry_df (pd.DataFrame, optional): 行业分类数据 (格式同上)。
+                                                  如果提供此参数，则自动执行分行业去极值。
+                                                  默认为 None，执行全市场去极值。
+
         Returns:
-            去极值后的因子数据
+            pd.DataFrame: 去极值后的因子数据。
         """
         winsorization_config = self.preprocessing_config.get('winsorization', {})
         method = winsorization_config.get('method', 'mad')
 
-        processed_factor = factor_data.copy()
+        if industry_df is None:
+            # --- 场景一：全市场去极值 (你的原始逻辑) ---
+            print("  执行全市场去极值...")
+            if method == 'mad':
+                threshold = winsorization_config.get('mad_threshold', 5)
+                # 对每一天(每一行)应用MAD去极值辅助函数
+                return factor_data.apply(self._winsorize_mad_series, axis=1, threshold=threshold)
+            elif method == 'quantile':
+                quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
+                return factor_data.apply(self._winsorize_quantile_series, axis=1, quantile_range=quantile_range)
+        else:
+            # --- 场景二：分行业去极值 (高质量做法) ---
+            print("  执行分行业去极值...")
+            # 1. 确保因子和行业数据对齐
+            factor_aligned, industry_aligned = factor_data.align(industry_df, join='inner', axis=1)
 
-        if method == 'mad':
-            # 中位数绝对偏差法 (Median Absolute Deviation)
-            threshold = winsorization_config.get('mad_threshold', 5)
-            # print(f"  使用MAD方法，阈值倍数: {threshold}")
+            # 2. 将数据堆叠成长格式，便于按天和行业分组
+            factor_long = factor_aligned.stack(dropna=False).rename('factor')
+            industry_long = industry_aligned.stack(dropna=False).rename('industry')
+            combined = pd.concat([factor_long, industry_long], axis=1)
 
-            # 向量化计算每日的中位数和MAD
-            median = factor_data.median(axis=1)
-            mad = (factor_data.sub(median, axis=0)).abs().median(axis=1)
+            # 3. [核心修正] 使用更直接的 groupby().transform()
+            # 我们直接按照索引的第0层(日期)和'industry'列进行分组
+            if method == 'mad':
+                threshold = winsorization_config.get('mad_threshold', 5)
+                # transform会返回一个与原始combined['factor']形状和索引完全相同的Series
+                processed_factor = combined.groupby([pd.Grouper(level=0), 'industry'])['factor'].transform(
+                    self._winsorize_mad_series, threshold=threshold
+                )
+            elif method == 'quantile':
+                quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
+                processed_factor = combined.groupby([pd.Grouper(level=0), 'industry'])['factor'].transform(
+                    self._winsorize_quantile_series, quantile_range=quantile_range
+                )
+            else:
+                return factor_data
 
-            # 向量化计算每日的上下边界
-            upper_bound = median + threshold * mad
-            lower_bound = median - threshold * mad
+            # 4. 将处理后的长格式数据转回宽格式矩阵 (现在可以完美工作了)
+            # 因为processed_factor的索引是(日期, 股票代码)，与原始长表一致
+            return processed_factor.unstack().reindex(index=factor_data.index, columns=factor_data.columns)
 
-            # 向量化clip，axis=0确保按行广播边界
-            return factor_data.clip(lower_bound, upper_bound, axis=0)
-        elif method == 'quantile':
-            # 分位数法
-            quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
-            print(f"  使用分位数方法，范围: {quantile_range}")
-            # 向量化计算每日的分位数边界
-            bounds = factor_data.quantile(q=quantile_range, axis=1).T  # .T转置是为了方便后续clip
-            lower_bound = bounds.iloc[:, 0]
-            upper_bound = bounds.iloc[:, 1]
-            return factor_data.clip(lower_bound, upper_bound, axis=0)
-
-        return processed_factor
+        return factor_data
 
     # ok
     def _neutralize(self,
@@ -330,6 +433,92 @@ class FactorProcessor:
             return processed_factor
 
         raise RuntimeError("请指定标准化方式")
+
+    def _zscore_series(self, series: pd.Series) -> pd.Series:
+        """【辅助函数】对单个Series(如单日全市场或单日单行业)进行Z-Score标准化"""
+        valid_series = series.dropna()
+        if valid_series.empty:
+            return series
+
+        mean = valid_series.mean()
+        std = valid_series.std()
+
+        # [核心边界处理] 如果标准差为0，说明所有值都一样，标准化后应为0
+        if std == 0:
+            # 创建一个与输入series相同索引的全0 Series
+            return pd.Series(0.0, index=series.index)
+
+        return (series - mean) / std
+
+    def _rank_series(self, series: pd.Series) -> pd.Series:
+        """【辅助函数】对单个Series进行排序标准化 (转换为[-1, 1]区间)"""
+        valid_series = series.dropna()
+        if valid_series.empty:
+            return series
+
+        # [核心边界处理] 如果只有一个有效值，其排名无意义，设为0
+        if len(valid_series) <= 1:
+            # 创建一个与输入series相同索引的全0 Series
+            return pd.Series(0.0, index=series.index)
+
+        # pct=True 将排名转换为 0 到 1 的百分位
+        ranks_pct = series.rank(pct=True)
+        # 将 [0, 1] 区间线性映射到 [-1, 1] 区间
+        return 2 * ranks_pct - 1
+
+    # --------------------------------------------------------------------------
+    #  主函数 (Main Function) - 负责决策与调度
+    # --------------------------------------------------------------------------
+
+    def _standardize_robust(self, factor_data: pd.DataFrame, industry_df: pd.DataFrame = None) -> pd.DataFrame:
+        """
+        因子标准化函数。
+        支持全市场或分行业的Z-Score和排序标准化。
+
+        Args:
+            factor_data (pd.DataFrame): 因子数据 (index=date, columns=stock)。
+            industry_df (pd.DataFrame, optional): 行业分类数据 (格式同上)。
+                                                  如果提供此参数，则自动执行分行业标准化。
+                                                  默认为 None，执行全市场标准化。
+
+        Returns:
+            pd.DataFrame: 标准化后的因子数据。
+        """
+        standardization_config = self.preprocessing_config.get('standardization', {})
+        method = standardization_config.get('method', 'zscore')
+
+        # 选择要使用的计算函数
+        if method == 'zscore':
+            calc_func = self._zscore_series
+        elif method == 'rank':
+            calc_func = self._rank_series
+        else:
+            raise ValueError(f"未知的标准化方法: {method}")
+
+        if industry_df is None:
+            # --- 场景一：全市场标准化 ---
+            print("  执行全市场标准化...")
+            # 对每一天(每一行)应用指定的标准化辅助函数
+            return factor_data.apply(calc_func, axis=1)
+        else:
+            # --- 场景二：分行业标准化 ---
+            print("  执行分行业标准化...")
+            # 1. 确保因子和行业数据对齐
+            factor_aligned, industry_aligned = factor_data.align(industry_df, join='inner', axis=1)
+
+            # 2. 将数据堆叠成长格式，便于按天和行业分组
+            factor_long = factor_aligned.stack(dropna=False).rename('factor')
+            industry_long = industry_aligned.stack(dropna=False).rename('industry')
+            combined = pd.concat([factor_long, industry_long], axis=1).dropna(subset=['factor'])
+
+            # 3. 按天(level=0)分组，在每天内部再按'industry'分组，对每个[天,行业]的小series进行处理
+            processed_factor = combined.groupby(level=0).apply(
+                lambda day_df: day_df.groupby('industry')['factor'].transform(calc_func)
+            )
+
+            # 4. 将处理后的长格式数据转回宽格式矩阵
+            #    注意：要reindex回原始的factor_data的索引和列，以保证形状完全一致
+            return processed_factor.unstack().reindex(index=factor_data.index, columns=factor_data.columns)
 
     def _print_processing_stats(self,
                                 original_factor: pd.DataFrame,

@@ -9,7 +9,7 @@ import yaml
 from projects._03_factor_selection.config.config_file.local_config_file_definition import \
     pool_for_massive_test_CSI800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
-    CSI1000_more_filter_profile
+    CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20240701','20250710')
 self_periods = ('20220101','20250710')
@@ -38,6 +38,16 @@ fast_mode = {
     'mode': 'fast',
     'pools': {
         **CSI300_none_FFF_most_basic_profile
+    },
+    'period':fast_periods,
+    'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
+}
+
+fast_mode_two_pools = {
+    'mode': 'fast',
+    'pools': {
+        **CSI300_none_FFF_most_basic_profile,
+        **CSI500_none_FFF_most_basic_profile
     },
     'period':fast_periods,
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
@@ -82,7 +92,7 @@ def check_backtest_periods(start_date, end_date):
     if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):
         raise ValueError("回测时间太短")
 
-trans_pram = 东北证券_CSI300_more_filter_mode
+trans_pram = fast_mode_two_pools
 
 
 def _load_local_config(config_path: str) -> Dict[str, Any]:

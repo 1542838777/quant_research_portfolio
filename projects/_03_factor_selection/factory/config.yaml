@@ -2,35 +2,37 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-    # === 规模 (Size) ===
-    - 'market_cap_log'
+#    # === 规模 (Size) ===
+#    - 'market_cap_log'
+#
+#    # === 价值 (Value) ===
+#    - 'bm_ratio'
+#    - 'ep_ratio'
+#    - 'sp_ratio'
+#    - 'cfp_ratio'
+#
+#    # === 质量 (Quality) ===
+#    - 'roe_ttm'
+#    - 'gross_margin_ttm'
+#    - 'debt_to_assets'
+#
+#    # === 成长 (Growth) ===
+#    - 'net_profit_growth_yoy'
+#    - 'revenue_growth_yoy'
+#
+#    # === 动量 (Momentum) ===
+#    - 'momentum_12_1'
+#    - 'momentum_20d'
+#
+#    # === 风险 (Risk / Volatility) ===
+#    - 'beta'
+#    - 'volatility_120d'
+#
+#    # === 流动性 (Liquidity) ===
+#    - 'turnover_rate_monthly_mean'
+#    - 'liquidity_amihud'
+      - 'value_composite'
 
-    # === 价值 (Value) ===
-    - 'bm_ratio'
-    - 'ep_ratio'
-    - 'sp_ratio'
-    - 'cfp_ratio'
-
-    # === 质量 (Quality) ===
-    - 'roe_ttm'
-    - 'gross_margin_ttm'
-    - 'debt_to_assets'
-
-    # === 成长 (Growth) ===
-    - 'net_profit_growth_yoy'
-    - 'revenue_growth_yoy'
-
-    # === 动量 (Momentum) ===
-    - 'momentum_12_1'
-    - 'momentum_20d'
-
-    # === 风险 (Risk / Volatility) ===
-    - 'beta'
-    - 'volatility_120d'
-
-    # === 流动性 (Liquidity) ===
-    - 'turnover_rate_monthly_mean'
-    - 'liquidity_amihud'
 # 回测时间范围
 backtest:
   start_date: '2022-01-01'

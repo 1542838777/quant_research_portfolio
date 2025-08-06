@@ -162,6 +162,57 @@ def download_cashflow():
         print("现金流已存在，跳过下载。")
 
 
+#已有数据'20100101','20250711'
+def download_income():
+    basic_path = LOCAL_PARQUET_DATA_DIR / 'income.parquet'
+
+    if not basic_path.exists():
+        print("--- 正在下载利润信息 ---")
+        #获取报告期日list
+        reporting_period_day_list = get_reporting_period_day_list('20100101','20250711')
+        all_data_list = []
+        for reporting_period_day in reporting_period_day_list:
+            df = call_pro_tushare_api('income_vip', period=reporting_period_day)
+            all_data_list.append(df)
+
+        # 合并所有季度数据
+        final_df = pd.concat(all_data_list, ignore_index=True)
+        # 关键：优先保留 update_flag == 1 的最新记录
+        final_df = final_df.sort_values(['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False])
+        final_df = final_df.drop_duplicates(subset=['ts_code', 'end_date'], keep='first')# todo remind 注意
+        final_df.to_parquet(basic_path)
+        print('利润表保存完毕')
+    else:
+        print("利润表已存在，跳过下载。")
+
+#已有数据'20100101','20250711'
+def download_fina_indicator():
+    basic_path = LOCAL_PARQUET_DATA_DIR / 'fina_indicator.parquet'
+
+    if not basic_path.exists():
+        print("--- 正在下载财务指标数据 ---")
+        #获取报告期日list
+        reporting_period_day_list = get_reporting_period_day_list('20100101','20250711')
+        all_data_list = []
+        for index,reporting_period_day in enumerate(reporting_period_day_list):
+            print(f"处理第{index+1}/{len(reporting_period_day_list)}个季度-财务指标数据")
+            df = call_pro_tushare_api('fina_indicator_vip', period=reporting_period_day)
+            #只需要当前period_day的
+            df['end_date'] = pd.to_datetime(df['end_date'])
+            df = df[df['end_date'] == pd.to_datetime(reporting_period_day)]
+            all_data_list.append(df)
+
+        # 合并所有季度数据
+        final_df = pd.concat(all_data_list, ignore_index=True)
+        # 关键：优先保留 update_flag == 1 的最新记录
+        final_df = final_df.sort_values(['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False])
+        final_df = final_df.drop_duplicates(subset=['ts_code', 'end_date'], keep='first')# todo remind 注意
+        final_df.to_parquet(basic_path)
+        print('财务指标数据-保存完毕')
+    else:
+        print("财务指标数据表已存在，跳过下载。")
+
+
 def download_stock_change_name_details():
     # 在 downloader.py 的“下载配套数据”部分，增加以下逻辑
 
@@ -229,7 +280,7 @@ if __name__ == '__main__':
             'daily': {'func': 'daily', 'params': {}, 'mode': 'batch_stock'},
             'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'},
             'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'},
-            'fina_indicator_vip': {'func': 'fina_indicator_vip', 'params': {},
+            'fina_indicator': {'func': 'fina_indicator', 'params': {},
                                    'mode': 'batch_stock'},
 
         }
@@ -275,7 +326,7 @@ if __name__ == '__main__':
                 if all_data_list:
                     final_df = pd.concat(all_data_list, ignore_index=True)
                     if not final_df.empty:
-                        if name == 'fina_indicator_vip':  # 只有他源数据有问题，会有重复的
+                        if name == 'fina_indicator':  # 只有他源数据有问题，会有重复的
                             final_df.sort_values(by='ann_date', ascending=True, inplace=True)
                             final_df.drop_duplicates(subset=['ts_code', 'end_date'], keep='last', inplace=True)
                         else:

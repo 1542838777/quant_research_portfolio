@@ -92,6 +92,7 @@ CSI300_none_TFF_most_basic_profile = make_pool_profile('institutional_stock_pool
 CSI300_none_FTF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,True,False, 0, 0)
 CSI300_none_FFT_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,False,True, 0, 0)
 CSI300_none_FFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,False,False, 0, 0)
+CSI500_none_FFF_most_basic_profile = make_pool_profile('microstructure_stock_pool', True, INDEX_CODES['ZZ500'],False,False,False, 0, 0)
 CSI500_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000905.SH', True,True,True,0, 0)
 # 用于我需要在最真实的环境，交易，需要必须要过滤流动差劲的
 pool_for_massive_test_CSI800_profile = make_pool_profile('institutional_stock_pool', True, '000905.SH', True,True,True,0.1, 0.05)

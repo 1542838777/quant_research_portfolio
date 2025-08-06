@@ -77,7 +77,7 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常现象：不需要care 多少缺失率"
     if field in ['circ_mv', 'close', 'total_mv',
                  'turnover_rate', 'open', 'high', 'low',
-                 'pre_close'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+                 'pre_close','amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
@@ -331,7 +331,7 @@ class DataManager:
             self,
     ) -> pd.DataFrame:
         """
-         【最终无懈可击版】根据namechange历史，重建每日“已知风险”状态矩阵。
+         根据namechange历史，重建每日“已知风险”状态矩阵。
          此版本通过searchsorted隐式处理初始状态，逻辑最简且结果正确。
          """
         if self.st_matrix is not None:

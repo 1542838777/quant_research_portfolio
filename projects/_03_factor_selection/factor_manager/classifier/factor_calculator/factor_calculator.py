@@ -181,7 +181,7 @@ class FactorCalculator:
         # Reindex: 将稀疏的公告日数据，扩展到全部交易日上。非公告日的TTM值此时为NaN
         # ffill: 用最近一次已知的TTM值，填充未来的交易日。
         #      这完美模拟了真实情况：一个财报的效力会持续，直到下一个新财报出来为止。
-        cashflow_ttm_daily = cashflow_ttm_wide.reindex(self.factor_manager.data_manager.trading_dates()).ffill()
+        cashflow_ttm_daily = cashflow_ttm_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
 
         print("--- 因子计算完成 ---")
         return cashflow_ttm_daily

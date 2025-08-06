@@ -1,4 +1,3 @@
-
 ##
 # 为什么合成时必须“先中性化，再标准化”？我们再次回顾这个核心问题，因为它至关重要。目标: 等权合并。我们希望每个细分因子（如
 # bm_ratio, ep_ratio）在最终的复合价值因子中贡献相等的影响力。问题: 不同的因子在经过中性化后，其残差的波动率（标准差）是不相等的。一个与风险因子相关性高的因子，其中性化后的残差波动会很小。解决方案: 必须在合并之前，对每一个中性化后的残差进行标准化，强行将它们的波动率都统一到1。只有这样，后续的“等权相加”才是真正意义上的“等权”#
@@ -14,7 +13,7 @@ from quant_lib import logger
 
 
 class FactorSynthesizer:
-    def __init__(self, factor_manager,factor_analyzer):
+    def __init__(self, factor_manager, factor_analyzer):
         """
         初始化因子合成器。
         Args:
@@ -48,22 +47,24 @@ class FactorSynthesizer:
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
         style_category = self.factor_manager.get_style_category(factor_name)
 
-        #加载必要数据
+        # 加载必要数据
 
         auxiliary_shift_dfs_base_own_stock_pools = \
-        self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
-            stock_pool_name]
+            self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
+                stock_pool_name]
         prepare_for_neutral_shift_base_own_stock_pools_dfs = \
             self.factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
                 stock_pool_name]
-         
+
+        industry_df = self.factor_manager.data_manager.raw_dfs['industry']
 
         processed_df = self.processor.process_factor(
             target_factor_df=factor_df,
+            industry_df=industry_df,
             target_factor_name=factor_name,
             auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs,
-            style_category=style_category,neutralize_after_standardize=False)
+            style_category=style_category, neutralize_after_standardize=False)
         return processed_df
 
     def synthesize_composite_factor(self,
@@ -112,10 +113,11 @@ class FactorSynthesizer:
         print(f"\n复合因子 '{composite_factor_name}' 合成成功！")
 
         return composite_factor_df
+
+
 from pathlib import Path
 
 if __name__ == '__main__':
-
     # --- 如何在你的主流程中使用 ---
     # 1. 实例化你的因子处理器 (假设它叫 'fp')
 
@@ -128,9 +130,9 @@ if __name__ == '__main__':
     data_manager.prepare_basic_data()
 
     factor_manager = FactorManager(data_manager)
-    factor_analyzer = FactorAnalyzer(factor_manager= factor_manager)
+    factor_analyzer = FactorAnalyzer(factor_manager=factor_manager)
 
-    synthesizer = FactorSynthesizer(factor_manager,factor_analyzer)
+    synthesizer = FactorSynthesizer(factor_manager, factor_analyzer)
 
     # 3. 定义你要合成的因子列表
     value_factors = list(synthesizer.FACTOR_DIRECTIONS.keys())
@@ -141,23 +143,26 @@ if __name__ == '__main__':
     factor_name = factor_manager.data_manager.config['target_factors_for_evaluation']['fields'][0]
     value_composite_df = synthesizer.synthesize_composite_factor(factor_name, value_factors)
     # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
-    #准备数据
+    # 准备数据
     stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
     close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-                                                                                 need_shift=False)[
+                                                                                            need_shift=False)[
         stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-    prepare_for_neutral_shift_base_own_stock_pools_dfs = factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
-            stock_pool_name]
+    prepare_for_neutral_shift_base_own_stock_pools_dfs = \
+    factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
+        stock_pool_name]
     circ_mv_shift_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
         factor_name='circ_mv',
         need_shift=True)[stock_pool_name]
-    ic_series_periods_dict, ic_stats_periods_dict,quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,factor_returns_series_periods_dict, fm_stat_results_periods_dict =     factor_analyzer.core_three_test(value_composite_df, factor_name,close_df,
-                                prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df)
-    #landing 存储宝贵的测试结果
-    category = data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,'style_category').iloc[0]
-    overrall_summary_stats = factor_analyzer.landing_for_core_three_analyzer_result(factor_name,category, "standard",
-                                                                     ic_series_periods_dict, ic_stats_periods_dict,
-                                                                     quantile_daily_returns_for_plot_dict,
-                                                                     quantile_stats_periods_dict,
-                                                                     factor_returns_series_periods_dict,
-                                                                     fm_stat_results_periods_dict)
+    ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict = factor_analyzer.core_three_test(
+        value_composite_df, factor_name, close_df,
+        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df)
+    # landing 存储宝贵的测试结果
+    category = data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name, 'style_category').iloc[0]
+    overrall_summary_stats = factor_analyzer.landing_for_core_three_analyzer_result(factor_name, category, "standard",
+                                                                                    ic_series_periods_dict,
+                                                                                    ic_stats_periods_dict,
+                                                                                    quantile_daily_returns_for_plot_dict,
+                                                                                    quantile_stats_periods_dict,
+                                                                                    factor_returns_series_periods_dict,
+                                                                                    fm_stat_results_periods_dict)

@@ -23,7 +23,7 @@ MISSING_STOCKS_LIST = status_d_p_stocks[filter]['ts_code'].unique().tolist()
 # 【请确认要回填的数据集】(通常与downloader.py中的任务一致)
 DATASETS_TO_BACKFILL = [
     'daily_hfq', 'margin_detail', 'stk_limit', 'daily',
-    'daily_basic', 'adj_factor', 'fina_indicator_vip'
+    'daily_basic', 'adj_factor', 'fina_indicator'
 ]
 
 # 【请确认回填的时间范围】
@@ -42,9 +42,8 @@ data_to_download_tasks = {
     # 模式: batch_stock (按股票代码分批，适用于大多数pro接口)
     'daily': {'func': 'daily', 'params': {}, 'mode': 'batch_stock'},
     'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'},
-    'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'},
-    'fina_indicator_vip': {'func': 'fina_indicator_vip', 'params': {},
-                           'mode': 'batch_stock'}
+    'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'}
+
 
 }
 
@@ -69,12 +68,7 @@ def safe_merge_and_save(year_path: Path, new_data_df: pd.DataFrame, dataset_name
 
             # 【核心】去重，保证数据唯一性。'last'会保留新下载的数据
 
-            if dataset_name == 'fina_indicator_vip':  # 只有他源数据有问题，会有重复的
-                combined_df.sort_values(by='ann_date', ascending=True, inplace=True)
-                combined_df.drop_duplicates(subset=['ts_code', 'end_date'], keep='last', inplace=True)
-            else:
-                combined_df.drop_duplicates(inplace=True)
-
+            combined_df.drop_duplicates(inplace=True)
             combined_df.to_parquet(year_path, index=False)
             print(f"    -> 合并完成。现有记录: {len(existing_df)}, 新增: {len(new_data_df)}, 合并后: {len(combined_df)}")
         else:

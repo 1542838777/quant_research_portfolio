@@ -3,22 +3,33 @@ import pandas as pd
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api
 from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d, \
-    download_cashflow
+    download_cashflow, download_income
 from quant_lib.tushare.tushare_client import TushareClient
 
 
 def get_fields_map():
     result = []
-    paths = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_indicator_vip', 'margin_detail', 'stk_limit',
+    paths = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_indicator', 'index_weights', 'margin_detail',
+             'stk_limit',
+
+             'cashflow.parquet',
+             'income.parquet',
+             'index_daily.parquet',
+             'namechange.parquet',
              'stock_basic.parquet',
+
+             'suspend_d.parquet',
              'trade_cal.parquet']
     for path in paths:
         df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
+        print(f'logic_name:{path}')
+        print(f'\t fields:{list(df.columns)}')
         result.append({
             'name': path,
-            'fields': df.columns
+            'fields': list(df.columns)
         })
     return result
+
 
 def compare_df_rows(df, index1, index2):
     """
@@ -35,11 +46,14 @@ def compare_df_rows(df, index1, index2):
     print(f"Index {index1} 与 Index {index2} 不同的列：")
     print(diff_cols)
     return diff_cols
+
+
 if __name__ == '__main__':
-    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'cashflow.parquet')
-    df['end_date'] = pd.to_datetime(df['end_date'])
-    df = df[df['end_date']>= pd.to_datetime('2025') ]
-    print(list(df.columns))
+    (get_fields_map())
+
+    # df['end_date'] = pd.to_datetime(df['end_date'])
+    # df = df[df['end_date'] >= pd.to_datetime('2025')]
+    # print(list(df.columns))
 
     ##
     #
@@ -53,7 +67,7 @@ if __name__ == '__main__':
     #        'circ_mv', 'year'],
     #       dtype='object')}, {'name': 'daily_hfq', 'fields': Index(['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close',
     #        'change', 'pct_chg', 'vol', 'amount', 'year'],
-    #       dtype='object')}, {'name': 'fina_indicator_vip', 'fields': Index(['ts_code', 'ann_date', 'end_date', 'eps', 'dt_eps', 'total_revenue_ps',
+    #       dtype='object')}, {'name': 'fina_indicator', 'fields': Index(['ts_code', 'ann_date', 'end_date', 'eps', 'dt_eps', 'total_revenue_ps',
     #        'revenue_ps', 'capital_rese_ps', 'surplus_rese_ps', 'undist_profit_ps',
     #        ...
     #        'bps_yoy', 'assets_yoy', 'eqt_yoy', 'tr_yoy', 'or_yoy', 'q_sales_yoy',

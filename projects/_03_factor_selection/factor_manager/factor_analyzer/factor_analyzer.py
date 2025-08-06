@@ -193,9 +193,13 @@ class FactorAnalyzer:
             factor_name='circ_mv',
             need_shift=True)[stock_pool_name]
 
+        industry_df = self.factor_manager.data_manager.raw_dfs['industry']
+
         # 1. 因子预处理
         target_factor_processed = self.factor_processor.process_factor(
+
             target_factor_df=target_factor_shift_df,
+            industry_df = industry_df,
             target_factor_name=target_factor_name,
             auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs,

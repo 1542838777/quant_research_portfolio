@@ -7,6 +7,7 @@ from quant_lib.config.logger_config import setup_logger
 import akshare as ak
 
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
+from quant_lib.tushare.data.downloader import download_fina_indicator
 from quant_lib.tushare.tushare_client import TushareClient
 
 # 配置日志
@@ -69,7 +70,8 @@ def compare_local_and_net():
     namechange = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'namechange.parquet')
     suspend_d = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
     stock_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
-    final_indicator_vip = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'final_indicator_vip')
+    final_indicator_vip = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'fina_indicator')
+    df = call_pro_tushare_api("fina_indicator",   end_date='20241231')
 
     for miss_ts_code in miss_ts_codes:
         net_ret = call_ts_tushare_api("pro_bar", ts_code=miss_ts_code, start_date='20180101', end_date='20250711', adj='hfq')
@@ -80,5 +82,6 @@ def compare_local_and_net():
         # print(f" miss_ts_code{miss_ts_code},net:{in_net},local_hfq_ret:{in_local_hfq},local_daily:{in_local_daily},local_daily_basic:{in_local_daily_basic}")
 
 if __name__ == '__main__':
-
-    compare_local_and_net()
+    df = call_pro_tushare_api('income_vip', period='20240930')
+    cash_df = call_pro_tushare_api('cashflow_vip', period= '20240930')
+    # compare_local_and_net()

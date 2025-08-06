@@ -75,10 +75,10 @@ PLOT_DPI = 100
 PLOT_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
                '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
-parquet_file_names = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_indicator_vip', 'index_weights',
+parquet_file_names = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_indicator', 'index_weights',
                      'margin_detail', 'stk_limit']
 every_day_parquet_file_names = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'index_weights',
                      'margin_detail', 'stk_limit']
-#'index_weights'  fina_indicator_vip
+#'index_weights'  fina_indicator
 need_fix = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq',
                      'margin_detail', 'stk_limit']
