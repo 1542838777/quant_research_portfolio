@@ -279,9 +279,7 @@ if __name__ == '__main__':
             # 模式: batch_stock (按股票代码分批，适用于大多数pro接口)
             'daily': {'func': 'daily', 'params': {}, 'mode': 'batch_stock'},
             'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'},
-            'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'},
-            'fina_indicator': {'func': 'fina_indicator', 'params': {},
-                                   'mode': 'batch_stock'},
+            'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'}
 
         }
 
@@ -325,16 +323,12 @@ if __name__ == '__main__':
                 # --- 通用的数据合并与保存逻辑 ---
                 if all_data_list:
                     final_df = pd.concat(all_data_list, ignore_index=True)
-                    if not final_df.empty:
-                        if name == 'fina_indicator':  # 只有他源数据有问题，会有重复的
-                            final_df.sort_values(by='ann_date', ascending=True, inplace=True)
-                            final_df.drop_duplicates(subset=['ts_code', 'end_date'], keep='last', inplace=True)
-                        else:
-                            final_df.drop_duplicates(inplace=True)
 
-                        year_path.mkdir(parents=True, exist_ok=True)
-                        final_df.to_parquet(year_path / 'data.parquet')
-                        print(f"成功保存 {year} 年的 {name} 数据。")
+                    final_df.drop_duplicates(inplace=True)
+
+                    year_path.mkdir(parents=True, exist_ok=True)
+                    final_df.to_parquet(year_path / 'data.parquet')
+                    print(f"成功保存 {year} 年的 {name} 数据。")
             else:
                 print(f"{year} 年的 {name} 数据已存在，跳过下载。")
 

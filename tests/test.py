@@ -70,7 +70,7 @@ def compare_local_and_net():
     namechange = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'namechange.parquet')
     suspend_d = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
     stock_basic = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
-    final_indicator_vip = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'fina_indicator')
+    final_indicator_vip = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'fina_indicator.parquet')
     df = call_pro_tushare_api("fina_indicator",   end_date='20241231')
 
     for miss_ts_code in miss_ts_codes:

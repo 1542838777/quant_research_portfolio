@@ -69,7 +69,7 @@ class DataLoader:
                 self.check_local_date_period_completeness_col(logical_name, df, 'ann_date', start_date, end_date)
             if 'stock_basic.parquet'  == logical_name:
                 self.check_local_date_period_completeness_col(logical_name, df, 'list_date', start_date, end_date)
-            if 'fina_indicator'  == logical_name:
+            if 'fina_indicator.parquet'  == logical_name:
                 self.check_local_date_period_completeness_col(logical_name, df, 'ann_date', start_date, end_date)
 
 

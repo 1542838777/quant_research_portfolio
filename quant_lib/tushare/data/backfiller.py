@@ -23,7 +23,7 @@ MISSING_STOCKS_LIST = status_d_p_stocks[filter]['ts_code'].unique().tolist()
 # 【请确认要回填的数据集】(通常与downloader.py中的任务一致)
 DATASETS_TO_BACKFILL = [
     'daily_hfq', 'margin_detail', 'stk_limit', 'daily',
-    'daily_basic', 'adj_factor', 'fina_indicator'
+    'daily_basic', 'adj_factor'
 ]
 
 # 【请确认回填的时间范围】
