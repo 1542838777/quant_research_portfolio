@@ -436,37 +436,27 @@ class FactorProcessor:
     #
     #     raise RuntimeError("请指定标准化方式")
 
-    def _zscore_series(self, series: pd.Series) -> pd.Series:
-        """【辅助函数】对单个Series(如单日全市场或单日单行业)进行Z-Score标准化"""
-        valid_series = series.dropna()
-        if valid_series.empty:
-            return series
+    def _zscore_series(self, s: pd.Series) -> pd.Series:
+        """【辅助函数】对单个Series(如单日全市场或单日单行业)进行Z-Score标准化  能处理元素数量不足或标准差为0的极端情况。"""
+        # 使用 .count() 统计非NaN值的数量
+        if s.count() < 2:
+            # 如果有效数据点少于2个，无法计算标准差，直接返回0
+            # 返回一个与输入索引相同的Series，值为0，这是一个中性信号
+            return pd.Series(0, index=s.index)
 
-        mean = valid_series.mean()
-        std = valid_series.std()
+        std_val = s.std()
+        if std_val == 0:
+            # 如果标准差为0（所有值都一样），也返回0
+            return pd.Series(0, index=s.index)
 
-        # [核心边界处理] 如果标准差为0，说明所有值都一样，标准化后应为0
-        if std == 0:
-            # 创建一个与输入series相同索引的全0 Series
-            return pd.Series(0.0, index=series.index)
+        mean_val = s.mean()
+        return (s - mean_val) / std_val
 
-        return (series - mean) / std
-
-    def _rank_series(self, series: pd.Series) -> pd.Series:
-        """【辅助函数】对单个Series进行排序标准化 (转换为[-1, 1]区间)"""
-        valid_series = series.dropna()
-        if valid_series.empty:
-            return series
-
-        # [核心边界处理] 如果只有一个有效值，其排名无意义，设为0
-        if len(valid_series) <= 1:
-            # 创建一个与输入series相同索引的全0 Series
-            return pd.Series(0.0, index=series.index)
-
-        # pct=True 将排名转换为 0 到 1 的百分位
-        ranks_pct = series.rank(pct=True)
-        # 将 [0, 1] 区间线性映射到 [-1, 1] 区间
-        return 2 * ranks_pct - 1
+    def _rank_series(self, s: pd.Series) -> pd.Series:
+        """【辅助函数】对单个Series进行排序标准化 (转换为[-1, 1]区间) 将Series的值转换为[-1, 1]区间的百分位排名。"""
+        # .rank(pct=True) 会自动处理NaN，返回一个0-1之间的百分位排名
+        # 我们将其缩放到[-1, 1]
+        return s.rank(pct=True, na_option='keep') * 2 - 1
 
     # --------------------------------------------------------------------------
     #  主函数 (Main Function) - 负责决策与调度

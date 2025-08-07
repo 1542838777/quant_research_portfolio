@@ -303,9 +303,8 @@ class DataManager:
         existence_matrix = after_listing_mask & before_delisting_mask
 
         logger.info("    股票“存在性”矩阵构建完毕。")
-        # 建议将此矩阵缓存起来，因为它在一次回测中是不变的
+        # 缓存起来，因为它在一次回测中是不变的
         self._existence_matrix = existence_matrix
-        return existence_matrix
 
     def build_tradeable_matrix_by_suspend_resume(
             self,
@@ -512,7 +511,7 @@ class DataManager:
         # 1. 获取或构建权威的存在性矩阵 (应该已被缓存)
         #    这个矩阵已经包含了所有上市/退市的完整信息。
         if self._existence_matrix is None:
-            self._existence_matrix = self.build_existence_matrix()
+            self.build_existence_matrix()
 
         existence_matrix = self._existence_matrix
 

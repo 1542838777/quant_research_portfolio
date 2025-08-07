@@ -92,7 +92,7 @@ def check_backtest_periods(start_date, end_date):
     if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):
         raise ValueError("回测时间太短")
 
-trans_pram = 东北证券_CSI1000_more_filter_mode
+trans_pram = fast_mode_two_pools
 
 
 def _load_local_config(config_path: str) -> Dict[str, Any]:

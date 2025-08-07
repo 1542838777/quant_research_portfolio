@@ -3,7 +3,7 @@ import pandas as pd
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d, \
-    download_cashflow, download_income
+    download_cashflow, download_income, download_balancesheet
 from quant_lib.tushare.tushare_client import TushareClient
 
 # daily_hfq 有问题
@@ -19,7 +19,10 @@ def get_fields_map():
              'stock_basic.parquet',
              'fina_indicator.parquet',
              'suspend_d.parquet',
-             'trade_cal.parquet']
+             'trade_cal.parquet',
+             'balancesheet.parquet',
+
+             ]
 
     for path in paths:
         orin_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
@@ -128,11 +131,15 @@ def compare_df_rows(df, index1, index2):
 
 
 if __name__ == '__main__':
-    imcome_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'cashflow.parquet')
-    imcome_df['ann_date'] = pd.to_datetime(imcome_df['ann_date'])
-    imcome_df['f_ann_date'] = pd.to_datetime(imcome_df['f_ann_date'])
-    imcome_df = imcome_df[imcome_df['f_ann_date'] != imcome_df['ann_date']]
-    dup_check_report_type()
+    # download_balancesheet()
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'balancesheet.parquet')
+    df = df[df['report_type'] != '1']
+    print(df)
+
+    # imcome_df['ann_date'] = pd.to_datetime(imcome_df['ann_date'])
+    # imcome_df['f_ann_date'] = pd.to_datetime(imcome_df['f_ann_date'])
+    # imcome_df = imcome_df[imcome_df['f_ann_date'] != imcome_df['ann_date']]
+    # dup_check_report_type()
     # df['end_date'] = pd.to_datetime(df['end_date'])
     # df = df[df['end_date'] >= pd.to_datetime('2025')]
     # print(list(df.columns))

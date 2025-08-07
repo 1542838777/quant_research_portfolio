@@ -1,8 +1,10 @@
-import pandas as pd
-import numpy as np
-from typing import Dict, Any
+from typing import Callable  # 引入Callable来指定函数类型的参数
 
-from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df
+import numpy as np
+import pandas as pd
+
+from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df, load_income_df, \
+    load_balancesheet_df
 from quant_lib import logger
 
 
@@ -106,85 +108,7 @@ class FactorCalculator:
         # 主要字段：n_cashflow_act：经营活动产生的现金流量净额 进行滚动平均
         # 代码大篇幅主要处理脏数据！多来自于ipo，因为股票未上市前，用的不准确的数据！
 
-    def _calculate_cashflow_ttm(self) -> pd.DataFrame:
-        """
-           【】计算滚动12个月的经营活动现金流净额 (TTM)。
 
-           输入:
-           - cashflow_df: 原始现金流量表数据，包含['ann_date', 'ts_code', 'end_date', 'n_cashflow_act']
-           - all_trading_dates: 一个包含所有交易日日期的pd.DatetimeIndex，用于构建最终的日度因子矩阵。
-
-           输出:
-           - 一个以交易日为索引(index)，股票代码为列(columns)的日度TTM因子矩阵。
-           """
-        print("--- 开始执行生产级TTM因子计算 ---")
-        cashflow_df = load_cashflow_df()
-
-        # === 步骤一：创建完美的季度时间标尺 ===
-        print("2. 创建时间标尺以处理数据断点...")
-        scaffold_min_max_end_date_df = cashflow_df.groupby('ts_code')['end_date'].agg(['min', 'max'])
-
-        full_date_dfs = []
-        for ts_code, row in scaffold_min_max_end_date_df.iterrows():
-            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')  # 所有的报告期日（季度最后一日
-            full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, 'end_date': date_range}))
-
-        full_dates_df = pd.concat(full_date_dfs)
-
-        # === 步骤二：数据对齐 ===
-        print("3. 将原始数据合并到时间标尺上...")
-        merged_df = pd.merge(full_dates_df, cashflow_df, on=['ts_code', 'end_date'], how='left')
-
-        # === 步骤三：安全地计算单季度值 ===
-        print("4. 安全计算单季度现金流...")
-        # 使用ffill填充缺失的累计值，这对于处理IPO前只有年报的情况至关重要
-        merged_df['n_cashflow_act_filled'] = merged_df.groupby('ts_code')['n_cashflow_act'].ffill()
-        merged_df['n_cashflow_act_single_q'] = merged_df.groupby('ts_code')['n_cashflow_act_filled'].diff()
-
-        is_q1 = merged_df['end_date'].dt.month == 3
-        # Q1的值必须用原始值覆盖，且只在原始值存在(notna)时操作
-        merged_df.loc[is_q1 & merged_df['n_cashflow_act'].notna(), 'n_cashflow_act_single_q'] = merged_df.loc[
-            is_q1, 'n_cashflow_act']
-
-        # === 步骤四：安全地计算TTM ===
-        print("5. 安全计算滚动TTM值...")
-        merged_df['cashflow_ttm'] = merged_df.groupby('ts_code')['n_cashflow_act_single_q'].rolling(
-            window=4, min_periods=4
-        ).sum().reset_index(level=0, drop=True)
-
-        # ================================================================= #
-        # --- 以下是您之前省略，但对于构建因子库至关重要的部分 ---
-        # ================================================================= #
-
-        # === 步骤五：构建以公告日为索引的TTM长表 ===
-        print("6. 整理并过滤有效TTM值...")
-        # 关键：只有当'ann_date'和'cashflow_ttm'同时存在时，这个数据点才是一个有效的、可用于交易的“事件”
-        ttm_long_df = merged_df[['ts_code', 'ann_date', 'end_date', 'cashflow_ttm']].dropna()
-        if ttm_long_df.empty:
-            raise ValueError("警告: _calculate_cashflow_ttm 计算后没有产生任何有效的TTM数据点。")
-
-        # === 步骤六：透视 (Pivot) ===
-        print("7. 执行透视操作(Pivot)，将长表转换为宽表...")
-        # 我们需要保留end_date用于后续的排序判断，确保pivot_table的'last'能取到正确的值
-        ttm_long_df = ttm_long_df.sort_values(by=['ts_code', 'end_date'])
-        # 目标：将“事件驱动”的数据(一行代表一次财报公布)转换为“时间序列”的宽表
-        # 索引(index)是事件发生的日期(ann_date)，列(columns)是股票代码
-        cashflow_ttm_wide = ttm_long_df.pivot_table(
-            index='ann_date',
-            columns='ts_code',
-            values='cashflow_ttm',
-            aggfunc='last'  # 使用'last'，因为数据已按end_date排序，'last'会选取最新的财报
-        )
-
-        # === 步骤七：重索引 (Reindex) & 前向填充 (Forward Fill) ===
-        print("8. 对齐到交易日历并进行前向填充(ffill)...")
-        # Reindex: 将稀疏的公告日数据，扩展到全部交易日上。非公告日的TTM值此时为NaN
-        # ffill: 用最近一次已知的TTM值，填充未来的交易日。
-        #      这完美模拟了真实情况：一个财报的效力会持续，直到下一个新财报出来为止。
-        cashflow_ttm_daily = cashflow_ttm_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
-
-        print("--- 因子计算完成 ---")
-        return cashflow_ttm_daily
 
 
     def _calculate_cfp_ratio(self) -> pd.DataFrame:
@@ -219,6 +143,7 @@ class FactorCalculator:
         return cfp_ratio_df
 
     # === 质量 (Quality) ===
+
     def _calculate_roe_ttm(self) -> pd.DataFrame:
         """
         计算滚动12个月的净资产收益率 (ROE_TTM)。
@@ -231,13 +156,94 @@ class FactorCalculator:
               你需要确保你的 DataManager 能够提供包含 'net_profit' 和 'total_equity'
               的季度财务报表数据。
         """
-        print("    > 正在计算因子: roe_ttm...")
-        # 此处为占位符逻辑，你需要替换为与 _calculate_cashflow_ttm 类似的
-        # 从原始财报计算单季 -> 滚动求和TTM -> 按公告日对齐 的完整流程。
-        # 依赖的原始字段: net_profit (净利润), total_equity (股东权益)
-        print("      > [警告] _calculate_roe_ttm 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('total_mv')
-        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+
+        # --- 步骤一：获取分子和分母 ---
+        # 调用我们刚刚实现的两个生产级函数
+        net_profit_ttm_df = self._calculate_net_profit_ttm()
+        total_equity_df = self._calculate_total_equity()
+
+        # --- 步骤二：对齐数据 ---
+        # align确保两个DataFrame的索引和列完全一致，避免错位计算
+        # join='inner'会取两个因子都存在的股票和日期，是最安全的方式
+        profit_aligned, equity_aligned = net_profit_ttm_df.align(total_equity_df, join='inner', axis=None)
+
+        # --- 步骤三：风险控制与计算 ---
+        # 核心风控：股东权益可能为负（公司处于资不抵债状态）。
+        # 在这种情况下，ROE的计算没有经济意义，且会导致计算错误。
+        # 我们将分母小于等于0的地方替换为NaN，这样除法结果也会是NaN。
+        # 例如，2021年-2023年，一些陷入困境的地产公司净资产可能为负，其ROE必须被视为无效值。
+        equity_aligned_safe = equity_aligned.where(equity_aligned > 0, np.nan)
+
+        print("1. 计算 ROE TTM，并对分母进行风险控制(>0)...")
+        roe_ttm_df = profit_aligned / equity_aligned_safe
+
+        # --- 步骤四：后处理 ---
+        # 尽管我们处理了分母为0的情况，但仍可能因浮点数问题产生无穷大值。
+        # 统一替换为NaN，确保因子数据的干净。
+        roe_ttm_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        print("--- 最终因子: roe_ttm 计算完成 ---")
+        return roe_ttm_df
+
+
+    def _calculate_gross_margin_ttm(self) -> pd.DataFrame:
+        """
+        【生产级】计算滚动12个月的销售毛利率 (Gross Margin TTM)。
+        公式: (Revenue TTM - Operating Cost TTM) / Revenue TTM
+        """
+        print("--- 开始计算最终因子: gross_margin_ttm ---")
+
+        # --- 步骤一：获取分子和分母的组成部分 ---
+        revenue_ttm_df = self._calculate_total_revenue_ttm()
+        op_cost_ttm_df = self._calculate_op_cost_ttm()
+
+        # --- 步骤二：对齐数据 ---
+        # 确保revenue和op_cost的索引和列完全一致，避免错位计算
+        revenue_aligned, op_cost_aligned = revenue_ttm_df.align(op_cost_ttm_df, join='inner', axis=None)
+
+        # --- 步骤三：风险控制与计算 ---
+        # 核心风控：分母(营业收入)可能为0或负数(在极端或错误数据情况下)。
+        # 我们将分母小于等于0的地方替换为NaN，这样除法结果也会是NaN，避免产生无穷大值。
+        revenue_aligned_safe = revenue_aligned.where(revenue_aligned > 0, np.nan)
+
+        print("1. 计算 Gross Margin TTM，并对分母进行风险控制(>0)...")
+        gross_margin_ttm_df = (revenue_aligned - op_cost_aligned) / revenue_aligned_safe
+
+        # --- 步骤四：后处理 (可选但推荐) ---
+        # 理论上，毛利率不应超过100%或低于-100%太多，但极端情况可能出现。
+        # 这里可以根据需要进行clip或winsorize，但暂时保持原样以观察原始分布。
+        # 再次确保没有无穷大值。
+        gross_margin_ttm_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        print("--- 最终因子: gross_margin_ttm 计算完成 ---")
+        return gross_margin_ttm_df
+
+    def _calculate_debt_to_assets(self) -> pd.DataFrame:
+        """
+        【生产级】计算每日可用的最新资产负债率。
+        公式: Total Debt / Total Assets
+        """
+        print("--- 开始计算最终因子: debt_to_assets ---")
+
+        # --- 步骤一：获取分子和分母 ---
+        total_debt_df = self._calculate_total_debt()
+        total_assets_df = self._calculate_total_assets()
+
+        # --- 步骤二：对齐数据 ---
+        debt_aligned, assets_aligned = total_debt_df.align(total_assets_df, join='inner', axis=None)
+
+        # --- 步骤三：风险控制与计算 ---
+        # 核心风控：分母(总资产)可能为0或负数。
+        assets_aligned_safe = assets_aligned.where(assets_aligned > 0, np.nan)
+
+        print("1. 计算 Debt to Assets，并对分母进行风险控制(>0)...")
+        debt_to_assets_df = debt_aligned / assets_aligned_safe
+
+        # --- 步骤四：后处理 ---
+        debt_to_assets_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        print("--- 最终因子: debt_to_assets 计算完成 ---")
+        return debt_to_assets_df
 
     def _calculate_gross_margin_ttm(self) -> pd.DataFrame:
         """
@@ -271,35 +277,105 @@ class FactorCalculator:
         return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
 
     # === 成长 (Growth) ===
+    #ok
     def _calculate_net_profit_growth_yoy(self) -> pd.DataFrame:
         """
-        计算净利润同比增长率 (Year-over-Year)。
-
-        金融逻辑:
-        衡量公司盈利能力的增长速度，是成长性的核心体现。
+        【生产级】计算单季度归母净利润的同比增长率 (YoY)。
         """
-        print("    > 正在计算因子: net_profit_growth_yoy...")
-        # 需要获取当季的单季净利润，和去年同期的单季净利润进行比较。
-        # 这是一个非常复杂的计算，涉及到财报数据的滞后和对齐。
-        # 依赖的原始字段: net_profit_single_q
-        print("      > [警告] _calculate_net_profit_growth_yoy 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('total_mv')
-        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+        print("--- 开始计算最终因子: net_profit_growth_yoy ---")
 
-    def _calculate_revenue_growth_yoy(self) -> pd.DataFrame:
+        # --- 步骤一：获取基础数据 net_profit_single_q 的长表 ---
+        net_profit_single_q_long = self._calculate_net_profit_single_q_long()
+
+        # 确保数据按股票和报告期排序
+        net_profit_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=True)
+
+        # --- 步骤二：计算同比增长率 (YoY) ---
+        # shift(4) 回溯去年同期
+        net_profit_last_year_q = net_profit_single_q_long.groupby('ts_code')['net_profit_single_q'].shift(4)
+
+        # 核心风控：去年同期净利润可能为0或负数，此时增长率无意义或失真。
+        # 必须要求去年同期利润为正，才能计算有意义的增长率。
+        net_profit_last_year_q_safe = net_profit_last_year_q.where(net_profit_last_year_q > 0, np.nan)
+
+        # 计算同比增长率
+        net_profit_single_q_long['net_profit_growth_yoy'] = \
+            net_profit_single_q_long['net_profit_single_q'] / net_profit_last_year_q_safe - 1
+
+        # --- 步骤三：将计算出的因子对齐到每日交易日历 ---
+        # 1. 整理并过滤
+        yoy_long_df = net_profit_single_q_long[['ts_code', 'ann_date', 'end_date', 'net_profit_growth_yoy']].copy()
+        yoy_long_df.dropna(inplace=True)
+        if yoy_long_df.empty:
+            raise ValueError("警告: 计算 net_profit_growth_yoy 后没有产生任何有效的增长率数据点。")
+
+        # 2. 透视 (Pivot)
+        yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        yoy_wide = yoy_long_df.pivot_table(
+            index='ann_date',
+            columns='ts_code',
+            values='net_profit_growth_yoy',
+            aggfunc='last'
+        )
+
+        # 3. 重索引并填充 (Reindex & ffill)
+        yoy_daily = yoy_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+
+        print("--- 最终因子: net_profit_growth_yoy 计算完成 ---")
+        return yoy_daily
+    #ok
+    def _calculate_total_revenue_growth_yoy(self) -> pd.DataFrame:
         """
-        计算营业收入同比增长率 (Year-over-Year)。
-
-        金融逻辑:
-        衡量公司市场规模和业务扩张的速度。营收增长通常是利润增长的先行指标。
+        【生产级】计算单季度营业收入的同比增长率 (YoY)。
         """
-        print("    > 正在计算因子: revenue_growth_yoy...")
-        # 逻辑与净利润同比增长类似。
-        # 依赖的原始字段: revenue_single_q
-        print("      > [警告] _calculate_revenue_growth_yoy 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('total_mv')
-        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
+        print("--- 开始计算最终因子: total_revenue_growth_yoy ---")
 
+        # --- 步骤一：获取基础数据 total_revenue_single_q 的长表 ---
+        # 调用我们的新引擎来获取每个公司每个季度的单季收入
+        total_revenue_single_q_long = self._calculate_financial_single_q_factor(
+            factor_name='total_revenue_single_q',
+            data_loader_func=load_income_df,
+            source_column='total_revenue'  # 确认使用总收入
+        )
+
+        # 确保数据按股票和报告期排序，这是 shift 操作准确无误的前提
+        total_revenue_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=True)
+
+        # --- 步骤二：计算同比增长率 (YoY) ---
+        # shift(4) 在季度数据上，就是回溯4个季度，即去年同期
+        revenue_last_year_q = total_revenue_single_q_long.groupby('ts_code')['total_revenue_single_q'].shift(4)
+
+        # 核心风控：去年同期收入可能为0或负数，此时增长率无意义
+        revenue_last_year_q_safe = revenue_last_year_q.where(revenue_last_year_q > 0, np.nan)
+
+        # 计算同比增长率
+        total_revenue_single_q_long['total_revenue_growth_yoy'] = \
+            total_revenue_single_q_long['total_revenue_single_q'] / revenue_last_year_q_safe - 1
+
+        # --- 步骤三：将计算出的因子对齐到每日交易日历 ---
+        # 这里的逻辑和我们之前的引擎完全一样
+
+        # 1. 整理并过滤有效的YoY值
+        yoy_long_df = total_revenue_single_q_long[['ts_code', 'ann_date', 'end_date', 'total_revenue_growth_yoy']].copy()
+        yoy_long_df.dropna(inplace=True)
+        if yoy_long_df.empty:
+            raise ValueError("警告: 计算 total_revenue_growth_yoy 后没有产生任何有效的增长率数据点。")
+
+        # 2. 透视 (Pivot)
+        yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        yoy_wide = yoy_long_df.pivot_table(
+            index='ann_date',
+            columns='ts_code',
+            values='total_revenue_growth_yoy',
+            aggfunc='last'
+        )
+
+        # 3. 重索引并填充 (Reindex & ffill)
+        yoy_daily = yoy_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+
+        print("--- 最终因子: total_revenue_growth_yoy 计算完成 ---")
+        return yoy_daily
+ 
     # === 动量 (Momentum) ===
     def _calculate_momentum_12_1(self) -> pd.DataFrame:
         """
@@ -394,6 +470,226 @@ class FactorCalculator:
         # 3. 计算Amihud指标
         amihud_df = pct_chg_df.abs() / amount_df_safe
         return amihud_df
+
+    ##财务basic数据
+
+    def _calculate_cashflow_ttm(self) -> pd.DataFrame:
+        """
+           【】计算滚动12个月的经营活动现金流净额 (TTM)。
+           输入:
+           - cashflow_df: 原始现金流量表数据，包含['ann_date', 'ts_code', 'end_date', 'n_cashflow_act']
+           - all_trading_dates: 一个包含所有交易日日期的pd.DatetimeIndex，用于构建最终的日度因子矩阵。
+           输出:
+           - 一个以交易日为索引(index)，股票代码为列(columns)的日度TTM因子矩阵。
+           """
+        return  self._calculate_financial_ttm_factor('cashflow_ttm',load_cashflow_df,'n_cashflow_act')
+
+    def _calculate_net_profit_ttm(self) -> pd.DataFrame:
+        """
+        计算滚动12个月的归母净利润 (Net Profit TTM)。
+        该函数逻辑与 _calculate_cashflow_ttm 完全一致，仅替换数据源和字段。
+        """
+        return  self._calculate_financial_ttm_factor('net_profit_ttm',load_income_df,'n_income_attr_p')
+
+    def _calculate_total_equity(self) -> pd.DataFrame:
+        """
+        【生产级】获取每日可用的最新归母所有者权益。
+        这是一个时点数据，无需计算TTM，但需要执行公告日对齐流程。
+        """
+        ret  = self._calculate_financial_snapshot_factor('total_equity',load_balancesheet_df,'total_hldr_eqy_exc_min_int')
+        return ret
+
+    def _calculate_total_revenue_ttm(self) -> pd.DataFrame:
+        """
+        【生产级】计算滚动12个月的营业总收入 (TTM)。
+        利用通用TTM引擎计算得出。
+        """
+        print("--- 调用通用引擎计算: revenue_ttm ---")
+        return self._calculate_financial_ttm_factor(
+            factor_name='total_revenue_ttm',
+            data_loader_func=load_income_df,
+            source_column='total_revenue'  # Tushare利润表中的“营业总收入”字段
+        )
+
+    def _calculate_op_cost_ttm(self) -> pd.DataFrame:
+        """
+        【生产级】计算滚动12个月的营业总成本 (TTM)。
+        利用通用TTM引擎计算得出。
+        """
+        print("--- 调用通用引擎计算: op_cost_ttm ---")
+        return self._calculate_financial_ttm_factor(
+            factor_name='op_cost_ttm',
+            data_loader_func=load_income_df,
+            source_column='oper_cost'  # Tushare利润表中的“减:营业成本”字段
+        )
+
+    def _calculate_total_debt(self) -> pd.DataFrame:
+        """【生产级】获取每日可用的最新总负债。"""
+        print("--- 调用Snapshot引擎计算: total_debt ---")
+        return self._calculate_financial_snapshot_factor(
+            factor_name='total_debt',
+            data_loader_func=load_balancesheet_df,
+            source_column='total_liab'  # Tushare资产负债表中的“负债合计”字段
+        )
+
+    def _calculate_net_profit_single_q_long(self) -> pd.DataFrame:
+        """
+        【内部函数】计算单季度归母净利润的长表。
+        这是计算同比增长率的基础。
+        """
+        print("--- 调用通用引擎计算: net_profit_single_q ---")
+        return self._calculate_financial_single_q_factor(
+            factor_name='net_profit_single_q',
+            data_loader_func=load_income_df,
+            source_column='n_income_attr_p'  # 确认使用归母净利润
+        )
+######################
+    ##以下是模板
+        ###A股市场早期，或一些公司在特定时期，只会披露年报和半年报，而缺少一季报和三季报的累计值。这会导致在我们的完美季度时间标尺上出现NaN。
+        ### 所以这就是解决方案：实现了填充 跳跃的季度区间，新增填充的列：filled_col ，计算就在filled_col上面做diff。然后在平滑diff上做rolling。done
+        ## 季度性数据ttm通用计算， 模板计算函数
+    def _calculate_financial_ttm_factor(self,
+                                        factor_name: str,
+                                        data_loader_func: Callable[[], pd.DataFrame],
+                                        source_column: str) -> pd.DataFrame:
+        """
+        【通用生TTM因子计算引擎】(已重构)
+        计算滚动12个月(TTM)的因子值。
+        """
+        print(f"--- [引擎] 开始计算TTM因子: {factor_name} ---")
+
+        # --- 步骤一：调用底层零件，获取单季度数据 ---
+        single_q_col_name = f"{source_column}_single_q"
+        single_q_long_df = self._get_single_q_long_df(
+            data_loader_func=data_loader_func,
+            source_column=source_column,
+            single_q_col_name=single_q_col_name
+        )
+
+        # --- 步骤二：在单季度数据的基础上，计算TTM ---
+        single_q_long_df[factor_name] = single_q_long_df.groupby('ts_code')[single_q_col_name].rolling(
+            window=4, min_periods=4
+        ).sum().reset_index(level=0, drop=True)
+
+        # --- 步骤三：格式化为日度因子矩阵 (Pivot -> Reindex -> ffill) ---
+        ttm_long_df = single_q_long_df[['ts_code', 'ann_date', 'end_date', factor_name]].dropna()
+        if ttm_long_df.empty:
+            raise ValueError(f"警告: 计算因子 {factor_name} 后没有产生任何有效的TTM数据点。")
+
+        ttm_long_df = ttm_long_df.sort_values(by=['ts_code', 'end_date'])
+        ttm_wide = ttm_long_df.pivot_table(
+            index='ann_date',
+            columns='ts_code',
+            values=factor_name,
+            aggfunc='last'
+        )
+        ttm_daily = ttm_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+
+        print(f"--- [引擎] 因子: {factor_name} 计算完成 ---")
+        return ttm_daily
+
+    # 加载财报中的“时点”数据，并将其正确地映射到每日的时间序列上。
+    def _calculate_financial_snapshot_factor(self,
+                                             factor_name: str,
+                                             data_loader_func: Callable[[], pd.DataFrame],
+                                             source_column: str) -> pd.DataFrame:
+        """
+        【通用生产级“时点”因子计算引擎】
+        根据指定的财务报表数据和字段，获取最新的“时点”因子值。
+        适用于资产、负债、股东权益等“存量”指标。
+
+        参数:
+        - factor_name (str): 你想生成的最终因子名称，如 'total_assets'。
+        - data_loader_func (Callable): 一个无参数的函数，用于加载原始财务数据DataFrame。
+                                      例如: self.data_manager.load_balancesheet_df
+        - source_column (str): 原始财务数据中的时点字段名。
+                               例如: 'total_assets'
+
+        返回:
+        - 一个以交易日为索引(index)，股票代码为列(columns)的日度时点因子矩阵。
+        """
+        print(f"--- [通用引擎] 开始计算Snapshot因子: {factor_name} ---")
+
+        # 使用传入的函数加载数据
+        financial_df = data_loader_func()
+
+        # 步骤一：选择数据并确保有效性
+        snapshot_long_df = financial_df[['ts_code', 'ann_date', 'end_date', source_column]].copy()
+        snapshot_long_df.dropna(inplace=True)
+        if snapshot_long_df.empty:
+            raise ValueError(f"警告: 计算因子 {factor_name} 时，从 {source_column} 字段未获取到有效数据。")
+
+        # 步骤二：透视
+        snapshot_long_df.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        snapshot_wide = snapshot_long_df.pivot_table(
+            index='ann_date',
+            columns='ts_code',
+            values=source_column,
+            aggfunc='last'
+        )
+
+        # 步骤三：重索引并填充
+        snapshot_daily = snapshot_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+
+        print(f"--- [通用引擎] 因子: {factor_name} 计算完成 ---")
+        return snapshot_daily
+
+    def _calculate_financial_single_q_factor(self,
+                                             factor_name: str,
+                                             data_loader_func: Callable[[], pd.DataFrame],
+                                             source_column: str) -> pd.DataFrame:
+        """
+        【通用生产级“单季度”因子计算引擎】(已重构)
+        获取单季度的因子值的长表DataFrame。
+        """
+        print(f"--- [引擎] 开始准备单季度长表: {factor_name} ---")
+
+        # 直接调用底层零件函数，获取单季度长表
+        single_q_long_df = self._get_single_q_long_df(
+            data_loader_func=data_loader_func,
+            source_column=source_column,
+            single_q_col_name=factor_name  # 输出列名就是我们想要的因子名
+        )
+
+        return single_q_long_df
+
+    def _get_single_q_long_df(self,
+                              data_loader_func: Callable[[], pd.DataFrame],
+                              source_column: str,
+                              single_q_col_name: str) -> pd.DataFrame:
+        """
+        【底层零件】从累计值财报数据中，计算出单季度值的长表DataFrame。
+        这是所有TTM和YoY计算的共同基础。
+        """
+        print(f"    > [底层零件] 正在从 {source_column} 计算 {single_q_col_name}...")
+
+        financial_df = data_loader_func()
+
+        # 核心计算逻辑 (Scaffold -> Merge -> Diff)
+        scaffold_df = financial_df.groupby('ts_code')['end_date'].agg(['min', 'max']) #记录一股票 两个时间点
+        full_date_dfs = []
+        for ts_code, row in scaffold_df.iterrows():
+            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')##记录一股票 两个时间点 期间所有报告期日(0331 0630 0930 1231
+            full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, 'end_date': date_range}))
+        full_dates_df = pd.concat(full_date_dfs)
+
+        merged_df = pd.merge(full_dates_df, financial_df, on=['ts_code', 'end_date'], how='left')
+
+        filled_col = f"{source_column}_filled"
+        merged_df[filled_col] = merged_df.groupby('ts_code')[source_column].ffill()
+        merged_df[single_q_col_name] = merged_df.groupby('ts_code')[filled_col].diff()
+        #第一个季度就是自己的值！（前面做了diff，现在需要更正季度为q1de！
+        is_q1 = merged_df['end_date'].dt.month == 3
+        merged_df.loc[is_q1 & merged_df[source_column].notna(), single_q_col_name] = merged_df.loc[is_q1, source_column]
+
+        # 整理并返回包含单季度值的长表
+        single_q_long_df = merged_df[['ts_code', 'ann_date', 'end_date', single_q_col_name]].copy()
+        single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=True)  # 确保公告日和计算值都存在
+
+        return single_q_long_df
+
+
+
 
 
 def calculate_rolling_beta(

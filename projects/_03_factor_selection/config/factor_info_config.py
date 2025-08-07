@@ -85,7 +85,7 @@ FACTOR_FILL_CONFIG = {
     'gross_margin_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
     'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
     'net_profit_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
-    'revenue_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
+    'total_revenue_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
 
     # === 动量(Momentum), 风险(Risk), 流动性(Liquidity) ===
     # 【保持正确】维持我们之前的结论，这类短半衰期因子，不应填充。
