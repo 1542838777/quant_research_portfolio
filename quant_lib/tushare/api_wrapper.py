@@ -103,6 +103,9 @@ def call_ts_tushare_api(func_name: str, max_retries=3, **kwargs):
             ts = TushareClient.get_ts()
             api_func = getattr(ts, func_name)
             df = api_func(**kwargs)
+            if reach_limit(df):
+                # 这个错误非常严重，直接抛出，让上层程序知道数据不完整
+                raise ValueError(f"API '{func_name}' 返回条数可能已达上限，数据不完整！")
             return df
         except Exception as e:
             # ... (错误处理和Token刷新逻辑保持不变) ...

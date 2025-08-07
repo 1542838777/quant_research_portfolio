@@ -22,7 +22,7 @@ class TokenManager:
         # API地址和提取码
         # 注意：请确保你的提取码是正确的
         self.api_url = "https://extract.swiftiny.com/api/extract/getLatestKey"
-        self.api_code = "iWLKq66uNSLnKt1of3K2Li8Wc8P2AYEv9Y5CFR21nie7aPi2QVB2b0k2b1c787ed" # 替换为你的提取码
+        self.api_code = "ES2pa78eGorhw5bt2t4f3USsi4b6pWv0e1V2r0UUczGJUvGTHwm0QBaRaf778b3c" # 替换为你的提取码
     
     def get_cache_file_path(self):
         """获取缓存文件路径"""

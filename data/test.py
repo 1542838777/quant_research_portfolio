@@ -1,15 +1,15 @@
 import pandas as pd
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
-from quant_lib.tushare.api_wrapper import call_pro_tushare_api
+from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d, \
     download_cashflow, download_income
 from quant_lib.tushare.tushare_client import TushareClient
 
-
+# daily_hfq 有问题
 def get_fields_map():
     result = []
-    paths = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_indicator.parquet', 'index_weights', 'margin_detail',
+    paths = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq',  'index_weights', 'margin_detail',
              'stk_limit',
 
              'cashflow.parquet',
@@ -17,19 +17,88 @@ def get_fields_map():
              'index_daily.parquet',
              'namechange.parquet',
              'stock_basic.parquet',
-
+             'fina_indicator.parquet',
              'suspend_d.parquet',
              'trade_cal.parquet']
+
     for path in paths:
         orin_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
+        print(f'logic_name:{path}')
         if 'trade_date' in orin_df.columns:
             orin_df['trade_date'] = pd.to_datetime(orin_df['trade_date'])
             df = orin_df.copy(deep=True)
-            df = df[df['trade_date'] > pd.to_datetime('20180601')]
+            df = df[(df['trade_date'] >= pd.to_datetime('20250611')) & (df['ts_code'] == '000012.SZ')]
             df['trade_date_and_tscode_重复次数'] = df.groupby(['trade_date','ts_code'])['trade_date'].transform('count')
             dup_rows = df[df['trade_date_and_tscode_重复次数'] > 1].sort_values(by='ts_code')
-            print(f'logic_name:{path}')
+            print("结果如下----")
             print(dup_rows)
+
+        #
+        # print(f'logic_name:{path}')
+        # print(f'\t fields:{list(df.columns)}')
+        result.append({
+            'name': path,
+            'fields': list(df.columns)
+        })
+    return result
+
+
+# daily_hfq 有问题
+def dup_check():
+    result = []
+    # call_pro_tushare_api('index_daily', ts_code='000300.SH', start_date='20100101', end_date='20250711')
+    # call_ts_tushare_api('pro_bar',**{'adj': 'hfq', 'asset': 'E','ts_code':'000002.SZ'})
+    # api_df  = call_ts_tushare_api("pro_bar", ts_code='000012.SZ', start_date='20180601', end_date='20250711')
+    # call_ts_tushare_api('pro_bar', adj =  'hfq', asset='E',ts_code='000002.SZ')
+
+    paths = [
+        'cashflow.parquet',
+        'income.parquet'
+    ]
+    for path in paths:
+        orin_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
+        print(f'logic_name:{path}')
+        if 'trade_date' in orin_df.columns:
+            orin_df['trade_date'] = pd.to_datetime(orin_df['trade_date'])
+            df = orin_df.copy(deep=True)
+            df = df[(df['trade_date'] >= pd.to_datetime('20250611')) & (df['ts_code'] == '000012.SZ')]
+            df['trade_date_and_tscode_重复次数'] = df.groupby(['trade_date','ts_code'])['trade_date'].transform('count')
+            dup_rows = df[df['trade_date_and_tscode_重复次数'] > 1].sort_values(by='ts_code')
+            print("结果如下----")
+            print(dup_rows)
+
+        #
+        # print(f'logic_name:{path}')
+        # print(f'\t fields:{list(df.columns)}')
+        result.append({
+            'name': path,
+            'fields': list(df.columns)
+        })
+    return result
+
+
+
+# daily_hfq 有问题
+def dup_check_report_type():
+    result = []
+    # call_pro_tushare_api('index_daily', ts_code='000300.SH', start_date='20100101', end_date='20250711')
+    # call_ts_tushare_api('pro_bar',**{'adj': 'hfq', 'asset': 'E','ts_code':'000002.SZ'})
+    # api_df  = call_ts_tushare_api("pro_bar", ts_code='000012.SZ', start_date='20180601', end_date='20250711')
+    # call_ts_tushare_api('pro_bar', adj =  'hfq', asset='E',ts_code='000002.SZ')
+
+    paths = [
+        'income.parquet',
+        'index_daily.parquet',
+    ]
+    for path in paths:
+        orin_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
+        print(f'logic_name:{path}')
+        if 'end_date' in orin_df.columns:
+            orin_df['end_date'] = pd.to_datetime(orin_df['end_date'])
+            df = orin_df.copy(deep=True)
+            df = df[df['report_type'] !='1' ]
+            print("结果如下----")
+            print(df)
 
         #
         # print(f'logic_name:{path}')
@@ -59,8 +128,11 @@ def compare_df_rows(df, index1, index2):
 
 
 if __name__ == '__main__':
-    (get_fields_map())
-
+    imcome_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'cashflow.parquet')
+    imcome_df['ann_date'] = pd.to_datetime(imcome_df['ann_date'])
+    imcome_df['f_ann_date'] = pd.to_datetime(imcome_df['f_ann_date'])
+    imcome_df = imcome_df[imcome_df['f_ann_date'] != imcome_df['ann_date']]
+    dup_check_report_type()
     # df['end_date'] = pd.to_datetime(df['end_date'])
     # df = df[df['end_date'] >= pd.to_datetime('2025')]
     # print(list(df.columns))
