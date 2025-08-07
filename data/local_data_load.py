@@ -30,8 +30,8 @@ def load_cashflow_df():
     df['end_date'] = pd.to_datetime(df['end_date'])
     df = df.sort_values(by=['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False]).drop_duplicates(
         subset=['ts_code', 'end_date'], keep='first')
-    # # 随机取5个股票的df
-    # df = df[df['ts_code']. isin (['003031.SZ',
+    # 随机取5个股票的df
+    # df = df[df['ts_code']. isin (['000001.SZ',
     #                           '600439.SH',
     #                           '600461.SH',
     #                           '600610.SH'])]

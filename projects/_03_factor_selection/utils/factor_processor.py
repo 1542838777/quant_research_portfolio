@@ -357,7 +357,7 @@ class FactorProcessor:
             # X_df.shape[1] 是自变量的数量，我们需要比自变量数量更多的样本，避免欠拟合
             # 经验法则：样本数至少是自变量数量的几倍（例如，2-5倍）
             num_predictors = X_df.shape[1]  # 计算实际的自变量数量
-            if len(combined_df) < num_predictors + 5:  # 至少要比变量数多5个样本，这是一个经验值，可以根据需求调整 ，x是自变量个数，y是因变量（测试的天数），甚至都赶不上自变量的个数，那还测试什么 干脆报错把 但是实际很难出现，x最多就100来个（因为行业就100来个），我们回测天数都是几百天，
+            if len(combined_df) < num_predictors + 5:  # 至少要比变量数多5个样本，这是一个经验值，可以根据需求调整 ，x是自变量个数，y是因变量（股票数、样本数），甚至都赶不上自变量的个数，那还测试什么 干脆报错把
                 logger.warning(
                     f"  警告: 日期 {date.date()} 清理后样本数不足 ({len(combined_df)} < {num_predictors + 5})，跳过中性化。")
                 processed_factor.loc[date] = np.nan  # 将当天因子数据设为NaN

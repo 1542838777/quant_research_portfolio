@@ -126,8 +126,8 @@ class FactorCalculator:
 
         # --- 步骤三：风险控制与预处理 (核心) ---
         # 1. 过滤小市值公司：这是不可逾越的纪律 （市值小，表示分母小，更容易被操控，比如现金突然多了10w，但是市值为1，那不是猛增10w倍率
-        #    在实盘中，这个阈值甚至可能是20亿(2e9)或30亿(3e9)
-        mv_aligned[mv_aligned < 1e8] = np.nan
+        #    在实盘中，这个阈值甚至可能是20亿(2e9)或30亿(3e9) total_mv单位 万
+        mv_aligned[mv_aligned < 1e4] = np.nan
 
         # 2. 过滤掉退市或长期停牌等市值为0或负的异常情况 ！
         mv_aligned[mv_aligned <= 0] = np.nan
@@ -558,7 +558,7 @@ class FactorCalculator:
         """
         print(f"--- [引擎] 开始计算TTM因子: {factor_name} ---")
 
-        # --- 步骤一：调用底层零件，获取单季度数据 ---
+        # --- 步骤一： 获取单季度数据 ---
         single_q_col_name = f"{source_column}_single_q"
         single_q_long_df = self._get_single_q_long_df(
             data_loader_func=data_loader_func,
@@ -572,18 +572,22 @@ class FactorCalculator:
         ).sum().reset_index(level=0, drop=True)
 
         # --- 步骤三：格式化为日度因子矩阵 (Pivot -> Reindex -> ffill) ---
-        ttm_long_df = single_q_long_df[['ts_code', 'ann_date', 'end_date', factor_name]].dropna()
+        ttm_long_df = single_q_long_df[['ts_code', 'ann_date', 'end_date', factor_name]].dropna()#factor_name是rooling 计算出来的，因为min_periods 所以有三行nan ，在这里会被移除行
         if ttm_long_df.empty:
             raise ValueError(f"警告: 计算因子 {factor_name} 后没有产生任何有效的TTM数据点。")
 
         ttm_long_df = ttm_long_df.sort_values(by=['ts_code', 'end_date'])
         ttm_wide = ttm_long_df.pivot_table(
-            index='ann_date',
+            index='ann_date', #以ann_date 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只
             columns='ts_code',
             values=factor_name,
             aggfunc='last'
-        )
-        ttm_daily = ttm_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+        )#执行完之后的ttm_Wide 可能到处都是nan，原因：（以ann_date 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只）
+        # ttm_daily = (ttm_wide.reindex(self.factor_manager.data_manager.trading_dates) #注意 满目苍翼的ttmwide然后还被对齐索引（截断，）从trading开始日开始截，万一刚好这一天 股票值为nan，那么后面ffill也是nan，直到下一个有效ann_date
+        #              .ffill())
+        filled_wide = ttm_wide.ffill() #基于上面的注意，这里单独做处理！
+
+        ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
 
         print(f"--- [引擎] 因子: {factor_name} 计算完成 ---")
         return ttm_daily
@@ -661,7 +665,7 @@ class FactorCalculator:
         【底层零件】从累计值财报数据中，计算出单季度值的长表DataFrame。
         这是所有TTM和YoY计算的共同基础。
         """
-        print(f"    > [底层零件] 正在从 {source_column} 计算 {single_q_col_name}...")
+        print(f"    >  正在从 {source_column} 计算 {single_q_col_name}...")
 
         financial_df = data_loader_func()
 
