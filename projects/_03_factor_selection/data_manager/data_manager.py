@@ -31,7 +31,7 @@ from quant_lib.data_loader import DataLoader
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
+from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, permanent__day
 from quant_lib.config.logger_config import setup_logger
 
 warnings.filterwarnings('ignore')
@@ -292,7 +292,7 @@ class DataManager:
 
         # c. 构建“是否未退市”的掩码 (before_delisting_mask)
         #    同样，先用一个遥远的未来日期填充NaT（未退市的情况）
-        future_date = pd.Timestamp('2200-01-01')
+        future_date = pd.Timestamp(permanent__day)
         delist_dates_filled = delist_date_panel.fillna(future_date)
 
         #    如果 当前日期 < 退市日期, 则为True

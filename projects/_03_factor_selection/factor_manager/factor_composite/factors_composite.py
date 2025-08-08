@@ -147,20 +147,21 @@ if __name__ == '__main__':
     factor_name = factor_manager.data_manager.config['target_factors_for_evaluation']['fields'][0]
     value_composite_df = synthesizer.synthesize_composite_factor(factor_name, value_factors)
     # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
-    # 准备数据
-    stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
-    close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-                                                                                            need_shift=False)[
-        stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-    prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-    factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
-        stock_pool_name]
-    circ_mv_shift_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
-        factor_name='circ_mv',
-        need_shift=True)[stock_pool_name]
-    ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict = factor_analyzer.core_three_test(
-        value_composite_df, factor_name, close_df,
-        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df)
+    # # 准备数据
+    #
+    #
+    # stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
+    # close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+    #                                                                                         need_shift=False)[
+    #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+    # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
+    # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
+    #     stock_pool_name]
+
+    ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict \
+        =factor_analyzer.comprehensive_test(target_factor_name = factor_name
+                                       , target_factor_df= value_composite_df,
+                                       need_process_factor = False)
     # landing 存储宝贵的测试结果
     category = data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name, 'style_category').iloc[0]
     overrall_summary_stats = factor_analyzer.landing_for_core_three_analyzer_result(factor_name, category, "standard",

@@ -18,15 +18,17 @@ import sys
 import os
 from pathlib import Path
 
+from data.local_data_load import get_industry_record_df_processed
 from projects._03_factor_selection.config.base_config import FACTOR_STYLE_RISK_MODEL
 from projects._03_factor_selection.factor_manager.classifier.factor_classifier import FactorClassifier
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
+from quant_lib.config.constant_config import permanent__day
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from quant_lib.config.logger_config import setup_logger
+from quant_lib.config.logger_config import setup_logger, log_warning
 
 warnings.filterwarnings('ignore')
 
@@ -34,6 +36,66 @@ warnings.filterwarnings('ignore')
 logger = setup_logger(__name__)
 
 
+class PointInTimeIndustryMap:
+    """
+    一个高效的、支持即时查询(Point-in-Time)的行业地图管理器。
+    """
+
+    def __init__(self,raw_industry_df=None):
+        """
+        通过原始的、包含in_date和out_date的成员关系DataFrame进行初始化。
+        这个过程会进行一次性预处理，构建高效的查询结构。
+        """
+        print("正在预处理历史行业数据，构建Point-in-Time地图...")
+        if raw_industry_df is None:
+            self._raw_data = get_industry_record_df_processed()
+        else:
+            self._raw_data = raw_industry_df
+
+        # 1. 获取所有行业变动的“事件日”
+        event_dates = pd.unique(np.concatenate([
+            self._raw_data['in_date'],
+            self._raw_data['out_date'] + pd.Timedelta(days=1)  # out_date当天失效，第二天变更 （理解：我们要的是状态变更生效的哪一天！
+        ])).astype('datetime64[ns]')
+        #... 快照A ... [2023-11-15] ... 快照B ... [2023-12-29] ... 快照C ... [2024-02-10] ... 快照D ... [2024-03-16] ... 快照E ...
+        # 核心思想就是 快照B的start end 都来自于某天某只股票的事件（生效or剔除） 在整个快照period，可以理解为 这整个时期 所有行业都是稳定未变化的！
+        #下面 遍历每个事件行动日！
+        ###比如遍历到快照B的start日，20231115
+        #### 注意期间的不需要遍历啊，这就是此设计的唯一的性能亮点 （为什么可以做到不需要遍历：见上面说的核心思想
+        ##然后遍历快照B的end日， 20231229
+        self._event_dates = sorted([d for d in event_dates if d < pd.Timestamp(permanent__day)])
+
+        # 2. 为每个事件日生成一个行业地图快照
+        self._maps_on_event_dates = {}
+        for date in self._event_dates:
+            # 筛选出在 `date` 当天有效的成员关系
+            current_map_df = self._raw_data[
+                (self._raw_data['in_date'] <= date) &
+                (self._raw_data['out_date'] >= date)
+                ]
+            # 只保留需要的列，并设置索引
+            self._maps_on_event_dates[date] = current_map_df[['ts_code', 'l1_code', 'l2_code']].set_index('ts_code')
+
+        print(f"预处理完成！共生成 {len(self._event_dates)} 个历史快照。")
+    #ok
+    def get_map_for_date(self, query_date: pd.Timestamp) -> pd.DataFrame:
+        """
+        高效获取指定日期的行业地图。
+        :param query_date: 需要查询的日期
+        :return: 一个以ts_code为索引的DataFrame，包含l1_code和l2_code
+        """
+        # 使用二分查找找到正确的事件日索引
+        # bisect_right 会找到 query_date 应该插入的位置
+        # 它之前的那个事件日，就是我们需要的快照日期
+        idx = bisect_right(self._event_dates, query_date) #event_Dates 间隔就是静态的日期，现在 需要查询query_date 位于哪段时间，返回query_date 左侧最接近的event_Date 就是我们这段时期的start。直接取用整个静态的结果！（但是这个函数返回的是目标query_date的索引，所以我们需要-1 才是左侧最接近event_date的start
+
+        if idx == 0:
+            # 如果查询日期比最早的事件日还早
+            raise ValueError("查询日期比最早的事件日还早 肯定有问题！") #return  pd.DataFrame(columns=['l1_code', 'l2_code'])
+
+        # 获取对应的历史快照
+        target_event_date = self._event_dates[idx - 1]
+        return self._maps_on_event_dates[target_event_date]
 class FactorProcessor:
     """
     因子预处理器 - 专业级因子预处理流水线
@@ -63,6 +125,7 @@ class FactorProcessor:
                        neutral_dfs,
                        style_category: str,
                        neutralize_after_standardize: bool = False, #默认是最后标准化
+                       pit_map:PointInTimeIndustryMap = None
                        ):
         """
         完整的因子预处理流水线
@@ -77,10 +140,11 @@ class FactorProcessor:
         processed_target_factor_df = target_factor_df.copy()
         auxiliary_dfs = auxiliary_dfs.copy()
 
-
+        if pit_map is None:
+            pit_map = PointInTimeIndustryMap()
         # 步骤1：去极值
         # print("2. 去极值处理...")
-        processed_target_factor_df = self.winsorize_robust(processed_target_factor_df,industry_df)
+        processed_target_factor_df = self.winsorize_robust(processed_target_factor_df,pit_map)
 
         if not neutralize_after_standardize:
             # 步骤2：中性化
@@ -90,10 +154,10 @@ class FactorProcessor:
             else:
                 logger.info("2. 跳过中性化处理...")
             # 步骤3：标准化
-            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,industry_df)
+            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,pit_map)
         else:
             # 步骤2：标准化
-            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,industry_df)
+            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,pit_map)
             # 步骤3：中性化
             if self.preprocessing_config.get('neutralization', {}).get('enable', False):
                 # print("3. 中性化处理...")
@@ -149,111 +213,183 @@ class FactorProcessor:
     #
     #     return processed_factor
 
-    def _winsorize_mad_series(self, series: pd.Series, threshold: float) -> pd.Series:
+    def _winsorize_mad_series(self, series: pd.Series, threshold: float,min_samples: int = 10) -> pd.Series:
         """
-        【辅助函数】对单个Series(如单日单行业)进行MAD去极值。
-        """
-        # 1. 剔除NaN值进行计算
-        valid_series = series.dropna()
-        if valid_series.empty:
+           MAD去极值
+           - 新增 min_samples 参数，用于处理小样本组
+           - 假设输入的 series 是已经 dropna() 过的
+           """
+        # 1. 检查有效样本数是否达到阈值
+        if series.size < min_samples:
+            return series  # 样本太少，不处理，直接返回原序列
+
+        # 2. 计算中位数和MAD (此时series已不含NaN)
+        median = series.median()
+        mad = (series - median).abs().median()
+
+        # 3. 处理零MAD问题
+        if mad == 0:
             return series
 
-        # 2. 计算中位数和MAD
-        median = valid_series.median()
-        # MAD (Median Absolute Deviation from the sample's median)
-        mad = (valid_series - median).abs().median()
-
-        # 3. [核心修正] 处理零MAD问题
-        # 如果MAD为0，说明大部分数据点都等于中位数，此时不应进行去极值操作，否则会把所有值变成中位数。
-        if mad == 0:
-            return series  # 直接返回原序列
-
-        # 4. [核心修正] 引入统计学校正因子1.4826
-        # 1.4826 是高斯分布(正态分布)MAD与标准差之间的换算系数。
-        # 这样做使得 mad_threshold=3 大致等价于 3-sigma。
+        # 4. 计算边界并clip
         const = 1.4826
         upper_bound = median + threshold * const * mad
         lower_bound = median - threshold * const * mad
 
-        # 5. 使用clip进行去极值
         return series.clip(lower_bound, upper_bound)
 
-    def _winsorize_quantile_series(self, series: pd.Series, quantile_range: list) -> pd.Series:
+    def _winsorize_quantile_series(self, series: pd.Series, quantile_range: list,min_samples: int = 10) -> pd.Series:
         """
         【辅助函数】对单个Series进行分位数去极值。
         """
-        valid_series = series.dropna()
-        if valid_series.empty:
+        # 1. 检查有效样本数是否达到阈值
+        if series.size < min_samples:
             return series
 
+        # 2. 计算分位数 (此时series已不含NaN)
         lower_q, upper_q = min(quantile_range), max(quantile_range)
-        lower_bound = valid_series.quantile(lower_q)
-        upper_bound = valid_series.quantile(upper_q)
+        lower_bound = series.quantile(lower_q)
+        upper_bound = series.quantile(upper_q)
 
         return series.clip(lower_bound, upper_bound)
-
-    def winsorize_robust(self, factor_data: pd.DataFrame, industry_df: pd.DataFrame = None) -> pd.DataFrame:
+        # =========================================================================
+        # 【核心修改】新的辅助函数，处理单个截面日的回溯逻辑
+        # =========================================================================
+    #ok
+    def _winsorize_cross_section_fallback(
+            self,
+            daily_factor_series: pd.Series,
+            daily_industry_map: pd.DataFrame,
+            config: dict
+    ) -> pd.Series:
         """
-         去极值处理函数。
-        支持全市场或分行业的MAD和分位数法。
+        对单个截面日的因子数据执行“向上回溯”去极值。
+        这是之前我们独立设计的 winsorize_by_industry_fallback 函数的类方法版本。
+        """
+        primary_col = config['primary_level']  # e.g., 'l2_code'
+        fallback_col = config['fallback_level']  # e.g., 'l1_code'
+        min_samples = config['min_samples']
+
+        # 1. 数据整合
+        df = daily_factor_series.to_frame(name='factor')
+        merged_df = df.join(daily_industry_map, how='left')
+        #   merge 之前，先将索引ts_code重置为一列，以防在merge(merged_df.merge(primary_stats, on=primary_col, how='left'))中丢失
+        merged_df.reset_index(inplace=True)
+
+        # 删除没有因子值或行业分类的数据
+        merged_df.dropna(subset=['factor', primary_col, fallback_col], inplace=True)
+        if merged_df.empty:
+            return pd.Series(index=daily_factor_series.index, dtype=float)
+
+        # 2. 计算各级别行业的统计数据
+        def mad_func(s: pd.Series) -> float:
+            return (s - s.median()).abs().median()
+
+        primary_stats = merged_df.groupby(primary_col)['factor'].agg(['median', 'count', mad_func])
+        primary_stats.rename(columns={'median': 'primary_median', 'count': 'primary_count', 'mad_func': 'primary_mad'},
+                             inplace=True)
+
+        fallback_stats = merged_df.groupby(fallback_col)['factor'].agg(['median', mad_func])
+        fallback_stats.rename(columns={'median': 'fallback_median', 'mad_func': 'fallback_mad'}, inplace=True)
+
+        # 3. 将统计数据映射回每只股票
+        merged_df = merged_df.merge(primary_stats, on=primary_col, how='left')
+        merged_df = merged_df.merge(fallback_stats, on=fallback_col, how='left')
+
+        # 4. 核心回溯逻辑 不满足必须样本数目，就用一级行业的mad
+        use_fallback = merged_df['primary_count'] < min_samples
+
+        merged_df['final_median'] = np.where(use_fallback, merged_df['fallback_median'], merged_df['primary_median'])
+        merged_df['final_mad'] = np.where(use_fallback, merged_df['fallback_mad'], merged_df['primary_mad'])
+
+        merged_df['final_mad'].replace(0, 1e-9, inplace=True)#秒啊，如果是0的话 下面upper lower是一个值！ 导致最后所因子都是一个值！大忌！
+        merged_df.set_index('ts_code', inplace=True)
+
+        # 5. 执行去极值
+        method = config.get('method', 'mad')
+        if method == 'mad':
+            threshold = config.get('mad_threshold', 3)
+            const = 1.4826
+            upper = merged_df['final_median'] + threshold * const * merged_df['final_mad']
+            lower = merged_df['final_median'] - threshold * const * merged_df['final_mad']
+        elif method == 'quantile':
+            # 分位数法也可以应用回溯逻辑，但较为罕见。这里我们以MAD为主，分位数保持组内处理。
+            # 如需分位数回溯，逻辑会更复杂，此处为简化。
+            return merged_df['factor']  # 暂不处理quantile的回溯
+        else:
+            return merged_df['factor']
+
+        winsorized_factor = merged_df['factor'].clip(lower=lower, upper=upper)
+
+        # 返回一个与输入Series对齐的Series
+        return winsorized_factor.reindex(daily_factor_series.index)
+
+        # =========================================================================
+        # 【核心修改】重构后的 winsorize_robust 函数
+        # =========================================================================
+
+    def winsorize_robust(self, factor_data: pd.DataFrame,pit_industry_map: PointInTimeIndustryMap = None) -> pd.DataFrame:
+        """
+        去极值处理函数。
+        支持全市场或分行业（带向上回溯功能）的MAD和分位数法。
+
         Args:
             factor_data (pd.DataFrame): 因子数据 (index=date, columns=stock)。
-            industry_df (pd.DataFrame, optional): 行业分类数据 (格式同上)。
-                                                  如果提供此参数，则自动执行分行业去极值。
-                                                  默认为 None，执行全市场去极值。
-
+            industry_map (pd.DataFrame, optional): 行业分类数据 (index=stock, columns=['l1_code', 'l2_code',...])
+                                                   如果提供此参数，则执行分行业去极值。
         Returns:
             pd.DataFrame: 去极值后的因子数据。
         """
         winsorization_config = self.preprocessing_config.get('winsorization', {})
-        method = winsorization_config.get('method', 'mad')
+        industry_config = winsorization_config.get('by_industry')
 
-        if industry_df is None:
-            # --- 场景一：全市场去极值 (你的原始逻辑) ---
+        # --- 路径一：全市场去极值 (逻辑基本不变) ---
+        if pit_industry_map is None or industry_config is None:
             print("  执行全市场去极值...")
+            method = winsorization_config.get('method', 'mad')
             if method == 'mad':
-                threshold = winsorization_config.get('mad_threshold', 5)
-                # 对每一天(每一行)应用MAD去极值辅助函数
-                return factor_data.apply(self._winsorize_mad_series, axis=1, threshold=threshold)
+                params = {'threshold': winsorization_config.get('mad_threshold', 5),
+                          'min_samples': 1}  # 全市场不需min_samples
+                return factor_data.apply(self._winsorize_mad_series, axis=1, **params)
             elif method == 'quantile':
-                quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
-                return factor_data.apply(self._winsorize_quantile_series, axis=1, quantile_range=quantile_range)
+                params = {'quantile_range': winsorization_config.get('quantile_range', [0.01, 0.99]), 'min_samples': 1}
+                return factor_data.apply(self._winsorize_quantile_series, axis=1, **params)
+            return factor_data
+
+        # --- 路径二：分行业去极值 (采用回溯逻辑) ---
         else:
-            # --- 场景二：分行业去极值 (高质量做法) ---
-            print("  执行分行业去极值...")
-            # 1. 确保因子和行业数据对齐
-            factor_aligned, industry_aligned = factor_data.align(industry_df, join='left', axis=1)
+            print(
+                f"  执行分行业去极值 (主行业: {industry_config['primary_level']}, 回溯至: {industry_config['fallback_level']})...")
 
-            # 2. 将数据堆叠成长格式，便于按天和行业分组
-            factor_long = factor_aligned.stack(dropna=False).rename('factor')
-            industry_long = industry_aligned.stack(dropna=False).rename('industry')
-            #在合并后，丢弃那些没有因子值 或 没有行业值的行
-            #    这确保只在信息完备的数据上进行去极值
-            combined = pd.concat([factor_long, industry_long], axis=1).dropna(subset=['factor', 'industry'])
+            # 按天循环，在截面日上执行矢量化操作
+            processed_data = {}
+            for date in factor_data.index:
+                # 获取当天的因子和行业数据
+                daily_factor_series = factor_data.loc[date].dropna()
 
-            # 3. [核心修正] 使用更直接的 groupby().transform()
-            # 我们直接按照索引的第0层(日期)和'industry'列进行分组
-            if method == 'mad':
-                threshold = winsorization_config.get('mad_threshold', 5)
-                # transform会返回一个与原始combined['factor']形状和索引完全相同的Series
-                processed_factor = combined.groupby([pd.Grouper(level=0), 'industry'])['factor'].transform(
-                    self._winsorize_mad_series, threshold=threshold
+                # 如果当天没有有效因子值，则跳过
+                if daily_factor_series.empty:
+                    processed_data[date] = pd.Series(dtype=float)
+                    log_warning(f"去极值过程中，发现当天{date}所有股票因子值都为空")
+                    continue
+                    # =======================================================
+                    # 【关键变更】在循环内部，为每一天获取正确的历史地图
+                # =======================================================
+                daily_industry_map = pit_industry_map.get_map_for_date(date)
+
+                processed_data[date] = self._winsorize_cross_section_fallback(
+                    daily_factor_series=daily_factor_series,
+                    daily_industry_map=daily_industry_map,
+                    config=industry_config
                 )
-            elif method == 'quantile':
-                quantile_range = winsorization_config.get('quantile_range', [0.01, 0.99])
-                processed_factor = combined.groupby([pd.Grouper(level=0), 'industry'])['factor'].transform(
-                    self._winsorize_quantile_series, quantile_range=quantile_range
-                )
-            else:
-                return factor_data
 
-            # 4. 将处理后的长格式数据转回宽格式矩阵 (现在可以完美工作了)
-            # 因为processed_factor的索引是(日期, 股票代码)，与原始长表一致
-            return processed_factor.unstack().reindex(index=factor_data.index, columns=factor_data.columns)
-
-        return factor_data
+            # 将处理后的数据合并回DataFrame
+            result_df = pd.DataFrame.from_dict(processed_data, orient='index')
+            # 保持原始的索引和列顺序
+            return result_df.reindex(index=factor_data.index, columns=factor_data.columns)
 
     # ok
+    #考虑 传入的行业如果是二级行业那么行业变量多达130个！，我又不做全A，中证800才800，平均一个行业才5只股票 来进行中性化，有点不具参照！，必须用一级行业
     def _neutralize(self,
                     factor_data: pd.DataFrame,
                     target_factor_name:str,
@@ -274,6 +410,7 @@ class FactorProcessor:
              中性化后的因子数据
          """
         neutralization_config = self.preprocessing_config.get('neutralization', {})
+        skip_date_num = 0
         if not neutralization_config.get('enable', False):
             return factor_data
         factor_school = FactorManager.get_school_by_style_category( style_category)
@@ -436,78 +573,128 @@ class FactorProcessor:
     #
     #     raise RuntimeError("请指定标准化方式")
 
+    # 你的辅助函数稍作调整，专注于计算本身
     def _zscore_series(self, s: pd.Series) -> pd.Series:
-        """【辅助函数】对单个Series(如单日全市场或单日单行业)进行Z-Score标准化  能处理元素数量不足或标准差为0的极端情况。"""
-        # 使用 .count() 统计非NaN值的数量
-        if s.count() < 2:
-            # 如果有效数据点少于2个，无法计算标准差，直接返回0
-            # 返回一个与输入索引相同的Series，值为0，这是一个中性信号
-            return pd.Series(0, index=s.index)
-
+        """【辅助函数】对单个Series进行Z-Score标准化"""
+        if s.count() < 2: return pd.Series(0, index=s.index)
         std_val = s.std()
-        if std_val == 0:
-            # 如果标准差为0（所有值都一样），也返回0
-            return pd.Series(0, index=s.index)
-
+        if std_val == 0: return pd.Series(0, index=s.index)
         mean_val = s.mean()
         return (s - mean_val) / std_val
 
     def _rank_series(self, s: pd.Series) -> pd.Series:
-        """【辅助函数】对单个Series进行排序标准化 (转换为[-1, 1]区间) 将Series的值转换为[-1, 1]区间的百分位排名。"""
-        # .rank(pct=True) 会自动处理NaN，返回一个0-1之间的百分位排名
-        # 我们将其缩放到[-1, 1]
+        """【辅助函数】对单个Series进行排序标准化 (转换为[-1, 1]区间)"""
         return s.rank(pct=True, na_option='keep') * 2 - 1
 
-    # --------------------------------------------------------------------------
-    #  主函数 (Main Function) - 负责决策与调度
-    # --------------------------------------------------------------------------
-    #ok
-    def _standardize_robust(self, factor_data: pd.DataFrame, industry_df: pd.DataFrame = None) -> pd.DataFrame:
-        """
-        【V2.0-重构版】因子标准化函数。
-        支持全市场或分行业的Z-Score和排序标准化。
-        此版本修复了数据对齐和groupby计算的隐患。
-        """
-        standardization_config = self.preprocessing_config.get('standardization', {})
-        method = standardization_config.get('method', 'zscore')
+        # =========================================================================
+        # 【新增核心】处理截面标准化回溯的辅助函数
+        # =========================================================================
 
-        # 选择要使用的计算函数
-        if method == 'zscore':
-            calc_func = self._zscore_series
-        elif method == 'rank':
-            calc_func = self._rank_series
-        else:
-            raise ValueError(f"未知的标准化方法: {method}")
+    def _standardize_cross_section_fallback(
+            self,
+            daily_factor_series: pd.Series,
+            daily_industry_map: pd.DataFrame,
+            config: dict
+    ) -> pd.Series:
+        """对单个截面日的因子数据执行“向上回溯”Z-Score标准化。"""
+        primary_col = config['primary_level']
+        fallback_col = config['fallback_level']
+        min_samples = config.get('min_samples', 3)  # 标准化至少需要2个点，设为3更稳健
 
-        if industry_df is None:
-            # --- 场景一：全市场标准化 (逻辑正确，保持不变) ---
+        # 1. 数据整合
+        df = daily_factor_series.to_frame(name='factor')
+        merged_df = df.join(daily_industry_map, how='left')
+
+        # 赶紧 先将索引ts_code重置为一列，以防在merge(merged_df.merge(primary_stats, on=primary_col, how='left'))中丢失
+        merged_df.reset_index(inplace=True)
+
+        merged_df.dropna(subset=['factor', primary_col, fallback_col], inplace=True)
+        if merged_df.empty:
+            return pd.Series(index=daily_factor_series.index, dtype=float)
+
+        # 2. 计算各级别行业的统计数据 (mean, std, count)
+        primary_stats = merged_df.groupby(primary_col)['factor'].agg(['mean', 'std', 'count'])
+        primary_stats.rename(columns={'mean': 'primary_mean', 'std': 'primary_std', 'count': 'primary_count'},
+                             inplace=True)
+
+        fallback_stats = merged_df.groupby(fallback_col)['factor'].agg(['mean', 'std'])
+        fallback_stats.rename(columns={'mean': 'fallback_mean', 'std': 'fallback_std'}, inplace=True)
+
+        # 3. 将统计数据映射回每只股票
+        merged_df = merged_df.merge(primary_stats, on=primary_col, how='left')
+        merged_df = merged_df.merge(fallback_stats, on=fallback_col, how='left')
+
+        # 4. 核心回溯逻辑
+        use_fallback = merged_df['primary_count'] < min_samples
+        merged_df['final_mean'] = np.where(use_fallback, merged_df['fallback_mean'], merged_df['primary_mean'])
+        merged_df['final_std'] = np.where(use_fallback, merged_df['fallback_std'], merged_df['primary_std'])
+
+        # 稳健性处理：如果最终选择的标准差还是0或NaN，则不进行标准化（返回中性值0）
+        merged_df['final_std'].fillna(0, inplace=True)
+        merged_df.loc[merged_df['final_std'] < 1e-9, 'final_std'] = 1.0  # 用1替换，避免除零，相当于 (factor - mean)
+        #强制换回索引
+        merged_df.set_index('ts_code', inplace=True)
+
+        # 5. 执行Z-Score标准化
+        standardized_factor = (merged_df['factor'] - merged_df['final_mean']) / merged_df['final_std']
+
+        # 对于标准差为0导致std被设为1的组，其(factor-mean)可能不为0，需要手动设为0
+        standardized_factor.loc[merged_df['final_std'] == 1.0] = 0
+
+        return standardized_factor.reindex(daily_factor_series.index)
+
+        # =========================================================================
+        # 【核心升级】重构后的 standardize_robust 函数
+        # =========================================================================
+
+    def _standardize_robust(self, factor_data: pd.DataFrame,
+                           pit_industry_map: PointInTimeIndustryMap = None) -> pd.DataFrame:
+        """
+        【V3.0-PIT版】因子标准化函数。
+        支持全市场或分行业（带向上回溯功能）的Z-Score和排序标准化。
+        """
+        config = self.preprocessing_config.get('standardization', {})
+        method = config.get('method', 'zscore')
+        industry_config = config.get('by_industry')
+
+        # --- 路径一：全市场标准化 ---
+        if pit_industry_map is None or industry_config is None:
             print("  执行全市场标准化...")
-            return factor_data.apply(calc_func, axis=1)
+            if method == 'zscore':
+                return factor_data.apply(self._zscore_series, axis=1)
+            elif method == 'rank':
+                return factor_data.apply(self._rank_series, axis=1)
+            return factor_data
+
+        # --- 路径二：分行业标准化 ---
         else:
-            # --- 场景二：分行业标准化 (进行全面修正) ---
-            print("  执行分行业标准化...")
+            print(
+                f"  执行分行业标准化 (主行业: {industry_config['primary_level']}, 回溯至: {industry_config['fallback_level']})...")
 
-            # 1. 【修正一】使用 'left' join，以保留所有因子数据中的股票，防止数据丢失
-            #    这是解决最终结果中出现过多NaN的关键。
-            factor_aligned, industry_aligned = factor_data.align(industry_df, join='left', axis=1)
+            # Rank法通常在全市场进行才有意义，分行业Rank后不同行业的序无法直接比较。
+            # 这里我们约定，分行业标准化主要针对Z-Score。
+            if method == 'rank':
+                print("    警告：分行业Rank标准化逻辑复杂且不常用，将执行全市场Rank标准化。")
+                return factor_data.apply(self._rank_series, axis=1)
 
-            # 2. 将数据堆叠成长格式，便于按天和行业分组
-            factor_long = factor_aligned.stack(dropna=False).rename('factor')
-            industry_long = industry_aligned.stack(dropna=False).rename('industry')
+            processed_data = {}
+            for date in factor_data.index:
+                daily_factor_series = factor_data.loc[date].dropna()
+                if daily_factor_series.empty:
+                    processed_data[date] = pd.Series(dtype=float)
+                    log_warning(f"标准化过程中，发现当天{date}所有股票因子值都为空")
+                    continue
 
-            # 3. 【修正二】增强dropna，丢弃因子值为空 或 行业分类为空 的行
-            #    这是配合 'left' join 必须做的质量控制。
-            combined = pd.concat([factor_long, industry_long], axis=1).dropna(subset=['factor', 'industry'])
+                daily_industry_map = pit_industry_map.get_map_for_date(date)
 
-            # 4. 【核心修正】使用一步到位的 groupby().transform()，替代危险的 groupby().apply()
-            #    这彻底解决了 'ValueError: cannot include dtype 'M' in a buffer' 的崩溃问题。
-            #    并且性能更高，逻辑更直接。
-            #    pd.Grouper(level=0) 是一种标准的分组方式，意为“按索引的第0层（即日期）分组”。
-            processed_factor = combined.groupby([pd.Grouper(level=0), 'industry'])['factor'].transform(calc_func)
+                processed_data[date] = self._standardize_cross_section_fallback(
+                    daily_factor_series=daily_factor_series,
+                    daily_industry_map=daily_industry_map,
+                    config=industry_config
+                )
 
-            # 5. 【保持正确】将处理后的长格式数据转回宽格式矩阵
-            #    这一步的逻辑是正确的，它能保证最终输出的DataFrame形状与输入完全一致。
-            return processed_factor.unstack().reindex(index=factor_data.index, columns=factor_data.columns)
+            result_df = pd.DataFrame.from_dict(processed_data, orient='index')
+            return result_df.reindex(index=factor_data.index, columns=factor_data.columns)
 
     def _print_processing_stats(self,
                                 original_factor: pd.DataFrame,
@@ -577,4 +764,75 @@ class FactorProcessor:
         #         final_list.remove('market_cap')
         logger.info(f"最终用于回归的中性化目标因子为: {final_list}\n")
         return final_list
+# 模拟一个更真实的、包含历史变更的行业隶属关系数据
+def mock_full_historical_industry_data():
+    """
+    模拟 index_member_all 的全量历史返回
+    - S3 在 2023-02-01 从 L2_A1 变更到 L2_A2
+    - S6 早期存在，但在 2023-01-15 被剔除
+    """
+    data = [
+        # S1, S2, S4, S5 保持不变
+        ['L1_A', 'L2_A1', 'S1', '20200101', None],
+        ['L1_A', 'L2_A1', 'S2', '20200101', None],
+        ['L1_B', 'L2_B1', 'S4', '20200101', None],
+        ['L1_B', 'L2_B1', 'S5', '20200101', None],
+        # S3 的变更历史
+        ['L1_A', 'L2_A1', 'S3', '20200101', '20230131'], # 旧的隶属关系，在31日结束
+        ['L1_A', 'L2_A2', 'S3', '20230201', None],       # 新的隶属关系，从2月1日开始
+        # S6 的历史
+        ['L1_C', 'L2_C1', 'S6', '20200101', '20230115'],
+    ]
+    columns = ['l1_code', 'l2_code', 'ts_code', 'in_date', 'out_date']
+    df = pd.DataFrame(data, columns=columns)
+    df['in_date'] = pd.to_datetime(df['in_date'])
+    # out_date 为 None 的表示至今有效，为了便于比较，我们用一个未来的日期代替
+    df['out_date'] = pd.to_datetime(df['out_date']).fillna(pd.Timestamp(permanent__day))
+    return df
 
+from bisect import bisect_right
+
+
+
+if __name__ == '__main__':
+    # 1. 获取全量历史行业数据
+    raw_industry_df = mock_full_historical_industry_data()
+
+    # 2. 一次性构建PIT查询引擎
+    pit_map_engine = PointInTimeIndustryMap(raw_industry_df)
+
+    # 3. 准备因子数据，日期跨越S3的行业变更日
+    factor_data_df = pd.DataFrame({
+        'S1': [0.01, 0.02, 0.03],
+        'S2': [0.03, 0.04, 0.05],
+        'S3': [5.00, 0.01, 6.00],  # S3在 2023-01-31 和 2023-02-01 的极端值
+        'S4': [-4.0, 0.05, 0.06],
+        'S5': [0.06, 0.07, 0.08]
+    }, index=pd.to_datetime(['2023-01-31', '2023-02-01', '2023-02-02']))
+
+    # 4. 准备配置和QuantDeveloper实例
+    app_config = {
+        'preprocessing': {'winsorization': {
+            'method': 'mad', 'mad_threshold': 3.0,
+            'by_industry': {'primary_level': 'l2_code', 'fallback_level': 'l1_code', 'min_samples': 2}
+        }}}
+    developer = FactorProcessor(config=app_config)
+
+    # 5. 执行去极值
+    winsorized_df = developer.winsorize_robust(factor_data = factor_data_df, pit_industry_map=pit_map_engine)
+
+    print("\n--- 原始因子数据 ---\n", factor_data_df)
+    print("\n--- 去极值后因子数据 ---\n", winsorized_df)
+
+    # 6. 验证 S3 在不同日期的处理逻辑
+    print("\n--- 验证S3的行业归属和处理逻辑 ---")
+    s3_val_before = winsorized_df.loc['2023-01-31', 'S3']
+    s3_val_after = winsorized_df.loc['2023-02-01', 'S3']
+
+    # 在2023-01-31，S3属于L2_A1，该组有S1,S2,S3三只股票，样本足够，使用组内数据
+    print(f"2023-01-31, S3(5.0) 属于 L2_A1, 组员[S1,S2,S3], 因子[0.01,0.03,5.0], 处理后值为: {s3_val_before:.4f}")
+
+    # 在2023-02-01，S3变更到L2_A2，该组只有它自己，样本不足，回溯到L1_A
+    # L1_A 当天有 S1,S2,S3，因子值为 [0.02, 0.04, 0.01]，用这组的统计量来处理S3
+    print(
+        f"2023-02-01, S3(0.01) 属于 L2_A2(小样本), 回溯至 L1_A, 组员[S1,S2,S3], 因子[0.02,0.04,0.01], 处理后值为: {s3_val_after:.4f}")

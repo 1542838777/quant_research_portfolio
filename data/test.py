@@ -1,9 +1,10 @@
 import pandas as pd
 
+from data.local_data_load import get_industry_record_df_processed
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d, \
-    download_cashflow, download_income, download_balancesheet
+    download_cashflow, download_income, download_balancesheet, download_industry_record
 from quant_lib.tushare.tushare_client import TushareClient
 
 # daily_hfq 有问题
@@ -131,12 +132,20 @@ def compare_df_rows(df, index1, index2):
 
 
 if __name__ == '__main__':
-    # download_balancesheet()
-    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'balancesheet.parquet')
-    df = df[df['report_type'] != '1']
-    print(df)
+    df = get_industry_record_df_processed()
+    ori_df= pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'industry_record.parquet')
+    df.sort_values(by=['ts_code','in_date'], ascending=[True,True], inplace=True)
 
-    # imcome_df['ann_date'] = pd.to_datetime(imcome_df['ann_date'])
+    result = df.groupby('ts_code').filter(lambda x: (x['out_date'].isna()).sum() >2)
+    result.sort_values(by=['ts_code','in_date'], ascending=[True,True], inplace=True)
+    print(1)
+
+
+
+
+
+
+
     # imcome_df['f_ann_date'] = pd.to_datetime(imcome_df['f_ann_date'])
     # imcome_df = imcome_df[imcome_df['f_ann_date'] != imcome_df['ann_date']]
     # dup_check_report_type()

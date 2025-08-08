@@ -82,3 +82,5 @@ every_day_parquet_file_names = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq
 #'index_weights'  fina_indicator
 need_fix = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq',
                      'margin_detail', 'stk_limit']
+
+permanent__day = '22000101'

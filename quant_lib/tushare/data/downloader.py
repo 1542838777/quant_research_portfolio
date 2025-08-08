@@ -7,6 +7,8 @@ from datetime import timedelta, datetime
 from pathlib import Path
 
 import pandas as pd
+from IPython.testing.decorators import skipif
+from tqdm import tqdm
 from yfinance import download
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
@@ -240,6 +242,61 @@ def download_balancesheet(name='资产负债表'):
         print(f"{name}已存在，跳过下载。")
 
 
+def get_all_stock_basic_from_api():
+    stock_list = call_pro_tushare_api("stock_basic", list_status='L,D,P', fields='ts_code')['ts_code'].tolist()
+    return  stock_list
+
+#目前6000股票/60
+def download_industry_record():
+    path = LOCAL_PARQUET_DATA_DIR/'industry_record.parquet'
+    if  path.exists():
+        raise ValueError("已存在 industry_record，无需下载")
+    """
+    一次性拉取并构建包含所有股票历史行业归属的主数据表。
+    """
+    print("--- 开始构建行业历史主数据表 ---")
+    # 1. 获取所有A股列表 (作为查询目标)
+    all_ts_codes = get_all_stock_basic_from_api()
+    suspend_d_df  = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
+    namechange  = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'namechange.parquet')
+
+    # 2. 循环获取每只股票的行业隶属历史
+    all_members = []
+    for ts_code in tqdm(all_ts_codes, desc="获取股票行业隶属历史"):
+        try:
+            # is_new='N' 获取所有历史记录，而不仅仅是最新记录
+            hisotry_df = call_pro_tushare_api('index_member_all', ts_code=ts_code, is_new='N')
+            new_df = call_pro_tushare_api('index_member_all', ts_code=ts_code, is_new='Y')
+            dfs = [df for df in [hisotry_df, new_df] if df is not None and not df.empty]
+            if dfs:
+                entiry_record_for_one_stock_df = pd.concat(dfs, ignore_index=True)
+            else:
+               continue
+            all_members.append(entiry_record_for_one_stock_df)
+            print(f"  成功获取 {ts_code} 的行业历史...")
+        except Exception as e:
+            raise ValueError(f"  获取 {ts_code} 失败: {e}")
+
+    industry_history_df = pd.concat(all_members, ignore_index=True)
+
+    # 4. 【核心处理】执行必要的后处理，生成干净数据
+    # 转换日期格式
+    industry_history_df['in_date'] = pd.to_datetime(industry_history_df['in_date'], format='%Y%m%d')
+    industry_history_df['out_date'] = pd.to_datetime(industry_history_df['out_date'], format='%Y%m%d')
+    # 使用一个遥远的未来日期填充NaT，便于查询
+    # industry_history_df['out_date'] = pd.to_datetime(industry_history_df['out_date'], format='%Y%m%d').fillna(pd.Timestamp('2099-12-31'))
+
+    # 去重并排序，确保数据唯一性和有序性
+    # master_df = industry_history_df.drop_duplicates(subset=['ts_code', 'industry_code', 'in_date']).sort_values(
+    #     by=['ts_code', 'in_date'])
+    master_df = industry_history_df.sort_values(
+        by=['ts_code', 'in_date'])
+
+    # 4. 保存到本地
+    master_df.to_parquet(path)
+    print("done 获取股票行业隶属历史")
+
+    print("--- 行业历史主数据表构建完成并已保存到本地 ---")
 def download_stock_change_name_details():
     # 在 downloader.py 的“下载配套数据”部分，增加以下逻辑
 

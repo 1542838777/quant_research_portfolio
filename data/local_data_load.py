@@ -3,7 +3,7 @@ import random
 import pandas as pd
 from vectorbt.utils.docs import to_doc
 
-from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
+from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, permanent__day
 
 
 def load_index_daily(start_date, end_date):
@@ -64,6 +64,52 @@ def load_suspend_d_df():
     return pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
 
 
+def get_industry_record_df_processed():
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'industry_record.parquet')
+    df['in_date'] = pd.to_datetime(df['in_date'])
+    df['out_date'] = pd.to_datetime(df['out_date'])
+
+    # 按 ts_code + in_date + out_date 排序，NaT 默认在最后
+    df = df.sort_values(by=['ts_code', 'in_date', 'out_date'])
+
+    # 分组处理
+    def resolve_timeline_conflicts(group: pd.DataFrame) -> pd.DataFrame:
+        """
+        为一个股票分组，解决时间线冲突（重叠或NaT），但尊重空窗期。
+        """
+        group = group.sort_values(by='in_date').reset_index(drop=True)
+
+        if len(group) <= 1:
+            if not group.empty and pd.isna(group.loc[0, 'out_date']):
+                group.loc[0, 'out_date'] = permanent__day
+            return group
+
+        for i in range(len(group) - 1):
+            current_out = group.loc[i, 'out_date']
+            next_in_date = group.loc[i + 1, 'in_date']  # 正确的写法
+
+            # 情况一：当前 out_date 为空，必须填充
+            if pd.isna(current_out):
+                group.loc[i, 'out_date'] = next_in_date - pd.Timedelta(days=1)
+            # 情况二：当前 out_date 不为空，但与下一个 in_date 构成了重叠
+            elif current_out >= next_in_date:
+                # 强制修正，确保没有重叠
+                group.loc[i, 'out_date'] = next_in_date - pd.Timedelta(days=1)
+            # 情况三：current_out < next_in_date，是合理的空窗期，不做任何事
+
+        # 单独处理最后一条记录的 out_date
+        if pd.isna(group.loc[len(group) - 1, 'out_date']):
+            group.loc[len(group) - 1, 'out_date'] = permanent__day
+
+        return group
+
+    df = df.groupby('ts_code').apply(resolve_timeline_conflicts)
+    df.drop_duplicates(subset=['ts_code', 'in_date', 'out_date'], keep='first', inplace=True)
+
+    return df.reset_index(drop=True)
+
+
+
 def get_trading_dates(start_date: str, end_date: str) -> pd.DatetimeIndex:
     """
     根据起止日期，从交易日历中获取交易日序列。
@@ -103,3 +149,4 @@ def get_trading_dates(start_date: str, end_date: str) -> pd.DatetimeIndex:
         raise ValueError(f"错误: 交易日历文件 trade_cal.parquet 未找到。")
     except Exception as e:
         raise ValueError(f"获取交易日时发生未知错误: {e}")
+
