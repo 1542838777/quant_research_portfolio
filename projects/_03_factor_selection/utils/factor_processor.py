@@ -410,7 +410,7 @@ class FactorProcessor:
              中性化后的因子数据
          """
         neutralization_config = self.preprocessing_config.get('neutralization', {})
-        skip_date_num = 0
+
         if not neutralization_config.get('enable', False):
             return factor_data
         factor_school = FactorManager.get_school_by_style_category( style_category)
@@ -433,14 +433,19 @@ class FactorProcessor:
             logger.info(f"    > '{factor_school}' 派因子无需中性化。")
             return processed_factor
         logger.info(f"{target_factor_name}逐日进行截面回归中性化")
+        skipped_days_count = 0
+        total_days = len(processed_factor.index)
         # --- 阶段三：逐日进行截面回归中性化 ---
         for date in processed_factor.index:
             # logger.info(" 获取当天待中性化的因子数据（因变量 y")
             y = processed_factor.loc[date].dropna()
-            if len(y) < 20:  # 确保有足够多的样本进行回归，避免过拟合或回归不稳定 todo 实盘需注意，这设置的20
-                logger.debug(f"    日期 {date.date()} 样本数不足 ({len(y)} < 20)，跳过中性化。")
-                # 当天数据如果不足，将处理后的因子值设为NaN，表示该日未进行有效中性化
+            # --- 初步可行性检查 ---
+            universe_size = len(processed_factor.columns)
+            min_coverage_ratio = 0.05
+            if len(y) < universe_size * min_coverage_ratio:
+                logger.debug(f"    日期 {date.date()} 因子覆盖率不足，跳过中性化。")
                 processed_factor.loc[date] = np.nan
+                skipped_days_count += 1
                 continue
 
             # a) 构建回归自变量矩阵 X
@@ -522,8 +527,24 @@ class FactorProcessor:
             except Exception as e:
                 # 捕获回归可能出现的错误，如矩阵奇异（共线性）、样本不足导致无法拟合等
                 raise ValueError(f"  警告: 日期 {date.date()} 中性化回归失败: {e}。该日因子数据将标记为NaN。") #raise
-        return processed_factor
 
+        # 循环结束后，执行“熔断检查” ===
+        # 从配置中获取最大跳过比例，如果未配置，则默认为10%
+        max_skip_ratio = neutralization_config.get('max_skip_ratio', 0.10)
+
+        actual_skip_ratio = skipped_days_count / total_days
+
+        if actual_skip_ratio > max_skip_ratio:
+            # 当实际跳过比例超过阈值时，直接抛出异常，中断程序
+            raise ValueError(
+                f"因子 '{target_factor_name}' 中性化失败：处理的 {total_days} 天中，"
+                f"有 {skipped_days_count} 天 ({actual_skip_ratio:.2%}) 因样本不足被跳过，"
+                f"超过了 {max_skip_ratio:.0%} 的容忍上限。"
+                f"请检查上游因子数据质量或股票池设置。"
+            )
+
+        logger.info(f"  > 中性化完成。在 {total_days} 天中，共跳过了 {skipped_days_count} 天。")
+        return processed_factor
     # # ok
     # def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
     #     """
