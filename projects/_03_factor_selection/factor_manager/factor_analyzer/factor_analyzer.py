@@ -45,7 +45,7 @@ from quant_lib.evaluation import (
 
 warnings.filterwarnings('ignore')
 
-
+#使用时 注意shift
 def prepare_industry_dummies(
         pit_map: PointInTimeIndustryMap,
         trade_dates: pd.DatetimeIndex,
@@ -309,6 +309,10 @@ class FactorAnalyzer:
             stock_pool=target_factor_df.columns,
             level=industry_level
         )
+        # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
+        industry_dummies_dict = {
+            key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
+        }
 
         # 4. 构建最终的、权威的 neutral_dfs 字典
         #    这个字典将是整个流程中唯一的中性化数据源

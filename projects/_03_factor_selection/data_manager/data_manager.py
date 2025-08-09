@@ -975,7 +975,8 @@ class DataManager:
 
 
 def align_one_df_by_stock_pool_and_fill(factor_name=None, df=None,
-                                        stock_pool_df: pd.DataFrame = None, _existence_matrix: pd.DataFrame = None):
+                                        stock_pool_df: pd.DataFrame = None,
+                                        _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
