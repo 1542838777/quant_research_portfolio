@@ -237,6 +237,7 @@ class VisualizationManager:
                                 turnover_stats_periods_dict: Dict,
                                 style_correlation_dict: Dict,
                                 factor_df: pd.DataFrame,  # 需要原始因子值来画自相关图
+                                period,
                                 save_plots: bool = True):
         """
         【V4版-诊断报告】生成因子的诊断图表。
@@ -278,7 +279,7 @@ class VisualizationManager:
 
         # 假设 self.output_dir 存在
         path = Path(
-            self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_{target_period}_diagnostics_report.png")
+            self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_{period}_diagnostics_report.png")
         path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(path, dpi=300, bbox_inches='tight')
         plt.close()

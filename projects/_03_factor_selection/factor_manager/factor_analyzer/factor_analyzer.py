@@ -957,7 +957,8 @@ class FactorAnalyzer:
                     target_factor_df=self.target_factors_dict[target_factor_name],
                     preprocess_method="standard"
                 ))
-        overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_name,
+        target_factor_df = self.target_factors_dict[target_factor_name]
+        overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df,target_factor_name,
                                                                              self.target_factors_style_category_dict[
                                                                                  target_factor_name], "standard",
                                                                              ic_series_periods_dict,
@@ -1084,7 +1085,7 @@ class FactorAnalyzer:
                 quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
                 factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict )
 
-    def landing_for_core_three_analyzer_result(self, target_factor_name, category, preprocess_method,
+    def landing_for_core_three_analyzer_result(self, target_factor_df,target_factor_name, category, preprocess_method,
                                                ic_series_periods_dict, ic_stats_periods_dict,
                                                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
                                                factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict ):
@@ -1135,7 +1136,7 @@ class FactorAnalyzer:
                 ic_series_periods_dict,
                 turnover_stats_periods_dict,
                 style_correlation_dict ,
-                self.target_factors_dict[target_factor_name],
+                target_factor_df,
                 period
 
             )
