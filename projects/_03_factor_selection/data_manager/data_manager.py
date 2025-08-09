@@ -1006,6 +1006,7 @@ def fill_self(factor_name, df,_existence_matrix):
         # 如果因子因为数据不足而无法计算，就不应凭空创造它的值
         return df
 
+
     raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
 
 
