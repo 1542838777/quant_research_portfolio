@@ -931,24 +931,6 @@ class FactorAnalyzer:
 
             **test_kwargs: 测试参数
         """
-
-        # # 自动分类因子
-        # 先注释下面的，问题：自动识别因子类型 函数有待补充！ 暂且不用 不是很要紧
-        # if category is None and auto_register:
-        #
-        #
-        #     # returns_data = self.single_factor_tester.get_returns_data()#todo！！！
-        #     # category = self.factor_manager.classify_factor(factor_data, returns_data)
-        #
-        # # 自动注册因子
-        # if auto_register:
-        #     self.register_factor(
-        #         name=factor_name,
-        #         category=category or FactorCategory.CUSTOM,
-        #         description=f"自动注册的{category.value if isinstance(category, FactorCategory) else category or '自定义'}因子",
-        #         data_requirements=["price", "returns"]
-        #     )
-
         # 执行测试
         ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict ,turnover_stats_periods_dict,style_correlation_dict= \
             (

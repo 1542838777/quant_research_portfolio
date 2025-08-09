@@ -462,8 +462,8 @@ class FactorManager:
         return technical_df_dict, technical_category_dict, technical_school_dict
 
     def get_backtest_ready_factor(self, factor_name):
-       df = self.get_factor(factor_name)
-       pool = self.get_stock_pool_by_factor_name(factor_name)
+       df = self.get_factor(factor_name)#这是纯净的因子，
+       pool = self.get_stock_pool_by_factor_name(factor_name)#拿到之前基于t-1信息 构建的动态股票池
        # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1
        df=df.shift(1)
        return align_one_df_by_stock_pool_and_fill(factor_name=factor_name,
