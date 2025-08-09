@@ -35,8 +35,8 @@ n_metrics_pass_rate_key = 'n_metrics_pass_rate'
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
-    calculate_ic_vectorized,
-    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns, calculate_turnover_vectorized,
+    calculate_ic,
+    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns, calculate_turnover,
     calcu_forward_returns_close_close, calcu_forward_returns_open_close
 
 )
@@ -213,15 +213,15 @@ class FactorAnalyzer:
         """
 
 
-        ic_series_periods_dict, stats_periods_dict = calculate_ic_vectorized(factor_data, close_df,
-                                                                             forward_periods=self.test_common_periods,
-                                                                             method='spearman',returns_calculator = returns_calculator,min_stocks=10)
+        ic_series_periods_dict, stats_periods_dict = calculate_ic(factor_data, close_df,
+                                                                  forward_periods=self.test_common_periods,
+                                                                  method='spearman', returns_calculator = returns_calculator, min_stocks=10)
 
         return ic_series_periods_dict, stats_periods_dict
 
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
-                               returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame],  # 具体化Callable
+                               returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame],
                                close_df: pd.DataFrame,
                                factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame],Dict]:
         """
@@ -244,7 +244,7 @@ class FactorAnalyzer:
         )
         # 【新增】调用换手率计算
         logger.info("    > 正在计算因子换手率...")
-        turnover_series_periods_dict = calculate_turnover_vectorized(
+        turnover_series_periods_dict = calculate_turnover(
             factor_df=factor_data,
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
@@ -284,75 +284,26 @@ class FactorAnalyzer:
         """
         logger.info(f"开始测试因子: {target_factor_name}")
         target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
-        style_category = self.factor_manager.get_style_category(target_factor_name)
-        stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
-        # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
-        close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-                                                                                     need_shift=False)[
-            stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
-                                                                                     need_shift=False)[
-            stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
 
-        auxiliary_shift_dfs_base_own_stock_pools = \
-            self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
-                stock_pool_name]
-
-        circ_mv_shift_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
-            factor_name='circ_mv',
-            need_shift=True)[stock_pool_name]
-        # ==============================================================================
-        # 【核心改造】在此处统一准备权威的“中性化数据篮子 (neutral_dfs)”
-        # ==============================================================================
-
-        # 1. 从配置中读取所需的行业级别
-        neutralization_config = self.factor_processor.preprocessing_config.get('neutralization', {})
-        industry_level = neutralization_config.get('by_industry', {}).get('industry_level', 'l1_code')  # 默认为一级行业
-
-        # 2. 初始化PIT地图
-        pit_map = PointInTimeIndustryMap()  #  它能自动加载数据
-
-        # 3. 动态生成所需的行业哑变量
-        industry_dummies_dict = prepare_industry_dummies(
-            pit_map=pit_map,
-            trade_dates=target_factor_df.index,
-            stock_pool=target_factor_df.columns,
-            level=industry_level
-        )
-        # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
-        industry_dummies_dict = {
-            key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
-        }
-
-        # 4. 构建最终的、权威的 neutral_dfs 字典
-        #    这个字典将是整个流程中唯一的中性化数据源
-        final_neutral_dfs = {
-            # 市值因子是必须的，通常需要对数化，这一步可以在中性化函数内部做，也可以在这里准备好
-            'total_mv': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='total_mv',
-                                                                                          need_shift=True)[
-                stock_pool_name],
-            # 如果需要beta中性化，也在这里加入
-            # 'pct_chg_beta': beta_df,
-
-            # 使用字典解包，将动态生成的行业哑变量添加进来
-            **industry_dummies_dict
-        }
+        (auxiliary_dfs_base_own_stock_pool,final_neutral_dfs,style_category,pit_map  
+            )= self.prepare_date_for_process_factor(target_factor_name, target_factor_df)
         if need_process_factor:
             # 1. 因子预处理
             target_factor_df = self.factor_processor.process_factor(
                 target_factor_df=target_factor_df,
                 target_factor_name=target_factor_name,
-                auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
+                auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
                 pit_map = pit_map
             )
-
-        style_factor_dfs = self.get_style_factors(stock_pool_name)
+            
+        #数据准备
+        close_df,open_df,circ_mv_df,style_factor_dfs= self.prepare_date_for_core_test(target_factor_name)
         c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)  # todo增加另外 的 收益率计算！
         o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
-        return self.core_three_test(target_factor_df, target_factor_name,open_df,c2c_calculator, close_df,
-                                    final_neutral_dfs, circ_mv_shift_df,style_factor_dfs)
+        return self.core_three_test(target_factor_df, target_factor_name, open_df, c2c_calculator, close_df,
+                                    final_neutral_dfs, circ_mv_df, style_factor_dfs)
 
     # ok
     def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
@@ -381,7 +332,7 @@ class FactorAnalyzer:
         logger.info("开始准备行业哑变量df，用于后续中性化使用...")
 
         # --- 1. 市值数据 ---
-        neutral_dict['total_mv'] = total_mv_df
+        neutral_dict['small_cap'] = total_mv_df
 
         # --- 2. 行业数据处理 ---
 
@@ -870,12 +821,6 @@ class FactorAnalyzer:
             }
         }
 
-    def prepare_for_neutral_data_dict_shift_diff_stock_pools(self) -> Dict[str, Dict[str, pd.DataFrame]]:
-        dict = {}
-        for stock_pool_name, df_dict in self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict().items():
-            cur = self._prepare_for_neutral_data(df_dict['total_mv'], df_dict['industry'])
-            dict[stock_pool_name] = cur
-        return dict
 
     # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     def get_pct_chg_beta_dict(self):
@@ -1007,8 +952,6 @@ class FactorAnalyzer:
 
     def batch_test_factors(self,
                            target_factors_dict: Dict[str, pd.DataFrame],
-                           target_factors_category_dict: Dict[str, str],
-                           target_factor_school_type_dict: Dict[str, str],
                            **test_kwargs) -> Dict[str, Any]:
         """
         批量测试因子
@@ -1025,7 +968,6 @@ class FactorAnalyzer:
                     ))
                 results[factor_name] = summary_stats
             except Exception as e:
-                # traceback.print_exc()
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
 
         return results
@@ -1052,9 +994,9 @@ class FactorAnalyzer:
 
         # 3. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
-        factor_returns_series_periods_dict, fm_stat_results_periods_dict = fama_macbeth(
+        factor_returns_series_periods_dict, factor_t_stats_series_periods_dict,fm_stat_results_periods_dict = fama_macbeth(
             factor_data=target_factor_processed, returns_calculator =returns_calculator,close_df=close_df, forward_periods=self.test_common_periods,
-            neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_df=circ_mv_shift_df,
+            neutral_dfs={}, circ_mv_df=circ_mv_shift_df,
             factor_name=target_factor_name)
 
         # 【新增】4. 风格相关性分析
@@ -1145,17 +1087,12 @@ class FactorAnalyzer:
         # 波动率 (Volatility): 股价波动性。如过去N天的年化波动率。
         #
         # 真实数据案例： 假设你发明了一个“分析师上调评级次数”因子，回测发现效果很好。但如果你计算它和规模因子的相关性，发现高达0.6。这说明分析师更倾向于覆盖和评级大市值的公司。那么你的因子收益，很大一部分其实只是搭了“大盘股效应”的便车，并非真正独特的Alpha。当市场风格从大盘切换到小盘时，你的因子可能会突然失效。#
-        for factor_name in ['total_mv', 'pb', 'ps_ttm']:# todo 最后期增加别的剩余的风格因子
+        for factor_name in ['small_cap', 'pb', 'ps_ttm']:# todo 最后期增加别的剩余的风格因子
             #   build_df_dict... 函数可以获取因子数据并应用T-1原则
             df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
                 factor_name=factor_name,
-                need_shift=True
-            )[stock_pool_name]
-
-            # 对市值取对数，这是标准做法
-            if factor_name == 'total_mv':
-                df = np.log(df)
-                factor_name = 'size'  # 重命名为 'size'
+                need_shift=False
+            )[stock_pool_name][factor_name]
 
             style_factors[factor_name] = df
         return style_factors
@@ -1185,3 +1122,74 @@ class FactorAnalyzer:
             correlation_results[f'corr_with_{style_name}'] = daily_corr.mean()
 
         return correlation_results
+
+    def prepare_date_for_process_factor(self,target_factor_name,target_factor_df):
+        # 目标因子基础信息准备
+        target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
+        style_category = self.factor_manager.get_style_category(target_factor_name)
+        stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
+        # 
+        # # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
+        # close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+        #                                                                              need_shift=False)[
+        #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        # open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
+        #                                                                             need_shift=False)[
+        #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+
+        auxiliary_dfs_base_own_stock_pool = \
+            self.factor_manager.build_diff_stock_pools_dict_auxiliary_dfs()[
+                stock_pool_name]
+
+        # circ_mv_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
+        #     factor_name='circ_mv',
+        #     need_shift=False)[stock_pool_name]
+        # ==============================================================================
+        # 【核心改造】在此处统一准备权威的“中性化数据篮子 (neutral_dfs)”
+        # ==============================================================================
+
+        # 1. 从配置中读取所需的行业级别
+        neutralization_config = self.factor_processor.preprocessing_config.get('neutralization', {})
+        industry_level = neutralization_config.get('by_industry', {}).get('industry_level', 'l1_code')  # 默认为一级行业
+
+        # 2. 初始化PIT地图
+        pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
+
+        # 3. 动态生成所需的行业哑变量
+        industry_dummies_dict = prepare_industry_dummies(
+            pit_map=pit_map,
+            trade_dates=target_factor_df.index,
+            stock_pool=target_factor_df.columns,
+            level=industry_level
+        )
+        # ：last ：方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
+        # # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
+        # industry_dummies_dict = {
+        #     key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
+        # }
+        final_neutral_dfs = {
+            # 市值因子是必须的，
+            'small_cap': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='small_cap')[
+                stock_pool_name]['small_cap'],
+            'pct_chg_beta': auxiliary_dfs_base_own_stock_pool['pct_chg_beta']['pct_chg_beta'],  # 回归需要用到
+            # 使用字典解包，将动态生成的行业哑变量添加进来
+            **industry_dummies_dict
+        }
+        # style_factor_dfs = self.get_style_factors(stock_pool_name)
+
+        return auxiliary_dfs_base_own_stock_pool,final_neutral_dfs,style_category,pit_map
+
+    def prepare_date_for_core_test(self,target_factor_name):
+        target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
+        stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
+        close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+                                                                                     need_shift=False)[
+            stock_pool_name]['close']  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
+                                                                                    need_shift=False)[
+            stock_pool_name]['open']
+        circ_mv_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
+            factor_name='circ_mv',
+            need_shift=False)[stock_pool_name]['circ_mv']
+        style_factor_dfs = self.get_style_factors(stock_pool_name)
+        return close_df, open_df, circ_mv_df, style_factor_dfs

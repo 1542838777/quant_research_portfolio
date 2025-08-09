@@ -162,7 +162,7 @@ class DataManager:
         # print("1. 验证股票池构建所需数据...")
 
         # 验证必需字段是否已加载
-        required_fields_for_universe = ['close', 'total_mv', 'turnover_rate', 'industry', 'list_date']
+        required_fields_for_universe = ['close', 'circ_mv', 'turnover_rate', 'industry', 'list_date']
         missing_fields = [field for field in required_fields_for_universe if field not in self.raw_dfs]
 
         if missing_fields:
@@ -201,8 +201,8 @@ class DataManager:
         aligned_data = {}
         for factor_name, raw_df in raw_dfs.items():
             # 1. 确定当前因子需要哪个股票池！
-            aligned_df = align_one_df_by_stock_pool_and_fill(factor_name=factor_name, df=raw_df,
-                                                             stock_pool_df=stock_pool_df)
+            aligned_df = fill_and_align_by_stock_pool(factor_name=factor_name, df=raw_df,
+                                                      stock_pool_df=stock_pool_df)
             aligned_data[factor_name] = aligned_df
         return aligned_data
 
@@ -216,7 +216,7 @@ class DataManager:
 
             'close',
             'pb',  # 为了计算价值类因子
-            'total_mv', 'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
+            'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
             'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
             'list_date',  # 上市日期,
@@ -238,7 +238,7 @@ class DataManager:
             if 'industry' in neutralization['factors']:
                 required_fields.add('industry')
             if 'market_cap' in neutralization['factors']:
-                required_fields.add('total_mv')
+                required_fields.add('circ_mv')
         return list(required_fields)
 
     def _check_data_quality(self):
@@ -612,10 +612,10 @@ class DataManager:
         Returns:
             过滤后的动态股票池
         """
-        if 'total_mv' not in self.raw_dfs:
+        if 'circ_mv' not in self.raw_dfs:
             raise RuntimeError("缺少市值数据，无法进行市值过滤")
 
-        mv_df = self.raw_dfs['total_mv']
+        mv_df = self.raw_dfs['circ_mv']
         mv_df = mv_df.shift(1)
 
         # 1. 【屏蔽】只保留在当前股票池(stock_pool_df)中的股票市值，其余设为NaN
@@ -1010,10 +1010,10 @@ def fill_self(factor_name, df,_existence_matrix):
 
     raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
 
-
-def align_one_df_by_stock_pool_and_fill(factor_name=None, df=None,
-                                        stock_pool_df: pd.DataFrame = None,
-                                        _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据
+#跟stock——pool对齐，这是铁的防线！，因为市场环境：1000只股票。可能就50能交易的，。我们不跟可交易股票池进行对齐，那么后面的ic、分组，用上无相关的950的股票池做计算，那有什么用，所以一定要对齐过滤！！
+def fill_and_align_by_stock_pool(factor_name=None, df=None,
+                                 stock_pool_df: pd.DataFrame = None,
+                                 _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略

@@ -35,14 +35,14 @@ def calculate_rolling_beta(
     # 滚动历史因子 (Rolling History Factor)
     # 例子: pct_chg_beta, 动量因子 (Momentum), 滚动波动率 (Volatility)。
     #
-    # 关键特征: 计算今天的值，需要过去N天连续、干净的历史数据。(所以给他提前buffer)它的计算过程本身就是一个“时间序列”操作。
+    # 关键特征: 计算今天的值，需要过去N天连续、干净的历史数据。(所以给他提前buffer) 它的计算过程本身就是一个“时间序列”操作。
     buffer_days = int(window * 1.7) + 5
     buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y%m%d')
     # 1. Load the long-form DataFrame
     stock_data_long = load_daily_hfq(buffer_start_date, end_date, cur_stock_codes)
 
     # 2. It's better to modify the column before pivoting
-    stock_data_long['pct_chg'] = stock_data_long['pct_chg'] / 100
+    stock_data_long['pct_chg'] = stock_data_long['pct_chg'] / 100 #  check一下是否需要/100 需要
 
     # 3. Correctly pivot the DataFrame to wide format
     # The 'columns' argument should be the name of the column containing the stock codes.
@@ -55,7 +55,7 @@ def calculate_rolling_beta(
 
     # a) 获取市场指数的每日收益率 是否是自动过滤了 非交易日 yes
     market_returns_long = load_index_daily(buffer_start_date, end_date).assign(
-        pct_chg=lambda x: x['pct_chg'] / 100)  # pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
+        pct_chg=lambda x: x['pct_chg'] / 100)  # pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame   check一下是否需要/100 需要
     market_returns = market_returns_long.set_index('trade_date')['pct_chg']
     market_returns.index = pd.to_datetime(market_returns.index)
     market_returns.name = 'market_return'  # chong'ming

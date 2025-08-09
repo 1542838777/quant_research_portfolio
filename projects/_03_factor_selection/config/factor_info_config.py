@@ -59,7 +59,7 @@ FACTOR_FILL_CONFIG = {
     'pb': FILL_STRATEGY_NONE,
     'ps_ttm': FILL_STRATEGY_NONE,
     'circ_mv': FILL_STRATEGY_NONE,
-    'total_mv': FILL_STRATEGY_NONE,
+    # 'total_mv': FILL_STRATEGY_NONE,
 
     # 交易行为类，依赖一个外部的交易状态flag来实现
     'turnover_rate': FILL_STRATEGY_CONDITIONAL_ZERO,
@@ -82,10 +82,12 @@ FACTOR_FILL_CONFIG = {
     'sp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
     'cfp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
     'roe_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
+    'small_cap': FILL_STRATEGY_FFILL_LIMIT_65,
     'gross_margin_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
     'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
     'net_profit_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
     'total_revenue_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
+    'pct_chg_beta': FILL_STRATEGY_NONE,#todo
 
     # === 动量(Momentum), 风险(Risk), 流动性(Liquidity) ===
     # 【保持正确】维持我们之前的结论，这类短半衰期因子，不应填充。

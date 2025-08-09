@@ -209,9 +209,11 @@ class VisualizationManager:
             ic_ir = ic_stats_periods_dict.get(period, {}).get('ic_ir', np.nan)
             tmb_sharpe = quantile_stats_periods_dict.get(period, {}).get('tmb_sharpe', np.nan)
             fm_t_stat = fm_stat_results_periods_dict.get(period, {}).get('t_statistic', np.nan)
-            summary_data.append([f'{period}', f'{ic_ir:.2f}', f'{tmb_sharpe:.2f}', f'{fm_t_stat:.2f}'])
+            mean_abs_t = fm_stat_results_periods_dict.get(period, {}).get('mean_abs_t_stat', np.nan)
+            summary_data.append(
+                [f'{period}', f'{ic_ir:.2f}', f'{tmb_sharpe:.2f}', f'{fm_t_stat:.2f}', f'{mean_abs_t:.2f}'])
 
-        columns = ['周期', 'ICIR', '分层Sharpe', 'F-M t值']
+        columns = ['周期', 'ICIR', '分层Sharpe', 'F-M t值', 't值绝对值均值']
         table = ax4.table(cellText=summary_data, colLabels=columns, loc='center', cellLoc='center')
         table.auto_set_font_size(False)
         table.set_fontsize(16)

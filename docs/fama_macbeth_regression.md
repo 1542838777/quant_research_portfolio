@@ -102,16 +102,16 @@ print(f"是否显著: {results['is_significant']}")
 # 完整的因子分析包括：IC分析 + 分层回测 + Fama-MacBeth回归
 
 from quant_lib.evaluation import (
-    calculate_ic_vectorized,
+    calculate_ic,
     calculate_quantile_returns,
     run_fama_macbeth_regression
 )
 
 # 1. IC分析
 forward_returns = price_data.shift(-20) / price_data - 1
-ic_series = calculate_ic_vectorized(pe_factor, forward_returns)
+ic_series = calculate_ic(pe_factor, forward_returns)
 print(f"IC均值: {ic_series.mean():.4f}")
-print(f"IR: {ic_series.mean()/ic_series.std():.4f}")
+print(f"IR: {ic_series.mean() / ic_series.std():.4f}")
 
 # 2. 分层回测
 quantile_results = calculate_quantile_returns(

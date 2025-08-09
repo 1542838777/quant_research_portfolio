@@ -19,7 +19,7 @@ from ..factor_manager.factor_technical_cal.factor_technical_cal import calculate
 from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from ..factor_manager.registry.factor_registry import FactorCategory
 from ..multi_factor_optimizer.multi_factor_optimizer import MultiFactorOptimizer
-from ..data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
+from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool
 from ..utils.factor_processor import FactorProcessor
 from ..visualization_manager.visualization_manager import VisualizationManager
 

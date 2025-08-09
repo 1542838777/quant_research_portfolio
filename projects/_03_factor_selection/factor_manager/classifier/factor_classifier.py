@@ -311,7 +311,7 @@ class FactorClassifier:
     @staticmethod
     def is_size_factor(factor_name: str) -> bool:
         """判断是否为市值类因子"""
-        exact_matches = ['market_cap_log', 'total_mv', 'circ_mv', 'size']
+        exact_matches = ['market_cap_log', 'total_mv','small_cap', 'circ_mv', 'size']
         if factor_name in exact_matches:
             return True
         keyword_matches = ['market_cap', '_mv']

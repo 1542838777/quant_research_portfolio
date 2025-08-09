@@ -1,4 +1,6 @@
 import pandas as pd
+import os
+import platform
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, parquet_file_names, every_day_parquet_file_names, \
     need_fix
@@ -80,8 +82,22 @@ def compare_local_and_net():
         # in_local_daily = miss_ts_code in local_daily['ts_code'].tolist()
         # in_local_daily_basic = miss_ts_code in local_daily_basic['ts_code'].tolist()
         # print(f" miss_ts_code{miss_ts_code},net:{in_net},local_hfq_ret:{in_local_hfq},local_daily:{in_local_daily},local_daily_basic:{in_local_daily_basic}")
-
+def notify(title, message):
+    """通用通知函数"""
+    system_name = platform.system()
+    if system_name == "Darwin":  # macOS
+        os.system(f'osascript -e \'display notification "{message}" with title "{title}"\'')
+    elif system_name == "Linux": # Linux
+        # 需要安装 libnotify-bin: sudo apt-get install libnotify-bin
+        os.system(f'notify-send "{title}" "{message}"')
+    elif system_name == "Windows": # Windows
+        # 需要安装一个库: pip install win10toast-persist
+        from win10toast_persist import ToastNotifier
+        toaster = ToastNotifier()
+        toaster.show_toast(title, message, duration=10) # 持续10秒
 if __name__ == '__main__':
-    df = call_pro_tushare_api('income_vip', period='20240930')
-    cash_df = call_pro_tushare_api('cashflow_vip', period= '20240930')
+    print('\a')
+    # df = call_pro_tushare_api('income_vip', period='20240930')
+    # cash_df = call_pro_tushare_api('cashflow_vip', period= '20240930')
     # compare_local_and_net()
+    notify("PyCharm任务完成", "回测已成功结束！✅")

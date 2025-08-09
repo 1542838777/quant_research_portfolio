@@ -55,11 +55,10 @@ def main():
     logger.info("5. 批量测试因子...")
     try:
         batch_results = factor_analyzer.batch_test_factors(
-            target_factors_dict=target_factors_dict,
-            target_factors_category_dict=target_factors_category_dict,
-            target_factor_school_type_dict=target_factors_school_dict
+            target_factors_dict=target_factors_dict
         )
         logger.info(f"✓ 批量测试完成，成功测试 {len(batch_results)} 个因子")
+        print()
     except Exception as e:
         # traceback.print_exc()
         raise ValueError(f"✗ 批量测试失败: {e}") from e

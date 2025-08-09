@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from quant_lib import setup_logger
-from quant_lib.config.logger_config import log_warning
+from quant_lib.config.logger_config import log_warning, log_error
 from .classifier.factor_calculator.factor_calculator import FactorCalculator
 from .classifier.factor_classifier import FactorClassifier
 from .factor_technical_cal.factor_technical_cal import calculate_rolling_beta
@@ -21,7 +21,8 @@ from .factor_technical_cal.factor_technical_cal import calculate_rolling_beta
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .storage.single_storage import add_single_factor_test_result
 from ..config.base_config import INDEX_CODES
-from ..data_manager.data_manager import DataManager, align_one_df_by_stock_pool_and_fill
+from ..config.factor_direction_config import FACTOR_DIRECTIONS
+from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool
 
 logger = setup_logger(__name__)
 
@@ -82,31 +83,48 @@ class FactorManager:
         """
         【核心】获取因子的统一接口。
         """
+        # 步骤1: 检查缓存，如果命中则直接返回 (行为不变)
         if factor_name in self.factors_cache:
-            print(f"  > 从缓存中加载因子: {factor_name}")
+            logger.info(f"  > 从缓存中加载因子: {factor_name}")
             return self.factors_cache[factor_name].copy()
 
-        # 【核心修改】: 在 self.calculator 中查找计算方法
+        # 步骤2: 获取“原始”因子值，无论来源
+        raw_factor_df = None
         calculation_method_name = f"_calculate_{factor_name}"
 
         if hasattr(self.calculator, calculation_method_name):
-            logger.info(f"  > 发现有专门的因子计算函数，因子计算哈函数开始执行: {calculation_method_name}...")
+            # 来源一：通过专门的函数计算
+            logger.info(f"  > 发现计算函数，开始计算: {calculation_method_name}...")
             method_to_call = getattr(self.calculator, calculation_method_name)
+            raw_factor_df = method_to_call()
 
-            factor_df = method_to_call()
+        elif factor_name in self.data_manager.raw_dfs:
+            # 来源二：直接从原始数据中加载
+            logger.info(f"  > 无计算函数，从raw_dfs加载: {factor_name}")
+            raw_factor_df = self.data_manager.raw_dfs[factor_name]
 
-            self.factors_cache[factor_name] = factor_df
-            print(f"  > 因子 {factor_name} 计算完成并已存入缓存。")
-
-            return factor_df.copy()
         else:
-            if factor_name in self.data_manager.raw_dfs:
-                logger.info(f"  >  没有找到专属计算函数，大概因子 {factor_name} 是raw因子，直接从raw_dfs加载。")
-                factor_df = self.data_manager.raw_dfs[factor_name]
-                self.factors_cache[factor_name] = factor_df #这也需要？感觉好占内存
-                return factor_df.copy()
-            else:
-                raise ValueError(f"失败错误：没有找到专属计算函数，也没有在原始数据中找到因子 '{factor_name}'。")
+            raise ValueError(f"获取因子失败：'{factor_name}' 既没有计算函数，也不在原始数据中。")
+
+        # ===================================================================
+        # 步骤3:【统一出口】所有因子在返回前，都必须流经这里
+        # ===================================================================
+
+        # a) 应用方向性调整
+        # 假设 FACTOR_DIRECTIONS 定义在 self.calculator 或 self 中
+        direction = FACTOR_DIRECTIONS.get(factor_name, 1)  # 默认为1(正向)
+
+        if direction == -1:
+            final_factor_df = raw_factor_df * -1
+        else:
+            final_factor_df = raw_factor_df
+
+        # b) 存入缓存
+        # 我们缓存的是经过方向调整后的、可直接用于分析的最终因子
+        logger.info(f"  > 因子 {factor_name} 处理完成并存入缓存。")
+        self.factors_cache[factor_name] = final_factor_df
+
+        return final_factor_df.copy()
     def register_factor(self,
                        name: str,
                        category: Union[str, FactorCategory],
@@ -454,20 +472,20 @@ class FactorManager:
             # category
             category = self.get_style_category(target_factor_name)
             school = self.get_school_code_by_factor_name(target_factor_name)
-            target_data_df = self.get_backtest_ready_factor(target_factor_name)
+            target_data_df = self.get_aligned_raw_factor(target_factor_name)
             technical_df_dict.update({target_factor_name: target_data_df})
             technical_category_dict.update({target_factor_name: category})
             technical_school_dict.update({target_factor_name: school})
 
         return technical_df_dict, technical_category_dict, technical_school_dict
 
-    def get_backtest_ready_factor(self, factor_name):
-       df = self.get_factor(factor_name)#这是纯净的因子，
+    def get_aligned_raw_factor(self, factor_name):
+       df = self.get_factor(factor_name)## 这是纯净的、T日的因子
        pool = self.get_stock_pool_by_factor_name(factor_name)#拿到之前基于t-1信息 构建的动态股票池
-       # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1
-       df=df.shift(1)
-       return align_one_df_by_stock_pool_and_fill(factor_name=factor_name,
-                                                  df=df, stock_pool_df=pool,_existence_matrix = self.data_manager._existence_matrix)
+       # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1  方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
+       # df=df.shift(1)
+       return fill_and_align_by_stock_pool(factor_name=factor_name,
+                                           df=df, stock_pool_df=pool, _existence_matrix = self.data_manager._existence_matrix)
 
 
     def get_school_code_by_factor_name(self, factor_name):
@@ -553,27 +571,27 @@ class FactorManager:
         return factor_definition[factor_definition['name'] == factor_name]['style_category'].iloc[0]
 
 
-
     # ok
-    def build_auxiliary_dfs_shift_diff_stock_pools_dict(self):
-        dfs_dict = self.build_dfs_dict_base_on_diff_pool_name(['total_mv', 'industry'])
+    def build_diff_stock_pools_dict_auxiliary_dfs(self):
+        _structuer_df_base_on_diff = self.generate_structure_dict_base_on_diff_pool_name('small_cap')
+        #下面只是进行对齐
         dfs_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=dfs_dict, need_shift=True)
+            base_dict=_structuer_df_base_on_diff,factor_name = 'small_cap', need_shift=False)
         pct_chg_beta_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg', need_shift=True)
+            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg_beta', need_shift=False)
 
         for stock_poll_name, df in pct_chg_beta_dict.items():
             # 补充beta
             dfs_dict[stock_poll_name].update({'pct_chg_beta': df})
         return dfs_dict
 
-    def build_dfs_dict_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
+    def generate_structuer_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
         if isinstance(factor_name_data, str):
-            return self.build_one_df_dict_base_on_diff_pool_name(factor_name_data)
+            return self.generate_structure_dict_base_on_diff_pool_name(factor_name_data)
         if isinstance(factor_name_data, list):
             dicts = []
             for factor_name in factor_name_data:
-                pool_df_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
+                pool_df_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
                 dicts.append((factor_name, pool_df_dict))  # 保存因子名和对应的dict
 
             merged = {}
@@ -587,19 +605,20 @@ class FactorManager:
 
         raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
     # 仅仅只是构造一个dict 不做任何处理!
-    def build_one_df_dict_base_on_diff_pool_name(self, factor_name):
+    def generate_structure_dict_base_on_diff_pool_name(self, factor_name):
         df_dict_base_on_diff_pool = {}
-        df = self.data_manager.raw_dfs[factor_name]
+        df = self.get_factor(factor_name)
         for pool_name, stock_pool_df in self.data_manager.stock_pools_dict.items():
             df_dict_base_on_diff_pool[pool_name] = df
         return df_dict_base_on_diff_pool
 
-    def build_df_dict_base_on_diff_pool_can_set_shift(self, base_dict=None, factor_name=None, need_shift=True):
+    def build_df_dict_base_on_diff_pool_can_set_shift(self, base_dict=None, factor_name=None, need_shift=False):
         if base_dict is None:
-            base_dict = self.build_one_df_dict_base_on_diff_pool_name(factor_name)
+            base_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
         if need_shift:
-            ret = self.do_shift_and_align_for_dict(factor_name =factor_name , data_dict = base_dict,  _existence_matrix = self.data_manager._existence_matrix)
-            return ret
+            raise ValueError(f"方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了 居然遗漏的上游{factor_name}还在使用提前shift!")
+            # ret = self.do_shift_and_align_for_dict(factor_name =factor_name , data_dict = base_dict,  _existence_matrix = self.data_manager._existence_matrix)
+            # return ret
         else:
             ret = self.do_align_for_dict(factor_name, base_dict)
             return ret
@@ -615,7 +634,7 @@ class FactorManager:
         result = {}
         for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
             ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
-            result[stock_name] = ret
+            result[stock_name] = {factor_name:ret}
         return result
 
     def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,_existence_matrix:pd.DataFrame=None):
@@ -666,16 +685,16 @@ class FactorManager:
             shifted_dict = {}
             for key, df in data_to_align.items():
                 if not isinstance(df, pd.DataFrame):
-                    raise ValueError("do_shift失败,dict内部不是df结构")
+                    raise ValueError("do_align失败,dict内部不是df结构")
                 # 对字典中的每个DataFrame执行shift操作
-                shifted_dict[key] = align_one_df_by_stock_pool_and_fill(factor_name=key, df=df,
-                                                                        stock_pool_df=stock_pool,_existence_matrix = _existence_matrix)
+                shifted_dict[key] = fill_and_align_by_stock_pool(factor_name=key, df=df,
+                                                                 stock_pool_df=stock_pool, _existence_matrix = _existence_matrix)
             return shifted_dict
 
         # --- 情况二：输入是单个DataFrame ---
         elif isinstance(data_to_align, pd.DataFrame):
-            return align_one_df_by_stock_pool_and_fill(factor_name=factor_name, df=data_to_align,
-                                                       stock_pool_df=stock_pool,_existence_matrix = _existence_matrix)
+            return fill_and_align_by_stock_pool(factor_name=factor_name, df=data_to_align,
+                                                stock_pool_df=stock_pool, _existence_matrix = _existence_matrix)
 
         # --- 其他情况：输入类型错误，主动报错 ---
         else:
@@ -697,12 +716,12 @@ class FactorManager:
         pool_stocks = self.data_manager.stock_pools_dict[pool_name].columns
 
         # 直接从主Beta矩阵中按需选取，无需重新计算
-        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]
+        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks] # todo后面考虑设计一下，取自get_Factor()
 
         return beta_for_this_pool
     def prepare_master_pct_chg_beta_dataframe(self):
         """
-        一个在系统初始化时调用的方法，用于生成一份统一的、覆盖所有股票的Beta矩阵。
+        用于生成一份统一的、覆盖所有股票的Beta矩阵。
         """
         logger.info("开始准备主Beta矩阵...")
 

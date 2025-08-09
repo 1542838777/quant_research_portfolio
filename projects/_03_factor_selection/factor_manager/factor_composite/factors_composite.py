@@ -25,12 +25,10 @@ class FactorSynthesizer:
         self.factor_analyzer = factor_analyzer
         self.processor = FactorProcessor(factor_manager.data_manager.config)
         self.raw_dfs = factor_manager.data_manager.raw_dfs
-        # 因子方向配置，1为正向，-1为反向。需要根据单因子测试的结果来手动配置。
-        self.FACTOR_DIRECTIONS = {
-            'ep_ratio': 1,
-            'bm_ratio': 1,
-            'sp_ratio': 1,
-            # ... 其他因子
+        self.sub_factors = {
+            'ep_ratio',
+            'bm_ratio',
+            'sp_ratio',
         }
 
     def process_sub_factor(self, factor_name: str) -> pd.DataFrame:
@@ -44,57 +42,15 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
-        factor_df = self.factor_manager.get_backtest_ready_factor(factor_name)
-        stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
-        style_category = self.factor_manager.get_style_category(factor_name)
+        factor_df = self.factor_manager.get_aligned_raw_factor(factor_name)
 
-        # 加载必要数据
-
-        auxiliary_shift_dfs_base_own_stock_pools = \
-            self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
-                stock_pool_name]
-
-        # ==============================================================================
-        #  在此处统一准备权威的“中性化数据篮子 (neutral_dfs)”
-        # ==============================================================================
-
-        # 1. 从配置中读取所需的行业级别
-        neutralization_config = self.processor.preprocessing_config.get('neutralization', {})
-        industry_level = neutralization_config.get('by_industry', {}).get('industry_level', 'l1_code')  # 默认为一级行业
-
-        # 2. 初始化PIT地图
-        pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
-
-        # 3. 动态生成所需的行业哑变量
-        industry_dummies_dict = prepare_industry_dummies(
-            pit_map=pit_map,
-            trade_dates=factor_df.index,
-            stock_pool=factor_df.columns,
-            level=industry_level
-        )
-        # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
-        industry_dummies_dict = {
-            key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
-        }
-
-        # 4. 构建最终的、权威的 neutral_dfs 字典
-        #    这个字典将是整个流程中唯一的中性化数据源
-        final_neutral_dfs = {
-            # 市值因子是必须的，通常需要对数化，这一步可以在中性化函数内部做，也可以在这里准备好
-            'total_mv': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='total_mv',
-                                                                                          need_shift=True)[
-                stock_pool_name],
-            # 如果需要beta中性化，也在这里加入
-            # 'pct_chg_beta': beta_df,
-
-            # 使用字典解包，将动态生成的行业哑变量添加进来
-            **industry_dummies_dict
-        }
+        (auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
+         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, factor_df)
 
         processed_df = self.processor.process_factor(
             target_factor_df=factor_df,
             target_factor_name=factor_name,
-            auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
+            auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
             neutral_dfs=final_neutral_dfs,
             style_category=style_category, neutralize_after_standardize=False)
         return processed_df
@@ -121,12 +77,6 @@ class FactorSynthesizer:
         for factor_name in sub_factor_names:
             # 对每个子因子，都走一遍“去极值->中性化->标准化”的流程
             processed_df = self.process_sub_factor(factor_name)
-
-            # 乘以因子方向
-            direction = self.FACTOR_DIRECTIONS.get(factor_name)
-            if direction == -1:
-                print(f"  > 因子 '{factor_name}' 是反向因子，已乘以-1。")
-                processed_df *= -1
 
             processed_factors.append(processed_df)
 
@@ -171,13 +121,13 @@ if __name__ == '__main__':
     synthesizer = FactorSynthesizer(factor_manager, factor_analyzer)
 
     # 3. 定义你要合成的因子列表
-    value_factors = list(synthesizer.FACTOR_DIRECTIONS.keys())
+    sub_factors = list(synthesizer.sub_factors)#改成 从config 里面读取
 
     config_path = "factory/config.yaml",
 
     # 4. 调用合成方法
     factor_name = factor_manager.data_manager.config['target_factors_for_evaluation']['fields'][0]
-    value_composite_df = synthesizer.synthesize_composite_factor(factor_name, value_factors)
+    value_composite_df = synthesizer.synthesize_composite_factor(factor_name, sub_factors)
     # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
     # # 准备数据
     #
@@ -187,7 +137,7 @@ if __name__ == '__main__':
     #                                                                                         need_shift=False)[
     #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
     # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-    # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
+    # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
     #     stock_pool_name]
 
     ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \

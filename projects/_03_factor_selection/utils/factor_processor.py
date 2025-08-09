@@ -7,7 +7,12 @@
 2. 中性化 (Neutralization) 
 3. 标准化 (Standardization)
 """
-
+try:
+    import statsmodels.api as sm
+    HAS_STATSMODELS = True
+except ImportError:
+    from sklearn.linear_model import LinearRegression
+    HAS_STATSMODELS = False
 import pandas as pd
 import numpy as np
 import yaml
@@ -148,7 +153,7 @@ class FactorProcessor:
         if not neutralize_after_standardize:
             # 步骤2：中性化
             if self.preprocessing_config.get('neutralization', {}).get('enable', False):
-                processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,auxiliary_dfs,
+                processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,
                                                               neutral_dfs, style_category)
             else:
                 logger.info("2. 跳过中性化处理...")
@@ -359,8 +364,6 @@ class FactorProcessor:
         else:
             print(
                 f"  执行分行业去极值 (主行业: {industry_config['primary_level']}, 回溯至: {industry_config['fallback_level']})...")
-            #  为了高效获取前一交易日，提前创建交易日序列
-            trading_dates_series = pd.Series(factor_data.index, index=factor_data.index)
 
             # 按天循环，在截面日上执行矢量化操作
             processed_data = {}
@@ -374,16 +377,7 @@ class FactorProcessor:
                     log_warning(f"去极值过程中，发现当天{date}所有股票因子值都为空")
                     continue
                 # 在循环内部，为每一天获取正确的历史地图
-                #  获取 T-1 的日期
-                prev_trading_date = trading_dates_series.shift(1).loc[date]
-                # 处理回测第一天的边界情况
-                if pd.isna(prev_trading_date):
-                    log_warning(f"正常现象：日期 {date} 是回测首日，没有前一天的行业数据，跳过分行业处理。")
-                    processed_data[date] = daily_factor_series  # 当天不做处理或执行全市场处理
-                    continue
-
-                #使用 T-1 的日期查询行业地图
-                daily_industry_map = pit_industry_map.get_map_for_date(prev_trading_date)
+                daily_industry_map = pit_industry_map.get_map_for_date(date)
 
                 processed_data[date] = self._winsorize_cross_section_fallback(
                     daily_factor_series=daily_factor_series,
@@ -398,144 +392,119 @@ class FactorProcessor:
 
     # ok
     #考虑 传入的行业如果是二级行业那么行业变量多达130个！，我又不做全A，中证800才800，平均一个行业才5只股票 来进行中性化，有点不具参照！，必须用一级行业
+
     def _neutralize(self,
                     factor_data: pd.DataFrame,
-                    target_factor_name:str,
-                    auxiliary_dfs: Dict[str, pd.DataFrame],
+                    target_factor_name: str,
+                    # auxiliary_dfs: Dict[str, pd.DataFrame], # 在新架构下，beta也应在neutral_dfs中
                     neutral_dfs: Dict[str, pd.DataFrame],
                     style_category: str
                     ) -> pd.DataFrame:
         """
-         根据因子所属的“门派”，自动选择最合适的中性化方案。
-         Args:
-             factor_data: 待中性化的因子数据 (T-1日信息)
-             target_factor_name: 待中性化因子的名称
-             auxiliary_dfs: 辅助数据字典 (可能包含Beta等，根据您的实际约定)
-             neutral_dfs: 包含了市值和预处理好的行业哑变量数据的字典 (日期-股票代码的DataFrame)
-             factor_school: 因子门派 ('fundamentals', 'trend', 'microstructure')
-
-         Returns:
-             中性化后的因子数据
-         """
+        【V2.0-重构版】根据因子所属的“门派”，自动选择最合适的中性化方案。
+        此版本修复了潜在bug，并优化了数据构建流程，提升了运行效率和代码清晰度。
+        """
         neutralization_config = self.preprocessing_config.get('neutralization', {})
-
         if not neutralization_config.get('enable', False):
             return factor_data
-        factor_school = FactorManager.get_school_by_style_category( style_category)
+
+        factor_school = FactorManager.get_school_by_style_category(style_category)
         logger.info(f"  > 正在对 '{factor_school}' 派因子 '{target_factor_name}' 进行中性化处理...")
         processed_factor = factor_data.copy()
 
-        # --- 阶段一：(可选) 因子残差化 (仅针对市场微观派) ---
-        # 残差化通常是对时间序列进行去均值，与截面中性化是两个不同的操作
+        # --- 阶段一：(可选) 因子残差化 ---
         if factor_school == 'microstructure':
             window = neutralization_config.get('residualization_window', 20)
             logger.info(f"    > 应用时间序列残差化 (窗口: {window}天)...")
-            # 确保 min_periods 不会太小导致过多 NaN
             factor_mean = processed_factor.rolling(window=window, min_periods=max(1, int(window * 0.5))).mean()
             processed_factor = processed_factor - factor_mean
 
-        # --- 阶段二：确定本次回归需要中性化的因子列表 ---
-        factors_to_neutralize = self.get_regression_need_neutral_factor_list(style_category,target_factor_name)
-
+        # --- 阶段二：确定中性化因子列表 ---
+        factors_to_neutralize = self.get_regression_need_neutral_factor_list(style_category, target_factor_name)
         if not factors_to_neutralize:
             logger.info(f"    > '{factor_school}' 派因子无需中性化。")
             return processed_factor
-        logger.info(f"{target_factor_name}逐日进行截面回归中性化")
+
+        logger.info(f"    > {target_factor_name} 将对以下风格进行中性化: {factors_to_neutralize}")
+
         skipped_days_count = 0
         total_days = len(processed_factor.index)
-        # --- 阶段三：逐日进行截面回归中性化 ---
+
+        # --- 阶段三：逐日截面回归中性化 ---
         for date in processed_factor.index:
-            # logger.info(" 获取当天待中性化的因子数据（因变量 y")
-            y = processed_factor.loc[date].dropna()
-            # --- 初步可行性检查 ---
-            universe_size = len(processed_factor.columns)
-            min_coverage_ratio = 0.05
-            if len(y) < universe_size * min_coverage_ratio:
-                logger.debug(f"    日期 {date.date()} 因子覆盖率不足，跳过中性化。")
-                processed_factor.loc[date] = np.nan
+            y_series = processed_factor.loc[date].dropna()
+            if y_series.empty:
                 skipped_days_count += 1
                 continue
 
-            # a) 构建回归自变量矩阵 X
-            # X_df 的索引必须与 y 的索引（即当前日期有因子值的股票）保持一致
-            X_df = pd.DataFrame(index=y.index)
+            # --- a) 【效率优化】构建回归自变量矩阵 X ---
+            X_df_parts = []  # 使用一个列表来收集所有自变量 Series
 
-            # --- 市值因子 (从 neutral_dfs 获取) ---
+            # --- 市值因子 ---
             if 'market_cap' in factors_to_neutralize:
-                if 'total_mv' not in neutral_dfs:
-                    raise ValueError(f"  错误: neutral_dfs 中缺少 'total_mv' 数据，无法进行市值中性化。")
+                # 【命名统一】从 neutral_dfs 中寻找规模因子，名字可以是 'small_cap', 'log_circ_mv' 等
+                # 我们假设传入的已经是log处理过的
+                market_cap_key = 'small_cap'  # 与你 neutral_dfs 中定义的key保持一致
+                if market_cap_key not in neutral_dfs:
+                    raise ValueError(f"neutral_dfs 中缺少市值因子 '{market_cap_key}'。")
+                mv_series = neutral_dfs[market_cap_key].loc[date].rename('log_market_cap')
+                X_df_parts.append(mv_series)
 
-                mv_series = neutral_dfs['total_mv'].loc[date]
-                # 对市值取对数，这是常见做法，因为市值分布通常是偏态的
-                X_df['log_market_cap'] = np.log(mv_series.reindex(y.index))  # 确保与 y 的索引对齐
-
-            # --- 行业因子 (从 neutral_dfs 获取预处理好的哑变量) ---
+            # --- 行业因子 ---
             if 'industry' in factors_to_neutralize:
-                # 找到所有以 'industry_' 开头的辅助数据键，这些就是预处理好的行业哑变量
-                # 小白解释：列表推导式，高效地从字典键中筛选出所有行业哑变量的名称。
                 industry_dummy_keys = [k for k in neutral_dfs.keys() if k.startswith('industry_')]
-
                 if not industry_dummy_keys:
-                   raise ValueError(
-                        f"   neutral_dfs 中未发现任何预处理的行业哑变量（以 'industry_' 开头），行业中性化失败。")
-                else:
-                    current_date_industry_dummies = pd.DataFrame(index=y.index)
-                    for industry_key in industry_dummy_keys:
-                        # 从 neutral_dfs 中获取对应行业的 DataFrame
-                        # 然后 loc[date] 获取当前日期的数据
-                        # reindex(y.index) 确保哑变量与当前日期的 y 因子值股票对齐
-                        dummy_series = neutral_dfs[industry_key].loc[date]
-                        current_date_industry_dummies[industry_key] = dummy_series.reindex(y.index)
+                    raise ValueError("neutral_dfs 中未发现行业哑变量。")
 
-                    # 合并所有行业哑变量到 X_df
-                    X_df = X_df.join(current_date_industry_dummies)
+                # 【效率优化】一次性从 neutral_dfs 中提取当天的所有行业哑变量
+                daily_dummies_df = pd.concat(
+                    [neutral_dfs[key].loc[date].rename(key) for key in industry_dummy_keys],
+                    axis=1
+                )
+                X_df_parts.append(daily_dummies_df)
 
-            # --- Beta 因子 (假设仍在 auxiliary_dfs 中) ---
+            # --- Beta 因子 ---
             if 'pct_chg_beta' in factors_to_neutralize:
-                if 'pct_chg_beta' not in auxiliary_dfs:
-                    raise ValueError(f"  错误: auxiliary_dfs 中缺少 'pct_chg_beta' 数据，无法进行Beta中性化。")
+                if 'pct_chg_beta' not in neutral_dfs:  # 建议将beta也统一放入neutral_dfs
+                    raise ValueError("neutral_dfs 中缺少 'pct_chg_beta' 数据。")
 
-                beta_series = auxiliary_dfs['pct_chg_beta'].loc[date]
-                X_df['pct_chg_beta'] = beta_series.reindex(y.index)  # 确保与 y 的索引对齐
+                beta_series = neutral_dfs['pct_chg_beta'].loc[date].rename('pct_chg_beta')
+                X_df_parts.append(beta_series)
 
-            # b) 数据对齐与清洗
-            # 使用 join 和 dropna 来确保 y 和 X_df 的股票代码对齐，并去除所有 NaN
-            # 注意：X_df 在构建时已经基于 y.index，但如果某个辅助因子本身有 NaN，这里会进一步清理
-            combined_df = pd.concat([y, X_df], axis=1).dropna()
-
-            # 确保清理后的样本数满足回归要求
-            # X_df.shape[1] 是自变量的数量，我们需要比自变量数量更多的样本，避免欠拟合
-            # 经验法则：样本数至少是自变量数量的几倍（例如，2-5倍）
-            num_predictors = X_df.shape[1]  # 计算实际的自变量数量
-            if len(combined_df) < num_predictors + 5:  # 至少要比变量数多5个样本，这是一个经验值，可以根据需求调整 ，x是自变量个数，y是因变量（股票数、样本数），甚至都赶不上自变量的个数，那还测试什么 干脆报错把
-                logger.warning(
-                    f"  警告: 日期 {date.date()} 清理后样本数不足 ({len(combined_df)} < {num_predictors + 5})，跳过中性化。")
-                processed_factor.loc[date] = np.nan  # 将当天因子数据设为NaN
+            if not X_df_parts:
                 continue
 
-            # 提取清理后的因变量和自变量
-            y_clean = combined_df[y.name]
-            # 确保 X_clean 拿到的是对齐后的，并且是 X_df 中实际使用的列
-            X_clean = combined_df[X_df.columns]
+            # --- b) 【流程优化】将所有部分一次性合并，然后与 y 对齐 ---
+            X_df = pd.concat(X_df_parts, axis=1)
+            # 使用 join='inner' 可以一步到位地完成对齐和筛选
+            combined_df = pd.concat([y_series.rename('factor'), X_df], axis=1, join='inner').dropna()
 
-            # c) 执行回归并计算残差
+            # --- c) 样本量检查 (逻辑不变，但更健壮) ---
+            num_predictors = X_df.shape[1]
+            if len(combined_df) < num_predictors + 5:
+                logger.warning(
+                    f"  警告: 日期 {date.date()} 清理后样本数不足 ({len(combined_df)} < {num_predictors + 5})，跳过中性化。")
+                # 注意：这里我们只跳过当天的中性化，而不将当天的所有因子值设为NaN，除非你确实希望如此
+                # processed_factor.loc[date] = np.nan
+                skipped_days_count += 1
+                continue
+
+            # --- d) 执行回归并计算残差 ---
+            y_clean = combined_df['factor']
+            # 使用 sm.add_constant 添加截距项，是 statsmodels 的标准做法
+            X_clean = sm.add_constant(combined_df.drop(columns=['factor']))
+
             try:
-                # fit_intercept=True 默认包含截距项，通常是回归分析的良好实践
-                reg = LinearRegression(fit_intercept=True)
-                reg.fit(X_clean, y_clean)
-
-                # 计算残差：原始因子值 - 因子模型预测值
-                residuals = y_clean - reg.predict(X_clean)
+                model = sm.OLS(y_clean, X_clean).fit()
+                residuals = model.resid
 
                 # 将中性化后的残差更新回 processed_factor
-                # 只更新那些参与了回归的股票（即 residuals.index）
                 processed_factor.loc[date, residuals.index] = residuals
-                logger.debug(f"    日期 {date.date()} 中性化成功，处理了 {len(residuals)} 个样本。")
 
             except Exception as e:
-                # 捕获回归可能出现的错误，如矩阵奇异（共线性）、样本不足导致无法拟合等
-                raise ValueError(f"  警告: 日期 {date.date()} 中性化回归失败: {e}。该日因子数据将标记为NaN。") #raise
-
+                logger.error(f"  错误: 日期 {date.date()} 中性化回归失败: {e}。该日因子数据将标记为NaN。")
+                processed_factor.loc[date] = np.nan
+                skipped_days_count += 1
         # 循环结束后，执行“熔断检查” ===
         # 从配置中获取最大跳过比例，如果未配置，则默认为10%
         max_skip_ratio = neutralization_config.get('max_skip_ratio', 0.10)
@@ -699,7 +668,6 @@ class FactorProcessor:
         else:
             print(
                 f"  执行分行业标准化 (主行业: {industry_config['primary_level']}, 回溯至: {industry_config['fallback_level']})...")
-            trading_dates_series = pd.Series(factor_data.index, index=factor_data.index)
 
             # Rank法通常在全市场进行才有意义，分行业Rank后不同行业的序无法直接比较。
             # 这里我们约定，分行业标准化主要针对Z-Score。
@@ -716,16 +684,7 @@ class FactorProcessor:
                     continue
 
                 # 在循环内部，为每一天获取正确的历史地图
-                #  获取 T-1 的日期
-                prev_trading_date = trading_dates_series.shift(1).loc[date]
-                # 处理回测第一天的边界情况
-                if pd.isna(prev_trading_date):
-                    log_warning(f"正常现象：日期 {date} 是回测首日，没有前一天的行业数据，跳过分行业处理。")
-                    processed_data[date] = daily_factor_series  # 当天不做处理或执行全市场处理
-                    continue
-
-                # 使用 T-1 的日期查询行业地图
-                daily_industry_map = pit_industry_map.get_map_for_date(prev_trading_date)
+                daily_industry_map = pit_industry_map.get_map_for_date(date)
                 processed_data[date] = self._standardize_cross_section_fallback(
                     daily_factor_series=daily_factor_series,
                     daily_industry_map=daily_industry_map,

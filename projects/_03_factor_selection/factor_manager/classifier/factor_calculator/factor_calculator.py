@@ -36,17 +36,17 @@ class FactorCalculator:
         self.factor_manager = factor_manager
         print("FactorCalculator (因子计算器) 已准备就绪。")
 
-    def _calculate_market_cap_log_by_circ_mv(self) -> pd.DataFrame:
+    def _calculate_small_cap(self) -> pd.DataFrame:
         circ_mv_df = self.factor_manager.get_factor('circ_mv').copy()
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
         # 使用 pandas 自带 log 函数，保持类型一致
         factor_df = circ_mv_df.apply(np.log)
-        # 反向处理因子（仅为了视觉更好看）
-        return factor_df * -1
+        return factor_df
+
 
     # === 规模 (Size) ===
-    def _calculate_market_cap_log(self) -> pd.DataFrame:
+    def _calculate_market_cap_log(self) -> pd.DataFrame: #todo 强烈建议不要用这个total_mv
         """
         计算对数总市值。
 
@@ -119,7 +119,7 @@ class FactorCalculator:
         print("    > 正在计算 cfp_ratio...")
         # --- 步骤一：获取依赖的因子 ---
         cashflow_ttm_df = self.factor_manager.get_factor('cashflow_ttm')
-        total_mv_df = self.factor_manager.get_factor('total_mv')
+        total_mv_df = self.factor_manager.get_factor('total_mv')#todo 确定要用这个吗 而不是small_cap
 
         # --- 步骤二：对齐数据 (使用 .align) ---
         mv_aligned, ttm_aligned = total_mv_df.align(cashflow_ttm_df, join='inner', axis=None)
@@ -257,7 +257,7 @@ class FactorCalculator:
         # 同样，这是一个需要从财报数据计算的复杂因子。
         # 依赖的原始字段: revenue (营业收入), op_cost (营业成本)
         print("      > [警告] _calculate_gross_margin_ttm 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('total_mv')
+        total_mv_df = self.factor_manager.get_factor('total_mv')#todo 确定要用这个吗 而不是small_cap
         return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
 
     def _calculate_debt_to_assets(self) -> pd.DataFrame:
@@ -273,7 +273,7 @@ class FactorCalculator:
         # 但同样需要处理财报发布延迟。
         # 依赖的原始字段: total_debt (总负债), total_assets (总资产)
         print("      > [警告] _calculate_debt_to_assets 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('total_mv')
+        total_mv_df = self.factor_manager.get_factor('total_mv')#todo 确定要用这个吗 而不是small_cap
         return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
 
     # === 成长 (Growth) ===
@@ -416,7 +416,7 @@ class FactorCalculator:
             self.factor_manager.data_manager.config['backtest']['end_date'],
             self.factor_manager.get_pool_of_factor_name_of_stock_codes('beta')
         )
-        return beta_df * -1
+        return beta_df
 
     def _calculate_volatility_120d(self) -> pd.DataFrame:
         """
