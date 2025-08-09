@@ -4,7 +4,7 @@ target_factors_for_evaluation:
   fields:
 #    # === 规模 (Size) ===
 #    - 'market_cap_log'
-    - 'beta'
+    - 'value_composite'
 #
 #    # === 价值 (Value) ===
 #    - 'bm_ratio'
