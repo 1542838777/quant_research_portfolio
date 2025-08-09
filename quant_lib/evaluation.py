@@ -675,7 +675,7 @@ def fama_macbeth_regression(
     logger.info("\t步骤1: 准备和对齐数据...")
     try:
         # 修正：正确计算前向收益率 T-1 到 T-1+period 的收益。 :T-1+period 的收益/ T-1的
-        forward_returns = returns_calculator(peroid=forward_returns_period)
+        forward_returns = returns_calculator(period=forward_returns_period)
 
         all_dfs_to_align = {
             'factor': factor_df,
@@ -910,7 +910,7 @@ def calculate_quantile_daily_returns(
         Dict[str, pd.DataFrame]: 只有一个key的字典，值是分层组合的每日收益DataFrame。
     """
     logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
-    forward_returns_1d = returns_calculator(peroid=1)
+    forward_returns_1d = returns_calculator(period=1)
 
     # 2. 数据转换与对齐
     factor_long = factor_df.stack().rename('factor')

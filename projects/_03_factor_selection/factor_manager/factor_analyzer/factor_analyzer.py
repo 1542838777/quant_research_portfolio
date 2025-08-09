@@ -19,7 +19,7 @@ from typing import Dict, Tuple, Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from jedi.inference.gradual.typing import Callable
+from typing import Callable
 from pandas import Series
 from scipy import stats
 
@@ -197,7 +197,7 @@ class FactorAnalyzer:
 
     def test_ic_analysis(self,
                          factor_data: pd.DataFrame,
-                         returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame],  # 具体化Callable
+                         returns_calculator: Callable[[int, pd.DataFrame,pd.DataFrame], pd.DataFrame],  # 具体化Callable
                          close_df: pd.DataFrame,
                          factor_name: str) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
         """
@@ -1047,7 +1047,9 @@ class FactorAnalyzer:
 
         return results
 
-    def core_three_test(self, target_factor_processed, target_factor_name, returns_calculator:Callable, close_df,
+    def core_three_test(self, target_factor_processed, target_factor_name,open_df,
+                        returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame],
+                        close_df,
                         prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict):
         # 1. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
@@ -1074,7 +1076,7 @@ class FactorAnalyzer:
 
         # 【新增】4. 风格相关性分析
         logger.info("\t5.  正式测试 之 风格相关性分析...")
-        style_correlation_dict = self.factor_manager.test_style_correlation(
+        style_correlation_dict = self.test_style_correlation(
             target_factor_processed,
             style_factors_dict
         )
@@ -1127,15 +1129,16 @@ class FactorAnalyzer:
                 factor_returns_series_periods_dict,
                 fm_stat_results_periods_dict)
 
-        self.visualizationManager.plot_diagnostics_report(
-            comprehensive_results['backtest_base_on_index'],
-            target_factor_name,
-            ic_series_periods_dict,
-            turnover_stats_periods_dict,
-            style_correlation_dict ,
-            self.target_factors_dict[target_factor_name]
+            self.visualizationManager.plot_diagnostics_report(
+                comprehensive_results['backtest_base_on_index'],
+                target_factor_name,
+                ic_series_periods_dict,
+                turnover_stats_periods_dict,
+                style_correlation_dict ,
+                self.target_factors_dict[target_factor_name],
+                period
 
-        )
+            )
 
         return overrall_summary_stats
 

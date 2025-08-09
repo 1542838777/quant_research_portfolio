@@ -132,7 +132,7 @@ preprocessing:
 evaluation:
   n_groups: 5  # 分层回测的分组数
   quantiles: 5  # 分层回测的分组数
-  forward_periods: [1, 5, 21]
+  forward_periods: [ 21]
 #  forward_periods: [1, 5, 10, 21, 40, 60, 120]
   ic_threshold: 0.02  # IC均值阈值
   ir_threshold: 0.3  # IR阈值
