@@ -974,6 +974,41 @@ class DataManager:
         return all_df[all_df['name'] == factor_name]
 
 
+def fill_self(factor_name, df,_existence_matrix):
+    # 步骤2: 根据配置字典，应用填充策略
+    # =================================================================
+    strategy = FACTOR_FILL_CONFIG.get(factor_name)
+    df = df.copy(deep=True)
+
+
+    if strategy is None:
+        raise KeyError(f"因子 '{factor_name}' 的填充策略未在 FACTOR_FILL_CONFIG 中定义！请添加。")
+
+    logger.info(f"  > 正在对因子 '{factor_name}' 应用 '{strategy}' 填充策略...")
+    if strategy == FILL_STRATEGY_FFILL_UNLIMITED:
+        # 前向填充：适用于价格、市值、估值、行业等
+        # 这些值在股票不交易时，应保持其最后一个已知值
+        return df.ffill()
+
+    elif strategy == FILL_STRATEGY_CONDITIONAL_ZERO:
+        # 填充为0：适用于成交量、换手率等交易行为数据
+        # 不交易的日子，这些指标的真实值就是0
+        if _existence_matrix is not None:
+            return df.where(_existence_matrix, 0)  # 数据为nan，但是一看 是不可交易的（停牌），停牌导致的 我认为可填0
+        return df  # 不填充~
+    elif strategy == FILL_STRATEGY_FFILL_LIMIT_5:
+        return df.ffill(limit=5)
+    elif strategy == FILL_STRATEGY_FFILL_LIMIT_65:
+        return df.ffill(limit=65)
+
+    elif strategy == FILL_STRATEGY_NONE:
+        # 不填充：适用于计算出的技术因子
+        # 如果因子因为数据不足而无法计算，就不应凭空创造它的值
+        return df
+
+    raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
+
+
 def align_one_df_by_stock_pool_and_fill(factor_name=None, df=None,
                                         stock_pool_df: pd.DataFrame = None,
                                         _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据
@@ -981,44 +1016,12 @@ def align_one_df_by_stock_pool_and_fill(factor_name=None, df=None,
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
 
-    df = df.copy(deep=True)
-
+    df = fill_self(factor_name,df,_existence_matrix)
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
     aligned_df = df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
     aligned_df = aligned_df.sort_index()
     aligned_df = aligned_df.where(stock_pool_df)
-
-    # 步骤2: 根据配置字典，应用填充策略
-    # =================================================================
-    strategy = FACTOR_FILL_CONFIG.get(factor_name)
-
-    if strategy is None:
-        raise KeyError(f"因子 '{factor_name}' 的填充策略未在 FACTOR_FILL_CONFIG 中定义！请添加。")
-
-    logger.info(f"  > 正在对因子 '{factor_name}' 应用 '{strategy}' 填充策略...")
-
-    if strategy == FILL_STRATEGY_FFILL_UNLIMITED:
-        # 前向填充：适用于价格、市值、估值、行业等
-        # 这些值在股票不交易时，应保持其最后一个已知值
-        return aligned_df.ffill()
-
-    elif strategy == FILL_STRATEGY_CONDITIONAL_ZERO:
-        # 填充为0：适用于成交量、换手率等交易行为数据
-        # 不交易的日子，这些指标的真实值就是0
-        if _existence_matrix is not None:
-            return aligned_df.where(_existence_matrix, 0)  # 数据为nan，但是一看 是不可交易的（停牌），停牌导致的 我认为可填0
-        return aligned_df  # 不填充~
-    elif strategy == FILL_STRATEGY_FFILL_LIMIT_5:
-        return aligned_df.ffill(limit=5)
-    elif strategy == FILL_STRATEGY_FFILL_LIMIT_65:
-        return aligned_df.ffill(limit=65)
-
-    elif strategy == FILL_STRATEGY_NONE:
-        # 不填充：适用于计算出的技术因子
-        # 如果因子因为数据不足而无法计算，就不应凭空创造它的值
-        return aligned_df
-
-    raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
+    return aligned_df
 
 
 def create_data_manager(config_path: str) -> DataManager:
