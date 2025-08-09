@@ -158,8 +158,8 @@ if __name__ == '__main__':
     # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
     #     stock_pool_name]
 
-    ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict \
-        =factor_analyzer.comprehensive_test(target_factor_name = factor_name
+    ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
+        turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
                                        , target_factor_df= value_composite_df,
                                        need_process_factor = False)
     # landing 存储宝贵的测试结果
@@ -170,4 +170,4 @@ if __name__ == '__main__':
                                                                                     quantile_daily_returns_for_plot_dict,
                                                                                     quantile_stats_periods_dict,
                                                                                     factor_returns_series_periods_dict,
-                                                                                    fm_stat_results_periods_dict)
+                                                                                    fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict)

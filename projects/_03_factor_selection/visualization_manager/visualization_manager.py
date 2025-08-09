@@ -126,6 +126,7 @@ class VisualizationManager:
     def plot_single_factor_results(self,
                                    backtest_base_on_index,
                                    factor_name: str,
+                                   target_period,
                                    ic_series_periods_dict: Dict[str, pd.Series],
                                    ic_stats_periods_dict: Dict[str, Dict[str, Any]],
                                    quantile_returns_series_periods_dict: Dict[str, pd.DataFrame],
@@ -139,8 +140,7 @@ class VisualizationManager:
         【V3版】最终版因子分析报告。
         右上角图表已升级为分层累计净值曲线，左下角为F-M纯净Alpha收益。
         """
-        logger.info(f"开始绘图for:{factor_name}")
-        primary_period = list(ic_series_periods_dict.keys())[-1]
+        logger.info(f"开始为周期 {target_period} 绘图 for:{factor_name}")
         # 1. 创建 2x2 图表布局
         fig = plt.figure(figsize=(24, 20))
         gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1])
@@ -149,9 +149,9 @@ class VisualizationManager:
         # 2. 【左上】IC序列(柱状) + 累计IC(折线) - (维持V2版)
         ax1 = fig.add_subplot(gs[0, 0])
         ax1_twin = ax1.twinx()
-        primary_ic = ic_series_periods_dict.get(primary_period)
+        primary_ic = ic_series_periods_dict.get(target_period)
         if primary_ic is not None:
-            ax1.bar(primary_ic.index, primary_ic.values, width=1.0, color='royalblue', alpha=0.6, label=f'IC序列 ({primary_period})')
+            ax1.bar(primary_ic.index, primary_ic.values, width=1.0, color='royalblue', alpha=0.6, label=f'IC序列 ({target_period})')
         ax1.axhline(0, color='black', linestyle='--', lw=1)
         ax1.set_ylabel('IC值 (单期)', color='royalblue', fontsize=14)
         ax1.tick_params(axis='y', labelcolor='royalblue')
@@ -167,18 +167,18 @@ class VisualizationManager:
 
         # 3. 【右上，核心升级】分层累计净值曲线
         ax2 = fig.add_subplot(gs[0, 1])
-        primary_q_returns = quantile_returns_series_periods_dict.get(primary_period)
+        primary_q_returns = quantile_returns_series_periods_dict.get(target_period)
         if primary_q_returns is not None:
             # a) 绘制多空组合累计收益（灰色区域）
             tmb_cum_returns = (1 + primary_q_returns['TopMinusBottom']).cumprod()
-            ax2.fill_between(tmb_cum_returns.index, 1, tmb_cum_returns, color='grey', alpha=0.3, label=f'多空组合 ({primary_period})')
+            ax2.fill_between(tmb_cum_returns.index, 1, tmb_cum_returns, color='grey', alpha=0.3, label=f'多空组合 ({target_period})')
 
             # b) 绘制每个分层的累计净值曲线
             quantile_cols = [q for q in ['Q1','Q2','Q3','Q4','Q5'] if q in primary_q_returns.columns]
             for quantile in quantile_cols:
-                (1 + primary_q_returns[quantile]).cumprod().plot(ax=ax2, label=f'{quantile} ({primary_period})', lw=2)
+                (1 + primary_q_returns[quantile]).cumprod().plot(ax=ax2, label=f'{quantile} ({target_period})', lw=2)
 
-        ax2.set_title(f'B. 分层累计净值 ({primary_period})', fontsize=18)
+        ax2.set_title(f'B. 分层累计净值 ({target_period})', fontsize=18)
         ax2.set_ylabel('累计净值')
         ax2.axhline(1, color='black', linestyle='--', lw=1)
         ax2.legend()
@@ -221,11 +221,65 @@ class VisualizationManager:
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         if save_plots:
             # 假设 self.output_dir 存在
-            plot_path = self.output_dir / f"{factor_name}_in_{backtest_base_on_index}_{primary_period}_evaluation.png"
-            # plot_path = f"{factor_name}_evaluation_v3.png" # 简化版
-            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            path = Path(self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_{target_period}_evaluation.png")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(path, dpi=300, bbox_inches='tight')
             plt.close()
-            return str(plot_path)
+            return str(path)
         else:
             plt.show()
             return ""
+
+    def plot_diagnostics_report(self,
+                                backtest_base_on_index,
+                                factor_name: str,
+                                ic_series_periods_dict: Dict,
+                                turnover_stats_periods_dict: Dict,
+                                style_correlation_dict: Dict,
+                                factor_df: pd.DataFrame,  # 需要原始因子值来画自相关图
+                                save_plots: bool = True):
+        """
+        【V4版-诊断报告】生成因子的诊断图表。
+        """
+        logger.info(f"开始绘制诊断图表 for:{factor_name}")
+        fig = plt.figure(figsize=(24, 20))
+        gs = gridspec.GridSpec(2, 2)
+        fig.suptitle(f'单因子 {factor_name} 诊断报告 In_{backtest_base_on_index}', fontsize=28, y=0.97)
+
+        # 1. 【左上】滚动IC图
+        ax1 = fig.add_subplot(gs[0, 0])
+        for period, ic_series in ic_series_periods_dict.items():
+            ic_series.rolling(window=120).mean().plot(ax=ax1, label=f'滚动IC ({period}, W=120d)')
+        ax1.set_title('A. 因子滚动IC (稳定性)')
+        ax1.axhline(0, color='black', linestyle='--', lw=1)
+        ax1.legend()
+
+        # 2. 【右上】因子自相关图
+        ax2 = fig.add_subplot(gs[0, 1])
+        # 截面平均因子的自相关性
+        mean_factor = factor_df.mean(axis=1).dropna()
+        pd.plotting.autocorrelation_plot(mean_factor, ax=ax2)
+        ax2.set_title('B. 因子自相关性 (持续性)')
+
+        # 3. 【左下】因子换手率图
+        ax3 = fig.add_subplot(gs[1, 0])
+        turnover_data = {p: d['turnover_annual'] for p, d in turnover_stats_periods_dict.items()}
+        pd.Series(turnover_data).plot(kind='bar', ax=ax3)
+        ax3.set_title('C. 年化换手率 (交易成本)')
+        ax3.set_ylabel('年化换手率')
+
+        # 4. 【右下】风格相关性图
+        ax4 = fig.add_subplot(gs[1, 1])
+        pd.Series(style_correlation_dict).plot(kind='barh', ax=ax4)
+        ax4.set_title('D. 与常见风格因子相关性 (独特性)')
+        ax4.axvline(0, color='black', linestyle='--', lw=1)
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        # 假设 self.output_dir 存在
+        path = Path(
+            self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_{target_period}_diagnostics_report.png")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(path, dpi=300, bbox_inches='tight')
+        plt.close()
+        return str(path)

@@ -33,7 +33,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
     calculate_ic_vectorized,
-    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns
+    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns, calculate_turnover_vectorized
 
 )
 
@@ -214,7 +214,7 @@ class FactorAnalyzer:
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
                                close_df: pd.DataFrame,
-                               factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+                               factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame],Dict]:
         """
         分层回测法测试
 
@@ -231,8 +231,21 @@ class FactorAnalyzer:
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
         )
-
-        return quantile_returns_periods_dict, quantile_stats_periods_dict
+        # 【新增】调用换手率计算
+        logger.info("    > 正在计算因子换手率...")
+        turnover_series_periods_dict = calculate_turnover_vectorized(
+            factor_df=factor_data,
+            n_quantiles=self.n_quantiles,
+            forward_periods=self.test_common_periods
+        )
+        # 【新增】计算换手率的统计指标并整合
+        turnover_stats_periods_dict = {}
+        for period, turnover_series in turnover_series_periods_dict.items():
+            turnover_stats_periods_dict[period] = {
+                'turnover_mean': turnover_series.mean(),  # 周期平均换手率
+                'turnover_annual': turnover_series.mean() * (252 / int(period[:-1]))  # 年化换手率
+            }
+        return quantile_returns_periods_dict, quantile_stats_periods_dict,turnover_stats_periods_dict
 
     # def test_fama_macbeth(self,
     #                       factor_data: pd.DataFrame,
@@ -250,7 +263,7 @@ class FactorAnalyzer:
                            preprocess_method: str = "standard",
                            need_process_factor: bool = True,
                            ) -> Tuple[
-        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         """
         综合测试 - 执行所有三种测试方法
 
@@ -322,8 +335,10 @@ class FactorAnalyzer:
                 style_category=style_category,
                 pit_map = pit_map
             )
+
+        style_factor_dfs = self.get_style_factors(stock_pool_name)
         return self.core_three_test(target_factor_df, target_factor_name, close_df,
-                                    final_neutral_dfs, circ_mv_shift_df)
+                                    final_neutral_dfs, circ_mv_shift_df,style_factor_dfs)
 
     # ok
     def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
@@ -921,7 +936,7 @@ class FactorAnalyzer:
         #     )
 
         # 执行测试
-        ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict = \
+        ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict ,turnover_stats_periods_dict,style_correlation_dict= \
             (
                 self.comprehensive_test(
                     target_factor_name=target_factor_name,
@@ -936,7 +951,9 @@ class FactorAnalyzer:
                                                                              quantile_daily_returns_for_plot_dict,
                                                                              quantile_stats_periods_dict,
                                                                              factor_returns_series_periods_dict,
-                                                                             fm_stat_results_periods_dict)
+                                                                             fm_stat_results_periods_dict,
+                                                                             turnover_stats_periods_dict,style_correlation_dict
+                                                                             )
 
         return ic_series_periods_dict, quantile_daily_returns_for_plot_dict, factor_returns_series_periods_dict, overrall_summary_stats
 
@@ -1017,7 +1034,7 @@ class FactorAnalyzer:
         return results
 
     def core_three_test(self, target_factor_processed, target_factor_name, close_df,
-                        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df):
+                        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df,style_factors_dict  ):
         # 1. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
         ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df,
@@ -1025,7 +1042,7 @@ class FactorAnalyzer:
 
         # 2. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
-        quantile_returns_series_periods_dict, quantile_stats_periods_dict = self.test_quantile_backtest(
+        quantile_returns_series_periods_dict, quantile_stats_periods_dict,turnover_stats_periods_dict = self.test_quantile_backtest(
             target_factor_processed, close_df, target_factor_name)
 
         primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
@@ -1040,14 +1057,20 @@ class FactorAnalyzer:
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_df=circ_mv_shift_df,
             factor_name=target_factor_name)
 
+        # 【新增】4. 风格相关性分析
+        logger.info("\t5.  正式测试 之 风格相关性分析...")
+        style_correlation_dict = self.factor_manager.test_style_correlation(
+            target_factor_processed,
+            style_factors_dict
+        )
         return (ic_series_periods_dict, ic_stats_periods_dict,
                 quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
-                factor_returns_series_periods_dict, fm_stat_results_periods_dict)
+                factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict )
 
     def landing_for_core_three_analyzer_result(self, target_factor_name, category, preprocess_method,
                                                ic_series_periods_dict, ic_stats_periods_dict,
                                                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
-                                               factor_returns_series_periods_dict, fm_stat_results_periods_dict):
+                                               factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict ):
         #  综合评价
         evaluation_score_dict = self.evaluation_score_dict(ic_stats_periods_dict,
                                                            quantile_stats_periods_dict,
@@ -1075,13 +1098,89 @@ class FactorAnalyzer:
         self.factor_manager.update_and_save_fm_factor_return_matrix(fm_return_series_dict,
                                                                     file_name_prefix='fm_return_series')
         # 画图保存
-        self.visualizationManager.plot_single_factor_results(
+        all_periods = ic_stats_periods_dict.keys()
+        for period in all_periods:
+
+            self.visualizationManager.plot_single_factor_results(
+                comprehensive_results['backtest_base_on_index'],
+                target_factor_name,
+                period,
+                ic_series_periods_dict,
+                ic_stats_periods_dict,
+                quantile_daily_returns_for_plot_dict,
+                quantile_stats_periods_dict,
+                factor_returns_series_periods_dict,
+                fm_stat_results_periods_dict)
+
+        self.visualizationManager.plot_diagnostics_report(
             comprehensive_results['backtest_base_on_index'],
             target_factor_name,
             ic_series_periods_dict,
-            ic_stats_periods_dict,
-            quantile_daily_returns_for_plot_dict,
-            quantile_stats_periods_dict,
-            factor_returns_series_periods_dict,
-            fm_stat_results_periods_dict)
+            turnover_stats_periods_dict,
+            style_correlation_dict ,
+            self.target_factors_dict[target_factor_name]
+
+        )
+
         return overrall_summary_stats
+
+
+    def get_style_factors(self, stock_pool_name: str) -> Dict[str, pd.DataFrame]:
+        """获取常见的风格因子, 并与股票池对齐"""
+        style_factors = {}
+
+        # for factor_name in ['total_mv', 'pb', 'ps_ttm', 'roe_ttm', 'momentum_21d']:#写死？ 还有别的吗 todo
+        ##
+        # 风格因子 (Style Factor) = 市场上公认的、能长期解释股票收益差异的几类因子。最著名的如：
+        #
+        # 规模 (Size): 市值大小。通常用总市值或流通市值的对数表示。
+        #
+        # 价值 (Value): 估值高低。如市盈率PE、市净率PB。
+        #
+        # 动量 (Momentum): 近期涨跌趋势。如过去N天的收益率。
+        #
+        # 质量 (Quality): 公司质地。如净资产收益率ROE。
+        #
+        # 波动率 (Volatility): 股价波动性。如过去N天的年化波动率。
+        #
+        # 真实数据案例： 假设你发明了一个“分析师上调评级次数”因子，回测发现效果很好。但如果你计算它和规模因子的相关性，发现高达0.6。这说明分析师更倾向于覆盖和评级大市值的公司。那么你的因子收益，很大一部分其实只是搭了“大盘股效应”的便车，并非真正独特的Alpha。当市场风格从大盘切换到小盘时，你的因子可能会突然失效。#
+        for factor_name in ['total_mv', 'pb', 'ps_ttm']:# todo 最后期增加别的剩余的风格因子
+            #   build_df_dict... 函数可以获取因子数据并应用T-1原则
+            df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
+                factor_name=factor_name,
+                need_shift=True
+            )[stock_pool_name]
+
+            # 对市值取对数，这是标准做法
+            if factor_name == 'total_mv':
+                df = np.log(df)
+                factor_name = 'size'  # 重命名为 'size'
+
+            style_factors[factor_name] = df
+        return style_factors
+
+    def test_style_correlation(self,
+                               factor_data: pd.DataFrame,
+                               style_factors_dict: Dict[str, pd.DataFrame]
+                               ) -> Dict[str, float]:
+        """
+        【新增】测试目标因子与一组风格因子的截面相关性。
+        """
+        logger.info("    > 正在计算与常见风格因子的相关性...")
+        correlation_results = {}
+
+        for style_name, style_df in style_factors_dict.items():
+            # 对齐数据
+            factor_aligned, style_aligned = factor_data.align(style_df, join='inner', axis=None)
+
+            if factor_aligned.empty:
+                correlation_results[style_name] = np.nan
+                continue
+
+            # 逐日计算截面相关性
+            daily_corr = factor_aligned.corrwith(style_aligned, axis=1, method='spearman')
+
+            # 存储平均相关性
+            correlation_results[f'corr_with_{style_name}'] = daily_corr.mean()
+
+        return correlation_results

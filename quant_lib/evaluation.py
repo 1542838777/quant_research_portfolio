@@ -72,7 +72,6 @@ def calculate_ic(factor_df: pd.DataFrame,
     logger.info(f"IC计算完成: 均值={ic_series.mean():.4f}, IR={ic_series.mean() / ic_series.std():.4f}")
     return ic_series
 
-
 # ok
 def calculate_ic_vectorized(
         factor_df: pd.DataFrame,
@@ -483,31 +482,50 @@ def calculate_turnover(positions_df: pd.DataFrame) -> pd.Series:
     logger.info(f"换手率计算完成: 平均换手率={turnover.mean():.4f}")
     return turnover
 
-
-def calculate_turnover_vectorized(positions_df: pd.DataFrame) -> pd.Series:
+#ok
+def calculate_turnover_vectorized(
+        factor_df: pd.DataFrame,
+        n_quantiles: int = 5,
+        forward_periods: List[int] = [1, 5, 20]
+) -> Dict[str, pd.Series]:
     """
-    向量化计算换手率，效率更高
+    【新增】向量化计算因子在不同持有期下的换手率。
 
     Args:
-        positions_df: 持仓DataFrame，index为日期，columns为股票代码
+        factor_df (pd.DataFrame): 因子值DataFrame (index=date, columns=stock)。
+        n_quantiles (int): 分位数数量。
+        forward_periods (List[int]): 调仓周期列表。
 
     Returns:
-        换手率序列
+        Dict[str, pd.Series]: 字典，key为周期(如 '5d')，value为换手率的时间序列。
     """
-    logger.info("向量化计算换手率...")
+    turnover_periods_dict = {}
 
-    # 计算相邻日期之间的持仓变化
-    pos_change = positions_df.diff(1).abs().sum(axis=1)
+    # 核心：计算每日的分位数归属
+    # 使用rank(pct=True)比qcut更稳健，能直接得到百分位排名
+    quantiles = factor_df.rank(axis=1, pct=True, method='first')
+    ###假想满分1，
+    # 因子rank值：0.83：表示我在0.83这个水位
+    # 如果分5(n_quantiles)个桶（每个桶那就是1/n_quantiles = 0.2
+    # 0.83是排在第几个桶。0.83/0.2 =4.01个 超过第4个桶，ceil 是5
+    # np.ceil(quantiles * n_quantiles 这个就是等于 0.83/0.2->0.83/(1/5) ->0.83 * 5
+    # #
+    for period in forward_periods:
+        # 将分位数矩阵向前移动`period`天
+        quantiles_shifted = quantiles.shift(period)
 
-    # 根据公式，换手率是买入和卖出总额的一半
-    turnover = pos_change / 2
+        # 计算两个周期之间，股票的分位数变化了多少
+        # 如果股票保持在同一个分位数内，变化为0，否则为1
+        # 注意：这里我们比较的是分位数的“档位”，而不是具体的百分比值
+        # (quantiles * n_quantiles).ceil() 会得到 1, 2, 3, 4, 5 的整数分位
+        turnover_matrix = np.ceil(quantiles * n_quantiles)!= np.ceil(quantiles_shifted * n_quantiles)
 
-    # 第一个日期没有换手率
-    turnover = turnover.iloc[1:]
+        # 每日换手率 = 发生变动的股票数 / 当天有效股票总数
+        daily_turnover = turnover_matrix.sum(axis=1) / factor_df.notna().sum(axis=1)
 
-    logger.info(f"换手率计算完成: 平均换手率={turnover.mean():.4f}")
-    return turnover
+        turnover_periods_dict[f'{period}d'] = daily_turnover.dropna().rename('turnover')
 
+    return turnover_periods_dict
 
 def calculate_sharpe(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
     """
