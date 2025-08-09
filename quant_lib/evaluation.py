@@ -101,7 +101,7 @@ def calculate_ic_vectorized(
     if factor_df.empty or price_df.empty:
         raise ValueError("输入的因子或价格数据为空，无法计算IC。")
     for period in forward_periods:
-        forward_returns = price_df.shift(-period) / price_df - 1
+        forward_returns = price_df.shift(1 - period) / price_df.shift(1) - 1
         forward_returns = forward_returns.clip(-0.15, 0.15)
 
         common_idx = factor_df.index.intersection(forward_returns.index)
@@ -194,7 +194,7 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
 
     for period in periods:
         # 计算未来收益率
-        forward_returns = price_df.shift(-period) / price_df - 1
+        forward_returns = price_df.shift(1 - period) / price_df.shift(1) - 1
 
         forward_returns = forward_returns.clip(-0.15, 0.15)
 
@@ -306,7 +306,7 @@ def calculate_quantile_returns(
         logger.info(f"  > 正在处理向前看 {period} 周期...")
 
         # 1. 计算未来收益率 (向量化)
-        forward_returns = price_df.pct_change(periods=period).shift(-period)
+        forward_returns =  price_df.shift(1 - period) / price_df.shift(1) - 1
         forward_returns = forward_returns.clip(-0.15, 0.15)
 
         # 2. 数据转换与对齐：从“宽表”到“长表”
@@ -630,8 +630,8 @@ def fama_macbeth_regression(
     # --- 1. 数据准备 ---
     logger.info("\t步骤1: 准备和对齐数据...")
     try:
-        # 修正：正确计算前向收益率
-        forward_returns = price_df.shift(-forward_returns_period) / price_df - 1
+        # 修正：正确计算前向收益率 T-1 到 T-1+period 的收益。 :T-1+period 的收益/ T-1的
+        forward_returns = price_df.shift(1 -forward_returns_period ) / price_df.shift(1) - 1
         forward_returns = forward_returns.clip(-0.15, 0.15)
 
         all_dfs_to_align  = {
@@ -864,8 +864,8 @@ def calculate_quantile_daily_returns(
         """
         logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
 
-        # 1. 计算所有股票的【单日】远期收益率 (t -> t+1)
-        forward_returns_1d = price_df.pct_change(periods=1).shift(-1)
+        # 1. (这计算的是T日的日收益率，与T-1的因子完美对应)
+        forward_returns_1d = price_df.pct_change(periods=1)
         forward_returns_1d = forward_returns_1d.clip(-0.15, 0.15)
 
         # 2. 数据转换与对齐

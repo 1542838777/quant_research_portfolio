@@ -691,7 +691,7 @@ class DataManager:
         self.show_stock_nums_for_per_day('过滤次日涨停股后--final', stock_pool_df)
         return stock_pool_df
 
-    # def _filter_next_day_suspended(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
+    # def _filter_next_day_suspended(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame: #todo 实盘的动态股票池 可能会用到
     #     """
     #       剔除次日停牌股票 -
     #
