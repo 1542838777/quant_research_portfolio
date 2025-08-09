@@ -994,7 +994,8 @@ def fill_self(factor_name, df,_existence_matrix):
         # 填充为0：适用于成交量、换手率等交易行为数据
         # 不交易的日子，这些指标的真实值就是0
         if _existence_matrix is not None:
-            return df.where(_existence_matrix, 0)  # 数据为nan，但是一看 是不可交易的（停牌），停牌导致的 我认为可填0
+            existence_mask_shifted = _existence_matrix.shift(1, fill_value=False)
+            return df.where(_existence_matrix, 0)  # _existence_matrix为false（意味着无法交易（可能是停牌停牌导致的 将原值以及nan统统写为0 /无容置疑：但凡非交易的，这类数据（交易行为类 (换手率, 成交量, 振幅)） 缺失可以直接填0
         return df  # 不填充~
     elif strategy == FILL_STRATEGY_FFILL_LIMIT_5:
         return df.ffill(limit=5)
