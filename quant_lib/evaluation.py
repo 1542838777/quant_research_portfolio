@@ -12,7 +12,7 @@ from quant_lib.utils.dataFrame_utils import align_dataframes
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Union, Tuple, Any
+from typing import Dict, List, Optional, Union, Tuple, Any, Callable
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -26,6 +26,56 @@ try:
 except ImportError:
     HAS_STATSMODELS = False
     print("警告: statsmodels未安装，将使用简化版本的回归分析")
+
+
+# 我觉得这个更能说明因子的潜力，在运动过程中（真的过程（交易过程）中， 来看因子 跟此段收益率的协同关系
+def calcu_forward_returns_open_close(period: int,
+                                     close_df: pd.DataFrame,
+                                     open_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    计算从T日开盘价到T+period-1日收盘价的未来收益率 (Open-to-Close)。
+    这是一种更贴近实盘的、更严格的收益计算方式。
+
+    Args:
+        period (int): 持有周期。
+        close_df (pd.DataFrame): 收盘价矩阵。
+        open_df (pd.DataFrame): 开盘价矩阵。
+
+    Returns:
+        pd.DataFrame: O2C未来收益率矩阵。
+    """
+    # 1. 定义起点和终点价格
+    # 起点是 T 日的开盘价，它本身不需要 shift
+    start_price = open_df
+    # 终点是 T+period-1 日的收盘价
+    end_price = close_df.shift(-(period - 1))
+
+    # 2. 创建“未来存续”掩码
+    survived_mask = start_price.notna() & end_price.notna()
+
+    # 3. 计算原始收益率，并应用掩码过滤
+    forward_returns_raw = end_price / start_price - 1
+    forward_returns = forward_returns_raw.where(survived_mask)
+
+    # clip 操作
+    return forward_returns.clip(-0.15, 0.15)
+
+
+# ok
+def calcu_forward_returns_close_close(period, price_df):
+    # 1. 定义起点和终点价格 (严格遵循T-1原则)
+    start_price = price_df.shift(1)
+    end_price = price_df.shift(1 - period)
+
+    # 2. 创建“未来存续”掩码 (确保在持有期首尾股价都存在)
+    survived_mask = start_price.notna() & end_price.notna()
+
+    # 3. 计算原始收益率，并应用掩码过滤
+    forward_returns_raw = end_price / start_price - 1
+    forward_returns = forward_returns_raw.where(survived_mask)
+
+    # clip 操作应该在所有计算和过滤完成后进行
+    return forward_returns.clip(-0.15, 0.15)
 
 
 def calculate_ic(factor_df: pd.DataFrame,
@@ -78,6 +128,7 @@ def calculate_ic_vectorized(
         price_df: pd.DataFrame,
         forward_periods: List[int] = [1, 5, 20],
         method: str = 'spearman',
+        returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame] = calcu_forward_returns_close_close,
         min_stocks: int = 10
 ) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
     """
@@ -101,15 +152,13 @@ def calculate_ic_vectorized(
     if factor_df.empty or price_df.empty:
         raise ValueError("输入的因子或价格数据为空，无法计算IC。")
     for period in forward_periods:
-        forward_returns = price_df.shift(1 - period) / price_df.shift(1) - 1
-        forward_returns = forward_returns.clip(-0.15, 0.15)
+        forward_returns = returns_calculator(period=period)
 
         common_idx = factor_df.index.intersection(forward_returns.index)
         common_cols = factor_df.columns.intersection(forward_returns.columns)
 
         if len(common_idx) == 0 or len(common_cols) == 0:
             raise ValueError("因子数据和收益数据没有重叠的日期或股票，无法计算IC。")
-
 
         factor_aligned = factor_df.loc[common_idx, common_cols]
         returns_aligned = forward_returns.loc[common_idx, common_cols]
@@ -120,7 +169,6 @@ def calculate_ic_vectorized(
 
         if valid_dates.empty:
             raise ValueError(f"没有任何日期满足最小股票数量({min_stocks})要求，无法计算IC。")
-
 
         # --- 3. 核心计算 ---
         ic_series = factor_aligned.loc[valid_dates].corrwith(
@@ -133,7 +181,6 @@ def calculate_ic_vectorized(
         ic_series_cleaned = ic_series.dropna()
         if len(ic_series_cleaned) < 2:  # t检验至少需要2个样本
             raise ValueError(f"有效IC值数量过少({len(ic_series_cleaned)})，无法计算统计指标。")
-
 
         # 修正胜率计算和添加更多统计指标
         ic_mean = ic_series_cleaned.mean()
@@ -167,6 +214,7 @@ def calculate_ic_vectorized(
 
 
 def calculate_ic_decay(factor_df: pd.DataFrame,
+                       returns_calculator,
                        price_df: pd.DataFrame,
                        periods: List[int] = [1, 5, 10, 20, 60],
                        method: str = 'pearson',
@@ -194,15 +242,9 @@ def calculate_ic_decay(factor_df: pd.DataFrame,
 
     for period in periods:
         # 计算未来收益率
-        forward_returns = price_df.shift(1 - period) / price_df.shift(1) - 1
-
-        forward_returns = forward_returns.clip(-0.15, 0.15)
-
+        forward_returns = returns_calculator(period = period)
         # 计算IC
-        if use_vectorized:
-            ic = calculate_ic_vectorized(factor_df, forward_returns, method)
-        else:
-            ic = calculate_ic(factor_df, forward_returns, method)
+        ic = calculate_ic_vectorized(factor_df, forward_returns, method)
 
         # 存储结果
         results['IC_Mean'].append(ic.mean())
@@ -265,12 +307,12 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
             # 'returns_data': result,
             'mean_returns': mean_returns,
             'tmb_return_period': tmb_mean_period_return,  # 特定周期的平均收益 (例如，5日平均收益)
-            'tmb_annual_return': tmb_annual_return,  #  年化后的多空组合收益率
+            'tmb_annual_return': tmb_annual_return,  # 年化后的多空组合收益率
             'tmb_sharpe': tmb_sharpe,  # * 周期调整后的夏普比率
             'tmb_win_rate': tmb_win_rate,
             'max_drawdown': max_drawdown,
-            'mdd_start_date': mdd_start, #最大回撤开始日期
-            'mdd_end_date': mdd_end, #最大回撤结束日期
+            'mdd_start_date': mdd_start,  # 最大回撤开始日期
+            'mdd_end_date': mdd_end,  # 最大回撤结束日期
             'quantile_means': quantile_means,
             # 【新增指标】: 用连续的Spearman相关系数代替二元的True/False
             'monotonicity_spearman': monotonicity_spearman
@@ -278,9 +320,10 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
 
     return quantile_returns_periods_dict, quantile_stats_periods_dict
 
-#ok
+
 def calculate_quantile_returns(
         factor_df: pd.DataFrame,
+        returns_calculator: Callable,
         price_df: pd.DataFrame,
         n_quantiles: int = 5,
         forward_periods: List[int] = [1, 5, 20]
@@ -305,9 +348,8 @@ def calculate_quantile_returns(
     for period in forward_periods:
         logger.info(f"  > 正在处理向前看 {period} 周期...")
 
-        # 1. 计算未来收益率 (向量化)
-        forward_returns =  price_df.shift(1 - period) / price_df.shift(1) - 1
-        forward_returns = forward_returns.clip(-0.15, 0.15)
+        # 1. 计算未来收益率
+        forward_returns = returns_calculator(period=period)
 
         # 2. 数据转换与对齐：从“宽表”到“长表”
         factor_long = factor_df.stack().rename('factor')
@@ -317,7 +359,8 @@ def calculate_quantile_returns(
         merged_df = pd.concat([factor_long, returns_long], axis=1).dropna()
 
         if merged_df.empty:
-            logger.warning(f"  > 在周期 {period}，因子和收益数据没有重叠，无法计算。")#  考虑 要不要直接报错 不能，因为forward_returns有nan很正常
+            logger.warning(
+                f"  > 在周期 {period}，因子和收益数据没有重叠，无法计算。")  # 考虑 要不要直接报错 不能，因为forward_returns有nan很正常
             # 创建一个空的DataFrame以保持输出结构一致性
             empty_cols = [f'Q{i + 1}' for i in range(n_quantiles)] + ['TopMinusBottom']
             results[period] = pd.DataFrame(columns=empty_cols, dtype='float64')
@@ -326,7 +369,6 @@ def calculate_quantile_returns(
         # 4. 稳健的分组：使用rank()进行等数量分组 (我们坚持的稳健方法)
         # 按日期(level=0)分(因为是多重索引，这里取第一个索引：时间)组，对每个截面内的因子值进行排名
         merged_df['rank'] = merged_df.groupby(level=0)['factor'].rank(method='first')
-
 
         # 因为rank列是唯一的，所以不需要担心duplicates问题。
         merged_df['quantile'] = merged_df.groupby(level=0)['rank'].transform(
@@ -337,6 +379,9 @@ def calculate_quantile_returns(
 
         # 6. 数据转换：从“长表”恢复到“宽表”
         quantile_returns_wide = daily_quantile_returns.unstack()
+        # 假设当天某个分组的所有股票都因为  未来不存续 而收益为NaN， （不存续：比如我们周期5，今天买的，第五天因为停牌卖不出去，导致无法拿到价格 导致returns 为nan） 你要不是不把这个收益率替换成0，后面再算累计收益的时候 会报错！
+        # 那么该分组的平均收益也是NaN。我们假设这种情况下组合当天收益为0。
+        quantile_returns_wide.fillna(0, inplace=True)
         # 改个列名
         quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
 
@@ -353,7 +398,7 @@ def calculate_quantile_returns(
 
         # 8. 存储结果
         results[period] = quantile_returns_wide.sort_index(axis=1)
-    return  quantile_stats_result(results, n_quantiles)
+    return quantile_stats_result(results, n_quantiles)
 
 
 def plot_ic_series(ic_series: pd.Series, title: str = 'IC时间序列', figsize: Tuple[int, int] = (12, 6)):
@@ -482,7 +527,8 @@ def calculate_turnover(positions_df: pd.DataFrame) -> pd.Series:
     logger.info(f"换手率计算完成: 平均换手率={turnover.mean():.4f}")
     return turnover
 
-#ok
+
+# ok
 def calculate_turnover_vectorized(
         factor_df: pd.DataFrame,
         n_quantiles: int = 5,
@@ -518,7 +564,7 @@ def calculate_turnover_vectorized(
         # 如果股票保持在同一个分位数内，变化为0，否则为1
         # 注意：这里我们比较的是分位数的“档位”，而不是具体的百分比值
         # (quantiles * n_quantiles).ceil() 会得到 1, 2, 3, 4, 5 的整数分位
-        turnover_matrix = np.ceil(quantiles * n_quantiles)!= np.ceil(quantiles_shifted * n_quantiles)
+        turnover_matrix = np.ceil(quantiles * n_quantiles) != np.ceil(quantiles_shifted * n_quantiles)
 
         # 每日换手率 = 发生变动的股票数 / 当天有效股票总数
         daily_turnover = turnover_matrix.sum(axis=1) / factor_df.notna().sum(axis=1)
@@ -526,6 +572,7 @@ def calculate_turnover_vectorized(
         turnover_periods_dict[f'{period}d'] = daily_turnover.dropna().rename('turnover')
 
     return turnover_periods_dict
+
 
 def calculate_sharpe(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
     """
@@ -540,7 +587,6 @@ def calculate_sharpe(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
     """
     excess_returns = returns - risk_free_rate
     return excess_returns.mean() / excess_returns.std() * np.sqrt(252) if excess_returns.std() > 0 else 0
-
 
 
 def calculate_max_drawdown_robust(
@@ -596,11 +642,12 @@ def calculate_max_drawdown_robust(
 # ok 传入的必须是 shif之后的！！！！
 def fama_macbeth_regression(
         factor_df: pd.DataFrame,
+        returns_calculator: Callable,
         price_df: pd.DataFrame,
         forward_returns_period: int = 20,
         weights_df: pd.DataFrame = None,
         neutral_factors: Dict[str, pd.DataFrame] = None
-) -> Tuple[Series,Dict[str, Any]]:
+) -> Tuple[Series, Dict[str, Any]]:
     """
     【最终生产版】对单个因子进行Fama-MacBeth回归检验。
     此版本逻辑结构清晰，代码健壮，并使用Newey-West标准误修正t检验，符合学术界和业界的严格标准。
@@ -614,27 +661,23 @@ def fama_macbeth_regression(
 
     # --- 0. 前置检查 ---
     if not HAS_STATSMODELS:
-        logger.error("statsmodels未安装，无法执行Fama-MacBeth回归")
-        return {'error': 'statsmodels未安装'}
+        raise ValueError("statsmodels未安装，无法执行Fama-MacBeth回归")
 
     if factor_df.empty or price_df.empty:
-        logger.error("输入数据为空")
-        return {'error': '输入数据为空'}
+        raise ValueError("输入数据为空")
 
     # 检查因子值是否有变化
     factor_std = factor_df.stack().std()
     if factor_std < 1e-6 or np.isnan(factor_std):
-        logger.error("因子值在所有截面上几乎无变化或全为NaN，无法进行回归。")
-        return {'error': '因子值无变化'}
+        raise ValueError("因子值在所有截面上几乎无变化或全为NaN，无法进行回归。")
 
     # --- 1. 数据准备 ---
     logger.info("\t步骤1: 准备和对齐数据...")
     try:
         # 修正：正确计算前向收益率 T-1 到 T-1+period 的收益。 :T-1+period 的收益/ T-1的
-        forward_returns = price_df.shift(1 -forward_returns_period ) / price_df.shift(1) - 1
-        forward_returns = forward_returns.clip(-0.15, 0.15)
+        forward_returns = returns_calculator(peroid=forward_returns_period)
 
-        all_dfs_to_align  = {
+        all_dfs_to_align = {
             'factor': factor_df,
             'returns': forward_returns
         }
@@ -646,7 +689,7 @@ def fama_macbeth_regression(
             # 将所有T-1的中性化信号加入待对齐字典
             all_dfs_to_align.update(neutral_factors)
 
-        aligned_dfs = align_dataframes(all_dfs_to_align )
+        aligned_dfs = align_dataframes(all_dfs_to_align)
 
         if not all([not df.empty for df in aligned_dfs.values()]):
             raise ValueError("数据对齐后，一个或多个DataFrame为空。请检查输入数据的重叠部分。")
@@ -713,7 +756,6 @@ def fama_macbeth_regression(
             continue
         except Exception as e:
             raise ValueError(f"日期 {date} 回归失败: {e}")
-
 
     # --- 3. 分析与报告 ---
     # logger.info("\t步骤3: 分析回归结果并生成报告...")
@@ -792,19 +834,22 @@ def fama_macbeth_regression(
         'significance_desc': significance_desc,
         'num_total_periods': total_dates_to_run,
         'num_valid_periods': num_success_dates,
-        'success_rate': num_success_dates / total_dates_to_run if total_dates_to_run > 0 else 0,#有多大比例的交易日成功地完成了回归
+        'success_rate': num_success_dates / total_dates_to_run if total_dates_to_run > 0 else 0,  # 有多大比例的交易日成功地完成了回归
         # 'factor_returns_series': factor_returns_series,
         'skipped_dates': num_skipped_dates,
     }
 
-    return factor_returns_series,results_summary
+    return factor_returns_series, results_summary
+
+
 def fama_macbeth(
-                      factor_data: pd.DataFrame,
-                      close_df: pd.DataFrame,
-                      neutral_dfs: Dict[str, pd.DataFrame],
-                      forward_periods,
-                      circ_mv_df: pd.DataFrame,
-                      factor_name: str) -> Tuple[Dict[str, pd.DataFrame],Dict[str, pd.DataFrame]]:
+        factor_data: pd.DataFrame,
+        returns_calculator,
+        close_df: pd.DataFrame,
+        neutral_dfs: Dict[str, pd.DataFrame],
+        forward_periods,
+        circ_mv_df: pd.DataFrame,
+        factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
     """
     Fama-MacBeth回归法测试（黄金标准）
 
@@ -816,11 +861,12 @@ def fama_macbeth(
         Fama-MacBeth回归结果字典
     """
     fm_stat_results_periods_dict = {}
-    factor_returns_series_periods_dict  = {}
+    factor_returns_series_periods_dict = {}
     for period in forward_periods:
         # 运行Fama-MacBeth回归
-        factor_returns_series,fm_result = fama_macbeth_regression(
+        factor_returns_series, fm_result = fama_macbeth_regression(
             factor_df=factor_data,
+            returns_calculator=returns_calculator,
             price_df=close_df,
             forward_returns_period=period,
             weights_df=circ_mv_df,  # <-- 传入 流通市值作为权重，执行WLS
@@ -828,7 +874,7 @@ def fama_macbeth(
         )
         fm_stat_results_periods_dict[f'{period}d'] = fm_result
         factor_returns_series_periods_dict[f'{period}d'] = factor_returns_series
-    return factor_returns_series_periods_dict,fm_stat_results_periods_dict
+    return factor_returns_series_periods_dict, fm_stat_results_periods_dict
 
 
 import pandas as pd
@@ -840,72 +886,69 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-#只是用于绘图
+
+# 只是用于绘图
 def calculate_quantile_daily_returns(
         factor_df: pd.DataFrame,
+        returns_calculator,  # 具体化Callable
         price_df: pd.DataFrame,
-        n_quantiles ,
+        n_quantiles,
         primary_period_key
 ) -> Dict[str, pd.DataFrame]:
+    """
+    【V3 最终版】计算因子分层组合的每日收益率。
+    1. 修正了函数签名，防止因参数位置错误导致的TypeError。
+    2. 增加了对因子数据类型的强制转换，确保qcut函数安全运行。
 
-        """
-        【V3 最终版】计算因子分层组合的每日收益率。
-        1. 修正了函数签名，防止因参数位置错误导致的TypeError。
-        2. 增加了对因子数据类型的强制转换，确保qcut函数安全运行。
+    Args:
+        factor_df (pd.DataFrame): 因子值DataFrame (index=date, columns=stock)。
+                                  这是T-1日的信息。
+        price_df (pd.DataFrame): 每日收盘价矩阵 (index=date, columns=stock)。
+        n_quantiles (int): (关键字参数) 要划分的分位数数量。
 
-        Args:
-            factor_df (pd.DataFrame): 因子值DataFrame (index=date, columns=stock)。
-                                      这是T-1日的信息。
-            price_df (pd.DataFrame): 每日收盘价矩阵 (index=date, columns=stock)。
-            n_quantiles (int): (关键字参数) 要划分的分位数数量。
+    Returns:
+        Dict[str, pd.DataFrame]: 只有一个key的字典，值是分层组合的每日收益DataFrame。
+    """
+    logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
+    forward_returns_1d = returns_calculator(peroid=1)
 
-        Returns:
-            Dict[str, pd.DataFrame]: 只有一个key的字典，值是分层组合的每日收益DataFrame。
-        """
-        logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
+    # 2. 数据转换与对齐
+    factor_long = factor_df.stack().rename('factor')
+    returns_1d_long = forward_returns_1d.stack().rename('return_1d')
 
-        # 1. (这计算的是T日的日收益率，与T-1的因子完美对应)
-        forward_returns_1d = price_df.pct_change(periods=1)
-        forward_returns_1d = forward_returns_1d.clip(-0.15, 0.15)
+    merged_df = pd.concat([factor_long, returns_1d_long], axis=1).dropna()
 
-        # 2. 数据转换与对齐
-        factor_long = factor_df.stack().rename('factor')
-        returns_1d_long = forward_returns_1d.stack().rename('return_1d')
+    if merged_df.empty:
+        logger.warning("  > 因子和单日收益数据没有重叠，无法计算分层收益。")
+        return {primary_period_key: pd.DataFrame()}
 
-        merged_df = pd.concat([factor_long, returns_1d_long], axis=1).dropna()
+    # 3. 确保因子值为数值类型
+    merged_df['factor'] = pd.to_numeric(merged_df['factor'], errors='coerce')
+    merged_df.dropna(subset=['factor'], inplace=True)
 
-        if merged_df.empty:
-            logger.warning("  > 因子和单日收益数据没有重叠，无法计算分层收益。")
-            return {primary_period_key: pd.DataFrame()}
+    # 4. 稳健的分组
+    merged_df['quantile'] = merged_df.groupby(level=0)['factor'].transform(
+        lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1
+    )
 
-        # 3. 确保因子值为数值类型
-        merged_df['factor'] = pd.to_numeric(merged_df['factor'], errors='coerce')
-        merged_df.dropna(subset=['factor'], inplace=True)
+    # 5. 计算各分位数组合的每日平均收益
+    daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])[
+        'return_1d'].mean()
 
-        # 4. 稳健的分组
-        merged_df['quantile'] = merged_df.groupby(level=0)['factor'].transform(
-            lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1
-        )
+    # 6. 数据转换回“宽表”
+    quantile_returns_wide = daily_quantile_returns.unstack()
+    quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
 
-        # 5. 计算各分位数组合的每日平均收益
-        daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])[
-            'return_1d'].mean()
+    # 7. 计算多空组合的每日收益（价差）
+    top_q_col = f'Q{n_quantiles}'
+    bottom_q_col = 'Q1'
 
-        # 6. 数据转换回“宽表”
-        quantile_returns_wide = daily_quantile_returns.unstack()
-        quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
+    if top_q_col in quantile_returns_wide.columns and bottom_q_col in quantile_returns_wide.columns:
+        quantile_returns_wide['TopMinusBottom'] = quantile_returns_wide[top_q_col] - quantile_returns_wide[
+            bottom_q_col]
+    else:
+        quantile_returns_wide['TopMinusBottom'] = np.nan
 
-        # 7. 计算多空组合的每日收益（价差）
-        top_q_col = f'Q{n_quantiles}'
-        bottom_q_col = 'Q1'
-
-        if top_q_col in quantile_returns_wide.columns and bottom_q_col in quantile_returns_wide.columns:
-            quantile_returns_wide['TopMinusBottom'] = quantile_returns_wide[top_q_col] - quantile_returns_wide[
-                bottom_q_col]
-        else:
-            quantile_returns_wide['TopMinusBottom'] = np.nan
-
-        # 8. 返回结果
-        # 我们用一个固定的key，比如 '21d'，让绘图函数能找到它
-        return {primary_period_key: quantile_returns_wide.sort_index(axis=1)}
-
+    # 8. 返回结果
+    # 我们用一个固定的key，比如 '21d'，让绘图函数能找到它
+    return {primary_period_key: quantile_returns_wide.sort_index(axis=1)}

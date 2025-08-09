@@ -6,9 +6,10 @@ from typing import List, Dict
 import pandas as pd
 
 from projects._03_factor_selection.data_manager.data_manager import DataManager
-from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
+from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer, \
+    prepare_industry_dummies
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
-from projects._03_factor_selection.utils.factor_processor import FactorProcessor
+from projects._03_factor_selection.utils.factor_processor import FactorProcessor, PointInTimeIndustryMap
 from quant_lib import logger
 
 
@@ -52,18 +53,49 @@ class FactorSynthesizer:
         auxiliary_shift_dfs_base_own_stock_pools = \
             self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
                 stock_pool_name]
-        prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-            self.factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
-                stock_pool_name]
 
-        industry_df = self.factor_manager.data_manager.raw_dfs['industry']
+        # ==============================================================================
+        #  在此处统一准备权威的“中性化数据篮子 (neutral_dfs)”
+        # ==============================================================================
+
+        # 1. 从配置中读取所需的行业级别
+        neutralization_config = self.factor_processor.preprocessing_config.get('neutralization', {})
+        industry_level = neutralization_config.get('by_industry', {}).get('industry_level', 'l1_code')  # 默认为一级行业
+
+        # 2. 初始化PIT地图
+        pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
+
+        # 3. 动态生成所需的行业哑变量
+        industry_dummies_dict = prepare_industry_dummies(
+            pit_map=pit_map,
+            trade_dates=factor_df.index,
+            stock_pool=factor_df.columns,
+            level=industry_level
+        )
+        # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
+        industry_dummies_dict = {
+            key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
+        }
+
+        # 4. 构建最终的、权威的 neutral_dfs 字典
+        #    这个字典将是整个流程中唯一的中性化数据源
+        final_neutral_dfs = {
+            # 市值因子是必须的，通常需要对数化，这一步可以在中性化函数内部做，也可以在这里准备好
+            'total_mv': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='total_mv',
+                                                                                          need_shift=True)[
+                stock_pool_name],
+            # 如果需要beta中性化，也在这里加入
+            # 'pct_chg_beta': beta_df,
+
+            # 使用字典解包，将动态生成的行业哑变量添加进来
+            **industry_dummies_dict
+        }
 
         processed_df = self.processor.process_factor(
             target_factor_df=factor_df,
-            industry_df=industry_df,
             target_factor_name=factor_name,
             auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
-            neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs,
+            neutral_dfs=final_neutral_dfs,
             style_category=style_category, neutralize_after_standardize=False)
         return processed_df
 

@@ -8,6 +8,8 @@
 
 支持批量测试、结果可视化和报告生成
 """
+from functools import partial
+
 import os
 import sys
 import warnings
@@ -17,6 +19,7 @@ from typing import Dict, Tuple, Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from jedi.inference.gradual.typing import Callable
 from pandas import Series
 from scipy import stats
 
@@ -33,7 +36,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
     calculate_ic_vectorized,
-    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns, calculate_turnover_vectorized
+    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns, calculate_turnover_vectorized,
+    calcu_forward_returns_close_close, calcu_forward_returns_open_close
 
 )
 
@@ -193,6 +197,7 @@ class FactorAnalyzer:
 
     def test_ic_analysis(self,
                          factor_data: pd.DataFrame,
+                         returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame],  # 具体化Callable
                          close_df: pd.DataFrame,
                          factor_name: str) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
         """
@@ -206,13 +211,17 @@ class FactorAnalyzer:
         Returns:
             IC分析结果字典
         """
+
+
         ic_series_periods_dict, stats_periods_dict = calculate_ic_vectorized(factor_data, close_df,
                                                                              forward_periods=self.test_common_periods,
-                                                                             method='spearman')
+                                                                             method='spearman',returns_calculator = returns_calculator,min_stocks=10)
+
         return ic_series_periods_dict, stats_periods_dict
 
     def test_quantile_backtest(self,
                                factor_data: pd.DataFrame,
+                               returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame],  # 具体化Callable
                                close_df: pd.DataFrame,
                                factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame],Dict]:
         """
@@ -227,6 +236,8 @@ class FactorAnalyzer:
         """
         quantile_returns_periods_dict, quantile_stats_periods_dict = calculate_quantile_returns(
             factor_data,
+
+            returns_calculator,
             close_df,
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
@@ -279,13 +290,12 @@ class FactorAnalyzer:
         close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
                                                                                      need_shift=False)[
             stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
+                                                                                     need_shift=False)[
+            stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
 
         auxiliary_shift_dfs_base_own_stock_pools = \
             self.factor_manager.build_auxiliary_dfs_shift_diff_stock_pools_dict()[
-                stock_pool_name]
-
-        prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-            self.prepare_for_neutral_data_dict_shift_diff_stock_pools()[
                 stock_pool_name]
 
         circ_mv_shift_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
@@ -328,11 +338,9 @@ class FactorAnalyzer:
             **industry_dummies_dict
         }
         if need_process_factor:
-            industry_df = self.factor_manager.data_manager.raw_dfs['industry']
             # 1. 因子预处理
             target_factor_df = self.factor_processor.process_factor(
                 target_factor_df=target_factor_df,
-                industry_df=industry_df,
                 target_factor_name=target_factor_name,
                 auxiliary_dfs=auxiliary_shift_dfs_base_own_stock_pools,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
@@ -341,7 +349,9 @@ class FactorAnalyzer:
             )
 
         style_factor_dfs = self.get_style_factors(stock_pool_name)
-        return self.core_three_test(target_factor_df, target_factor_name, close_df,
+        c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)  # todo增加另外 的 收益率计算！
+        o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
+        return self.core_three_test(target_factor_df, target_factor_name,open_df,c2c_calculator, close_df,
                                     final_neutral_dfs, circ_mv_shift_df,style_factor_dfs)
 
     # ok
@@ -1037,27 +1047,28 @@ class FactorAnalyzer:
 
         return results
 
-    def core_three_test(self, target_factor_processed, target_factor_name, close_df,
-                        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df,style_factors_dict  ):
+    def core_three_test(self, target_factor_processed, target_factor_name, returns_calculator:Callable, close_df,
+                        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict):
         # 1. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
-        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, close_df,
+
+        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, returns_calculator, close_df,
                                                                               target_factor_name)
 
         # 2. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
         quantile_returns_series_periods_dict, quantile_stats_periods_dict,turnover_stats_periods_dict = self.test_quantile_backtest(
-            target_factor_processed, close_df, target_factor_name)
+            target_factor_processed, returns_calculator,close_df, target_factor_name)
 
         primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
         # 这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
-        quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed, close_df, 5,
+        quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed,returns_calculator, close_df, 5,
                                                                                 primary_period_key)
 
         # 3. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
         factor_returns_series_periods_dict, fm_stat_results_periods_dict = fama_macbeth(
-            factor_data=target_factor_processed, close_df=close_df, forward_periods=self.test_common_periods,
+            factor_data=target_factor_processed, returns_calculator =returns_calculator,close_df=close_df, forward_periods=self.test_common_periods,
             neutral_dfs=prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_df=circ_mv_shift_df,
             factor_name=target_factor_name)
 
