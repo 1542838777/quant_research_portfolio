@@ -65,19 +65,23 @@ class FactorResultsManager:
 
         # 2. 分解并保存不同的“成果”
         # a) 保存总结性统计数据
-        ic_analysis_raw = results.get("ic_analysis_raw", {})
-        quantile_backtest_raw = results.get("quantile_backtest_raw", {})
+        ic_stats_periods_dict_raw = results.get("ic_stats_periods_dict_raw", {})
+        ic_stats_periods_dict_processed = results.get("ic_stats_periods_dict_processed", {})
+        quantile_stats_periods_dict_raw = results.get("quantile_stats_periods_dict_raw", {})
+        quantile_stats_periods_dict_processed = results.get("quantile_stats_periods_dict_processed", {})
+        fm_stat_results_periods_dict = results.get("fm_stat_results_periods_dict", {})
+        turnover_stats_periods_dict = results.get("turnover_stats_periods_dict", {})
+        style_correlation_dict = results.get("style_correlation_dict", {})
 
-        ic_series_periods_dict_raw = results.get("ic_series_periods_dict_raw", {})
-        quantile_backtest_rawic_series_periods_dict_raw = results.get("quantile_backtest_rawic_series_periods_dict_raw", {})
+
         summary_stats = {
-            'ic_analysis_raw': ic_analysis_raw,
-            'ic_analysis_processed': results['ic_stats_periods_dict_processed'],
-            'quantile_backtest_raw': quantile_backtest_raw,
-            'quantile_backtest_processed': results['quantile_stats_periods_dict_processed'],
-            'fama_macbeth': results['fm_stat_results_periods_dict'],
-            'turnover': results['turnover_stats_periods_dict'],
-            'style_correlation': results['style_correlation_dict']  # todo 完善
+            'ic_analysis_raw': ic_stats_periods_dict_raw,
+            'ic_analysis_processed': ic_stats_periods_dict_processed,
+            'quantile_backtest_raw': quantile_stats_periods_dict_raw,
+            'quantile_backtest_processed': quantile_stats_periods_dict_processed,
+            'fama_macbeth': fm_stat_results_periods_dict,
+            'turnover': turnover_stats_periods_dict,
+            'style_correlation':style_correlation_dict # todo 完善
         }
         with open(output_path / 'summary_stats.json', 'w') as f:
             # 使用自定义的Encoder来处理numpy类型
@@ -86,21 +90,27 @@ class FactorResultsManager:
         if "processed_factor_df" in results:
             results["processed_factor_df"].to_parquet(output_path / 'processed_factor.parquet')
 
+        ic_series_periods_dict_raw = results.get("ic_series_periods_dict_raw", {})
+        ic_series_periods_dict_processed = results.get("ic_series_periods_dict_processed", {})
+        quantile_returns_series_periods_dict_raw = results.get("quantile_returns_series_periods_dict_raw", {})
+        quantile_returns_series_periods_dict_processed = results.get("quantile_returns_series_periods_dict_processed", {})
+        fm_returns_series_periods_dict = results.get("fm_returns_series_periods_dict", {})
+
         # b) 保存时间序列数据 (以 Parquet 格式，更高效)
         for period, series in ic_series_periods_dict_raw.items():
             df = series.to_frame(name='ic_series_raw')  # 给一列起名，比如 'ic'
             df.to_parquet(output_path / f'ic_series_raw_{period}.parquet')
-        for period, series in results['ic_series_periods_dict_processed'].items():
+        for period, series in ic_series_periods_dict_processed.items():
             df = series.to_frame(name='ic_series_processed')  # 给一列起名，比如 'ic'
             df.to_parquet(output_path / f'ic_series_processed_{period}.parquet')
 
-        for period, df in results['quantile_returns_series_periods_dict_processed'].items():
-            df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
-
-        for period, df in quantile_backtest_rawic_series_periods_dict_raw.items():
+        for period, df in quantile_returns_series_periods_dict_raw.items():
             df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
 
-        for period, series in results['fm_returns_series_periods_dict'].items():
+        for period, df in quantile_returns_series_periods_dict_processed.items():
+            df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
+
+        for period, series in fm_returns_series_periods_dict.items():
             df = series.to_frame(name='fm_returns_series')
             df.to_parquet(output_path / f'fm_returns_series_{period}.parquet')
 

@@ -385,7 +385,7 @@ class VisualizationManager:
         ax_a.set_xlabel('持有周期 (天)', fontproperties=cn_font, fontsize=14)
         ax_a.set_ylabel('ICIR', fontproperties=cn_font, fontsize=14)
         ax_a_twin.set_ylabel('分层Sharpe', fontproperties=cn_font, fontsize=14)
-        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.93), prop=cn_font)
+        ax_a.legend(loc='upper left', bbox_to_anchor=(0.1, 0.93), prop=cn_font)
         ax_a.grid(True, linestyle='--', alpha=0.6)
 
         # --- B. 最佳周期分层净值曲线 (Raw vs. Processed) ---
@@ -429,8 +429,13 @@ class VisualizationManager:
         ax_c.set_title(f'C. 最佳周期 ({best_period}) IC vs. F-M Alpha', fontproperties=cn_font, fontsize=18)
         ax_c.set_ylabel('累计IC', fontproperties=cn_font, fontsize=14);
         ax_c_twin.set_ylabel('F-M纯净收益', fontproperties=cn_font, fontsize=14)
-        ax_c.grid(True);
-        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.62), prop=cn_font)
+        ax_c.grid(True)
+        # ▼▼▼▼▼ 【核心修正】 ▼▼▼▼▼
+        # 1. 从两个坐标轴分别获取图例元素
+        lines_c, labels_c = ax_c.get_legend_handles_labels()
+        lines_twin_c, labels_twin_c = ax_c_twin.get_legend_handles_labels()
+
+        ax_c.legend(lines_c + lines_twin_c, labels_c + labels_twin_c, loc='upper left', prop=cn_font)
 
         # --- D. 因子自身特性 (自相关性 & 换手率) ---
         ax_d = fig.add_subplot(gs[1, 1])

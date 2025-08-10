@@ -931,7 +931,7 @@ class FactorAnalyzer:
                 preprocess_method="standard",
                 start_date=start_date,
                 end_date=end_date,
-                need_process_factor=False,  # todo 注意该回去
+                need_process_factor=True,  # todo 注意该回去
                 do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
                 do_style_correlation_test=True
             )
@@ -1021,21 +1021,21 @@ class FactorAnalyzer:
 
     def batch_test_factors(self,
                            target_factors_dict: Dict[str, pd.DataFrame],
-                           **test_kwargs) -> Dict[str, Any]:
+                           **test_kwargs) :
         """
         批量测试因子
         """
 
         # 批量测试
-        results = {}
+        results = []
         for factor_name, factor_data in target_factors_dict.items():
             try:
                 # 执行测试
-                results.append(self.test_factor_entity_service(
+                results.append( {factor_name:(self.test_factor_entity_service(
                     factor_name=factor_name,
                     factor_df=factor_data,
                     need_process_factor=True
-                ))
+                ))})
             except Exception as e:
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
 
@@ -1305,7 +1305,7 @@ class FactorAnalyzer:
                 preprocess_method="standard",
                 start_date=start_date,
                 end_date=end_date,
-                need_process_factor=False,  # #todo 测试模式
+                need_process_factor=False,
                 do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
                 do_style_correlation_test=True
             )
