@@ -264,11 +264,11 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
         quantile_stats_periods_dict[f'{period}d'] = {
             # 'returns_data': result,
             'mean_returns': mean_returns,
-            'tmb_return_period': tmb_mean_period_return,  # 特定周期的平均收益 (例如，5日平均收益)
+            'tmb_mean_period_return': tmb_mean_period_return,  # 特定周期的平均收益 (例如，5日平均收益)
             'tmb_annual_return': tmb_annual_return,  # 年化后的多空组合收益率
             'tmb_sharpe': tmb_sharpe,  # * 周期调整后的夏普比率
             'tmb_win_rate': tmb_win_rate,
-            'max_drawdown': max_drawdown,
+            'tmb_max_drawdown': max_drawdown,
             'mdd_start_date': mdd_start,  # 最大回撤开始日期
             'mdd_end_date': mdd_end,  # 最大回撤结束日期
             'quantile_means': quantile_means,
@@ -285,7 +285,7 @@ def calculate_quantile_returns(
         price_df: pd.DataFrame,
         n_quantiles: int = 5,
         forward_periods: List[int] = [1, 5, 20]
-) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
+) -> Dict[int, pd.DataFrame]:
     """
    计算因子分位数的未来收益率。
     该版本采用向量化实现，并使用rank()进行稳健分组，
@@ -357,7 +357,7 @@ def calculate_quantile_returns(
 
         # 8. 存储结果
         results[period] = quantile_returns_wide.sort_index(axis=1)
-    return quantile_stats_result(results, n_quantiles)
+    return  results
 
 def calculate_turnover(positions_df: pd.DataFrame) -> pd.Series:
     """
@@ -429,7 +429,7 @@ def calculate_turnover(
         valid_counts = factor_df.notna().sum(axis=1)
         daily_turnover = turnover_matrix.sum(axis=1) / valid_counts.where(valid_counts > 0, np.nan)
 
-    turnover_periods_dict[f'{period}d'] = daily_turnover.dropna().rename('turnover')
+        turnover_periods_dict[f'{period}d'] = daily_turnover.dropna().rename('turnover')
 
     return turnover_periods_dict
 
@@ -607,17 +607,17 @@ def fama_macbeth_regression(
         raise ValueError(f"有效回归期数({num_success_dates})过少，无法进行可靠的统计检验。")
 
     # --- 计算“t值绝对值均值” ---
-    factor_t_stats_series = pd.Series(factor_t_stats, index=pd.to_datetime(valid_dates),
-                                      name='factor_t_stats')
+    fm_t_stats_series = pd.Series(factor_t_stats, index=pd.to_datetime(valid_dates),
+                                   name='factor_t_stats')
 
-    mean_abs_t_stat = factor_t_stats_series.abs().mean()
-    factor_returns_series = pd.Series(factor_returns, index=pd.to_datetime(valid_dates), name='factor_returns')
-    mean_factor_return = factor_returns_series.mean()
+    mean_abs_t_stat = fm_t_stats_series.abs().mean()
+    fm_returns_series = pd.Series(factor_returns, index=pd.to_datetime(valid_dates), name='factor_returns')
+    mean_factor_return = fm_returns_series.mean()
 
     # 修正：正确实现Newey-West t检验
     t_stat, p_value = np.nan, np.nan
     try:
-        series_clean = factor_returns_series.dropna()
+        series_clean = fm_returns_series.dropna()
         n_obs = len(series_clean)
 
         # 构造回归：因子收益率 = 常数项 + 误差项
@@ -638,7 +638,7 @@ def fama_macbeth_regression(
     except Exception as e:
         logger.warning(f"Newey-West t检验计算失败: {e}。回退到标准t检验。")
         try:
-            series_clean = factor_returns_series.dropna()
+            series_clean = fm_returns_series.dropna()
             t_stat, p_value = ttest_1samp(series_clean, 0)
         except Exception as e2:
             raise ValueError(f"标准t检验也失败: {e2}")
@@ -671,7 +671,7 @@ def fama_macbeth_regression(
         logger.info("\t\t结论: ✓ 因子有效性得到验证！")
     else:
         logger.info("\t\t结论: ✗ 无法在统计上拒绝因子无效的原假设。")
-    results_summary = {
+    fm_summary = {
         'mean_factor_return': mean_factor_return,
         't_statistic': t_stat,
         'p_value': p_value,
@@ -682,11 +682,11 @@ def fama_macbeth_regression(
         'num_total_periods': total_dates_to_run,
         'num_valid_periods': num_success_dates,
         'success_rate': num_success_dates / total_dates_to_run if total_dates_to_run > 0 else 0,  # 有多大比例的交易日成功地完成了回归
-        # 'factor_returns_series': factor_returns_series,
+        # 'fm_returns_series': fm_returns_series,
         'skipped_dates': num_skipped_dates,
     }
 
-    return factor_returns_series,factor_t_stats_series, results_summary
+    return fm_returns_series,fm_t_stats_series, fm_summary
 
 
 def fama_macbeth(
@@ -707,12 +707,12 @@ def fama_macbeth(
     Returns:
         Fama-MacBeth回归结果字典
     """
-    fm_stat_results_periods_dict = {}
-    factor_t_stats_series_periods_dict = {}
-    factor_returns_series_periods_dict = {}
+    fm_summary_dict = {}
+    fm_t_stats_series_dict = {}
+    fm_returns_series_dict = {}
     for period in forward_periods:
         # 运行Fama-MacBeth回归
-        factor_returns_series, factor_t_stats_series,fm_result = fama_macbeth_regression(
+        fm_returns_series, fm_t_stats_series, fm_summary= fama_macbeth_regression(
             factor_df=factor_data,
             returns_calculator=returns_calculator,
             price_df=close_df,
@@ -720,10 +720,10 @@ def fama_macbeth(
             weights_df=circ_mv_df,  # <-- 传入 流通市值作为权重，执行WLS
             neutral_factors=neutral_dfs  # <-- 传入市值和行业作为控制变量
         )
-        fm_stat_results_periods_dict[f'{period}d'] = fm_result
-        factor_t_stats_series_periods_dict[f'{period}d'] = factor_t_stats_series
-        factor_returns_series_periods_dict[f'{period}d'] = factor_returns_series
-    return factor_returns_series_periods_dict,factor_t_stats_series_periods_dict, fm_stat_results_periods_dict
+        fm_returns_series_dict[f'{period}d'] = fm_returns_series
+        fm_t_stats_series_dict[f'{period}d'] = fm_t_stats_series
+        fm_summary_dict[f'{period}d'] = fm_summary
+    return fm_returns_series_dict,fm_t_stats_series_dict, fm_summary_dict
 
 
 import pandas as pd

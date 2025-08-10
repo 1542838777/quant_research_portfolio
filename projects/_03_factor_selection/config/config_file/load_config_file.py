@@ -104,7 +104,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 trans_pram = fast_mode
-
+is_debug = True
 
 def _load_local_config(config_path: str) -> Dict[str, Any]:
     # confirm_production_mode(massive_test_mode)

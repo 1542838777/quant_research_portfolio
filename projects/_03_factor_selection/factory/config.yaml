@@ -4,7 +4,7 @@ target_factors_for_evaluation:
   fields:
 #    # === 规模 (Size) ===
 #    - 'market_cap_log'
-    - 'beta'
+    - 'ep_ratio'
 #
 #    # === 价值 (Value) ===
 #    - 'bm_ratio'
@@ -132,10 +132,12 @@ preprocessing:
 evaluation:
   n_groups: 5  # 分层回测的分组数
   quantiles: 5  # 分层回测的分组数
-  forward_periods: [1,5, 21]
+  forward_periods: [ 5,21]
 #  forward_periods: [1, 5, 10, 21, 40, 60, 120]
   ic_threshold: 0.02  # IC均值阈值
   ir_threshold: 0.3  # IR阈值
+  returns_calculator: ['c2c','o2c']
+
 
 # 因子选择设置
 factor_selection:

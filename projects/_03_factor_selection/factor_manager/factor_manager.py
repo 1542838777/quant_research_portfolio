@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 
 import numpy as np
 import pandas as pd
+from numpyencoder import NumpyEncoder
 
 from quant_lib import setup_logger
 from quant_lib.config.logger_config import log_warning, log_error
@@ -27,11 +28,13 @@ from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_poo
 logger = setup_logger(__name__)
 
 
-class FactorTestResult:
+class FactorResultsManager:
     """因子测试结果类"""
 
     def __init__(self,
                  **kwargs):
+
+        self.results_dir = Path(__file__).parent.parent / 'workspace' / 'result'
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -41,20 +44,118 @@ class FactorTestResult:
         return {k: v for k, v in self.__dict__.items()}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'FactorTestResult':
+    def from_dict(cls, data: Dict[str, Any]) -> 'FactorResultsManager':
         """从字典创建"""
         return cls(**data)
+
+    def _save_factor_results(self,
+                             factor_name: str,
+                             stock_index: str,  # 比如中证800
+                             start_date: str, end_date: str,
+                             returns_calculator_func_name: str,  # 新增参数，用于区分 'c2c' 或 'o2c'
+                             results: Dict):
+        """
+        将单次因子测试的所有成果，保存到结构化的目录中。
+        """
+        # 1. 创建一个以日期范围命名的、唯一的版本文件夹
+        run_version = f"{start_date.replace('-', '')}_{end_date.replace('-', '')}"
+        # 1. 创建清晰的存储路径
+        output_path = Path(self.results_dir) / stock_index / factor_name / returns_calculator_func_name / run_version
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # 2. 分解并保存不同的“成果”
+        # a) 保存总结性统计数据
+        ic_analysis_raw = results.get("ic_analysis_raw", {})
+        quantile_backtest_raw = results.get("quantile_backtest_raw", {})
+
+        ic_series_periods_dict_raw = results.get("ic_series_periods_dict_raw", {})
+        quantile_backtest_rawic_series_periods_dict_raw = results.get("quantile_backtest_rawic_series_periods_dict_raw", {})
+        summary_stats = {
+            'ic_analysis_raw': ic_analysis_raw,
+            'ic_analysis_processed': results['ic_stats_periods_dict_processed'],
+            'quantile_backtest_raw': quantile_backtest_raw,
+            'quantile_backtest_processed': results['quantile_stats_periods_dict_processed'],
+            'fama_macbeth': results['fm_stat_results_periods_dict'],
+            'turnover': results['turnover_stats_periods_dict'],
+            'style_correlation': results['style_correlation_dict']  # todo 完善
+        }
+        with open(output_path / 'summary_stats.json', 'w') as f:
+            # 使用自定义的Encoder来处理numpy类型
+            json.dump(self._make_serializable(summary_stats), f, indent=4, cls=NumpyEncoder)
+
+        if "processed_factor_df" in results:
+            results["processed_factor_df"].to_parquet(output_path / 'processed_factor.parquet')
+
+        # b) 保存时间序列数据 (以 Parquet 格式，更高效)
+        for period, series in ic_series_periods_dict_raw.items():
+            df = series.to_frame(name='ic_series_raw')  # 给一列起名，比如 'ic'
+            df.to_parquet(output_path / f'ic_series_raw_{period}.parquet')
+        for period, series in results['ic_series_periods_dict_processed'].items():
+            df = series.to_frame(name='ic_series_processed')  # 给一列起名，比如 'ic'
+            df.to_parquet(output_path / f'ic_series_processed_{period}.parquet')
+
+        for period, df in results['quantile_returns_series_periods_dict_processed'].items():
+            df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
+
+        for period, df in quantile_backtest_rawic_series_periods_dict_raw.items():
+            df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
+
+        for period, series in results['fm_returns_series_periods_dict'].items():
+            df = series.to_frame(name='fm_returns_series')
+            df.to_parquet(output_path / f'fm_returns_series_{period}.parquet')
+
+        logger.info(f"✓ 因子'{factor_name}'在配置'{returns_calculator_func_name}'下的所有结果已保存至: {output_path}")
+
+    def _make_serializable(self, obj):
+        """将结果转换为可序列化格式"""
+        if isinstance(obj, dict):
+            return {str(k): self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_serializable(v) for v in obj]
+        elif isinstance(obj, pd.Series):
+            # 将索引转换为字符串
+            series_dict = {}
+            for k, v in obj.items():
+                key = str(k) if hasattr(k, '__str__') else k
+                series_dict[key] = self._make_serializable(v)
+            return series_dict
+        elif isinstance(obj, pd.DataFrame):
+            # 将索引和列名都转换为字符串
+            df_dict = {}
+            for idx, row in obj.iterrows():
+                row_dict = {}
+                for col, val in row.items():
+                    col_key = str(col) if hasattr(col, '__str__') else col
+                    row_dict[col_key] = self._make_serializable(val)
+                idx_key = str(idx) if hasattr(idx, '__str__') else idx
+                df_dict[idx_key] = row_dict
+            return df_dict
+        elif isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        elif isinstance(obj, (np.bool_, bool)):
+            return bool(obj)
+        elif isinstance(obj, pd.Timestamp):
+            return str(obj)
+        elif pd.isna(obj):
+            return None
+        else:
+            try:
+                # 尝试转换为基本Python类型
+                if hasattr(obj, 'item'):  # numpy标量
+                    return obj.item()
+                return obj
+            except:
+                return str(obj)
 
 
 class FactorManager:
     """因子管理器类"""
 
     def __init__(self,
-                 data_manager: DataManager=None,
-                 results_dir: str = Path(__file__).parent.parent/"workspace/factor_results",
+                 data_manager: DataManager = None,
+                 results_dir: str = Path(__file__).parent.parent / "workspace/factor_results",
                  registry_path: str = "factor_registry.json",
                  config: Dict[str, Any] = None):
-
 
         """
         初始化因子管理器
@@ -78,6 +179,7 @@ class FactorManager:
         self.test_results = {}
 
         logger.info("因子管理器初始化完成")
+
     # 返回未经过任何shift的数据 来自于raw_df的数据 ，以及自己手动计算的数据比如beta
     def get_factor(self, factor_name: str) -> pd.DataFrame:
         """
@@ -125,12 +227,13 @@ class FactorManager:
         self.factors_cache[factor_name] = final_factor_df
 
         return final_factor_df.copy()
+
     def register_factor(self,
-                       name: str,
-                       category: Union[str, FactorCategory],
-                       description: str = "",
-                       data_requirements: List[str] = None,
-                       **kwargs) -> bool:
+                        name: str,
+                        category: Union[str, FactorCategory],
+                        description: str = "",
+                        data_requirements: List[str] = None,
+                        **kwargs) -> bool:
         """
         注册因子
 
@@ -157,7 +260,7 @@ class FactorManager:
         return self.registry.get_factor(name)
 
     def list_factors(self,
-                    category: Union[str, FactorCategory] = None) -> List[str]:
+                     category: Union[str, FactorCategory] = None) -> List[str]:
         """
         列出因子
 
@@ -173,9 +276,7 @@ class FactorManager:
         """获取因子摘要"""
         return self.registry.get_factor_summary()
 
-
-
-    def get_test_result(self, factor_name: str) -> Optional[FactorTestResult]:
+    def get_test_result(self, factor_name: str) -> Optional[FactorResultsManager]:
         """
         获取测试结果
 
@@ -205,7 +306,7 @@ class FactorManager:
             with open(latest_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            result = FactorTestResult.from_dict(data)
+            result = FactorResultsManager.from_dict(data)
 
             # 更新缓存
             self.test_results[factor_name] = result
@@ -216,8 +317,8 @@ class FactorManager:
             return None
 
     def classify_factor(self,
-                       factor_data: pd.DataFrame,
-                       returns_data: pd.DataFrame = None) -> FactorCategory:
+                        factor_data: pd.DataFrame,
+                        returns_data: pd.DataFrame = None) -> FactorCategory:
         """
         自动分类因子
 
@@ -231,8 +332,8 @@ class FactorManager:
         return self.classifier.classify_factor(factor_data, returns_data)
 
     def analyze_factor_correlation(self,
-                                 factor_data_dict: Dict[str, pd.DataFrame],
-                                 figsize: Tuple[int, int] = (12, 10)) -> Tuple[pd.DataFrame, Any]:
+                                   factor_data_dict: Dict[str, pd.DataFrame],
+                                   figsize: Tuple[int, int] = (12, 10)) -> Tuple[pd.DataFrame, Any]:
         """
         分析因子相关性
 
@@ -246,8 +347,8 @@ class FactorManager:
         return self.classifier.analyze_factor_correlation(factor_data_dict, figsize)
 
     def cluster_factors(self,
-                       factor_data_dict: Dict[str, pd.DataFrame],
-                       n_clusters: int = 5) -> Dict[str, int]:
+                        factor_data_dict: Dict[str, pd.DataFrame],
+                        n_clusters: int = 5) -> Dict[str, int]:
         """
         聚类因子
 
@@ -261,10 +362,10 @@ class FactorManager:
         return self.classifier.cluster_factors(factor_data_dict, n_clusters)
 
     def visualize_factor_clusters(self,
-                                factor_data_dict: Dict[str, pd.DataFrame],
-                                n_clusters: int = 5,
-                                method: str = 'pca',
-                                figsize: Tuple[int, int] = (12, 10)) -> Any:
+                                  factor_data_dict: Dict[str, pd.DataFrame],
+                                  n_clusters: int = 5,
+                                  method: str = 'pca',
+                                  figsize: Tuple[int, int] = (12, 10)) -> Any:
         """
         可视化因子聚类
 
@@ -281,11 +382,9 @@ class FactorManager:
             factor_data_dict, n_clusters, method, figsize
         )
 
-
-
     def get_top_factors(self):
 
-         return None
+        return None
 
     def _make_serializable(self, obj):
         """将结果转换为可序列化格式"""
@@ -328,7 +427,7 @@ class FactorManager:
             except:
                 return str(obj)
 
-    def _save_results(self, results: Dict[str, Any],file_name_prefix: str) -> None:
+    def _save_results(self, results: Dict[str, Any], file_name_prefix: str) -> None:
         """保存测试结果"""
         # 准备可序列化的结果
         serializable_results = self._make_serializable(results)
@@ -336,7 +435,8 @@ class FactorManager:
         # 保存JSON格式
         json_path = os.path.join(self.results_dir, f'all_single_factor_test_{file_name_prefix}_results.json')
         add_single_factor_test_result(json_path, serializable_results)
-    #ok 保存 精简简要的测试结果
+
+    # ok 保存 精简简要的测试结果
     def update_and_save_factor_purify_summary(self, all_summary_rows: list, file_name_prefix: str):
         """
            更新或创建因子排行榜，支持增量更新。
@@ -367,7 +467,7 @@ class FactorManager:
 
         # 4. 【修正逻辑风险 4】从新数据中提取所有待更新的“主键”
         #    这样即使一次传入多个因子的结果也能正确处理
-        keys_to_update = new_results_df[['factor_name', 'backtest_period','backtest_base_on_index']].drop_duplicates()
+        keys_to_update = new_results_df[['factor_name', 'backtest_period', 'backtest_base_on_index']].drop_duplicates()
 
         # 5. 删除旧记录
         if not existing_leaderboard.empty:
@@ -375,7 +475,9 @@ class FactorManager:
             ##
             # indicator=True
             # 结果就是：新生成_merger列，值要么是both 要么是left_only#
-            merged = existing_leaderboard.merge(keys_to_update, on=['factor_name', 'backtest_period','backtest_base_on_index'], how='left',
+            merged = existing_leaderboard.merge(keys_to_update,
+                                                on=['factor_name', 'backtest_period', 'backtest_base_on_index'],
+                                                how='left',
                                                 indicator=True)
             leaderboard_to_keep = merged[merged['_merge'] == 'left_only'].drop(columns=['_merge'])
         else:
@@ -395,7 +497,6 @@ class FactorManager:
         except Exception as e:
             print(f"❌ 保存结果时发生错误: {e}")
             raise e  # 重新抛出异常，让上层知道发生了错误
-
 
     def update_and_save_fm_factor_return_matrix(self, new_fm_factor_returns_dict: dict, file_name_prefix: str):
         """
@@ -480,13 +581,13 @@ class FactorManager:
         return technical_df_dict, technical_category_dict, technical_school_dict
 
     def get_aligned_raw_factor(self, factor_name):
-       df = self.get_factor(factor_name)## 这是纯净的、T日的因子
-       pool = self.get_stock_pool_by_factor_name(factor_name)#拿到之前基于t-1信息 构建的动态股票池
-       # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1  方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
-       # df=df.shift(1)
-       return fill_and_align_by_stock_pool(factor_name=factor_name,
-                                           df=df, stock_pool_df=pool, _existence_matrix = self.data_manager._existence_matrix)
-
+        df = self.get_factor(factor_name)  ## 这是纯净的、T日的因子
+        pool = self.get_stock_pool_by_factor_name(factor_name)  # 拿到之前基于t-1信息 构建的动态股票池
+        # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1  方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
+        # df=df.shift(1)
+        return fill_and_align_by_stock_pool(factor_name=factor_name,
+                                            df=df, stock_pool_df=pool,
+                                            _existence_matrix=self.data_manager._existence_matrix)
 
     def get_school_code_by_factor_name(self, factor_name):
         return self.get_school_by_style_category(self.get_style_category(factor_name))
@@ -502,6 +603,7 @@ class FactorManager:
         if factor_school in ['microstructure']:
             return 'microstructure_stock_pool'
         raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
+
     @staticmethod
     def get_school_by_style_category(style_category: str) -> str:
         """
@@ -551,7 +653,7 @@ class FactorManager:
         pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
 
         index_filter_config = self.data_manager.config['stock_pool_profiles'][pool_name]['index_filter']
-        if  not index_filter_config['enable']:
+        if not index_filter_config['enable']:
             return INDEX_CODES['ALL_A']
         return index_filter_config['index_code']
 
@@ -564,19 +666,16 @@ class FactorManager:
         pool = self.get_stock_pool_by_factor_name(factor_name=target_factor_name)
         return list(pool.columns)
 
-
-
     def get_style_category(self, factor_name):
         factor_definition = pd.DataFrame(self.data_manager.config['factor_definition'])
         return factor_definition[factor_definition['name'] == factor_name]['style_category'].iloc[0]
 
-
     # ok
     def build_diff_stock_pools_dict_auxiliary_dfs(self):
         _structuer_df_base_on_diff = self.generate_structure_dict_base_on_diff_pool_name('small_cap')
-        #下面只是进行对齐
+        # 下面只是进行对齐
         dfs_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=_structuer_df_base_on_diff,factor_name = 'small_cap', need_shift=False)
+            base_dict=_structuer_df_base_on_diff, factor_name='small_cap', need_shift=False)
         pct_chg_beta_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
             base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg_beta', need_shift=False)
 
@@ -604,6 +703,7 @@ class FactorManager:
             return merged
 
         raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
+
     # 仅仅只是构造一个dict 不做任何处理!
     def generate_structure_dict_base_on_diff_pool_name(self, factor_name):
         df_dict_base_on_diff_pool = {}
@@ -616,17 +716,19 @@ class FactorManager:
         if base_dict is None:
             base_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
         if need_shift:
-            raise ValueError(f"方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了 居然遗漏的上游{factor_name}还在使用提前shift!")
+            raise ValueError(
+                f"方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了 居然遗漏的上游{factor_name}还在使用提前shift!")
             # ret = self.do_shift_and_align_for_dict(factor_name =factor_name , data_dict = base_dict,  _existence_matrix = self.data_manager._existence_matrix)
             # return ret
         else:
             ret = self.do_align_for_dict(factor_name, base_dict)
             return ret
 
-    def do_shift_and_align_for_dict(self, factor_name=None, data_dict=None,_existence_matrix:pd.DataFrame=None):
+    def do_shift_and_align_for_dict(self, factor_name=None, data_dict=None, _existence_matrix: pd.DataFrame = None):
         result = {}
         for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
-            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool,_existence_matrix = _existence_matrix)
+            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool,
+                                                           _existence_matrix=_existence_matrix)
             result[stock_name] = ret
         return result
 
@@ -634,14 +736,15 @@ class FactorManager:
         result = {}
         for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
             ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
-            result[stock_name] = {factor_name:ret}
+            result[stock_name] = {factor_name: ret}
         return result
 
-    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,_existence_matrix:pd.DataFrame=None):
+    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,
+                                            _existence_matrix: pd.DataFrame = None):
         # 率先shift
         data_to_deal_by_shifted = self.do_shift(data_to_deal)
         # 对齐
-        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool,_existence_matrix = _existence_matrix)
+        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool, _existence_matrix=_existence_matrix)
         return result
 
     def do_shift(
@@ -678,7 +781,8 @@ class FactorManager:
                 f"但收到的是 {type(data_to_shift).__name__}"
             )
 
-    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool, _existence_matrix:pd.DataFrame=None
+    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool,
+                 _existence_matrix: pd.DataFrame = None
                  ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
         # --- 情况一：输入是字典 ---
         if isinstance(data_to_align, dict):
@@ -688,13 +792,14 @@ class FactorManager:
                     raise ValueError("do_align失败,dict内部不是df结构")
                 # 对字典中的每个DataFrame执行shift操作
                 shifted_dict[key] = fill_and_align_by_stock_pool(factor_name=key, df=df,
-                                                                 stock_pool_df=stock_pool, _existence_matrix = _existence_matrix)
+                                                                 stock_pool_df=stock_pool,
+                                                                 _existence_matrix=_existence_matrix)
             return shifted_dict
 
         # --- 情况二：输入是单个DataFrame ---
         elif isinstance(data_to_align, pd.DataFrame):
             return fill_and_align_by_stock_pool(factor_name=factor_name, df=data_to_align,
-                                                stock_pool_df=stock_pool, _existence_matrix = _existence_matrix)
+                                                stock_pool_df=stock_pool, _existence_matrix=_existence_matrix)
 
         # --- 其他情况：输入类型错误，主动报错 ---
         else:
@@ -702,7 +807,6 @@ class FactorManager:
                 f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
                 f"但收到的是 {type(data_to_align).__name__}"
             )
-
 
     # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     def get_pct_chg_beta_dict(self):
@@ -716,9 +820,10 @@ class FactorManager:
         pool_stocks = self.data_manager.stock_pools_dict[pool_name].columns
 
         # 直接从主Beta矩阵中按需选取，无需重新计算
-        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks] # todo后面考虑设计一下，取自get_Factor()
+        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]  # todo后面考虑设计一下，取自get_Factor()
 
         return beta_for_this_pool
+
     def prepare_master_pct_chg_beta_dataframe(self):
         """
         用于生成一份统一的、覆盖所有股票的Beta矩阵。
@@ -739,3 +844,7 @@ class FactorManager:
             self.data_manager.config['backtest']['end_date'],
             master_stock_list
         )
+
+
+if __name__ == '__main__':
+    s = FactorResultsManager()

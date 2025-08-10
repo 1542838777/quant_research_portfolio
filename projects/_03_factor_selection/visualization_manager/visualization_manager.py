@@ -16,10 +16,13 @@ import matplotlib.dates as mdates # 导入日期格式化模块
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
+from statsmodels.tsa.stattools import acf
 import seaborn as sns
 import plotly.graph_objects as go
 import plotly.express as px
 from matplotlib import gridspec
+from matplotlib.font_manager import FontProperties
 from plotly.subplots import make_subplots
 from typing import Dict, List, Optional, Tuple, Any, Union
 from pathlib import Path
@@ -45,6 +48,15 @@ from quant_lib.utils.json_utils import load_json_with_numpy
 # 配置日志
 logger = setup_logger(__name__)
 
+##fname 为你下载的字体库路径，注意 SourceHanSansSC-Bold.otf 字体的路径，这里放到工程本地目录下。
+cn_font = FontProperties(fname=r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\quant_lib\font\SourceHanSansSC-Regular.otf", size=12)
+x1 = np.array([1, 2, 3, 4])
+y2 = np.array([6, 2, 13, 10])
+
+plt.plot(x1, y2)
+plt.xlabel("X轴", fontproperties=cn_font)
+plt.ylabel("Y轴", fontproperties=cn_font)
+plt.title("测试", fontproperties=cn_font)
 
 class VisualizationManager:
     """
@@ -306,219 +318,372 @@ class VisualizationManager:
                                    backtest_base_on_index: str,
                                    factor_name: str,
                                    results_path: str,
-                                   default_config: str = 'o2c'
-                                   ) -> str:
+                                   default_config: str = 'o2c',
+                                   run_version: str = 'latest') -> str:
         """
-        【V5.0 终极版】生成单因子综合评估报告 (3x2布局)。
-        从硬盘加载指定配置 (默认为更严格的o2c) 的结果进行绘制。
-        """
-        logger.info(f"开始为因子 {factor_name} (配置: {default_config}) 生成统一评估报告...")
+              【V6.0 智能归因版】生成单因子综合评估报告 (3x2布局)。
+              能自动检测并对比“原始”与“纯净”因子的表现。
+              """
+        logger.info(f"为因子 {factor_name} (配置: {default_config}, 版本: {run_version}) 生成统一评估报告...")
 
         # --- 1. 定位并加载核心数据 ---
         base_path = Path(results_path) / backtest_base_on_index / factor_name
         config_path = base_path / default_config
 
-        summary_stats_file = config_path / 'summary_stats.json'
-        if not summary_stats_file.exists():
-            logger.error(f"未找到摘要文件: {summary_stats_file}，无法生成报告。")
-            return ""
+        # ... (版本定位逻辑不变) ...
+        # [为简洁，省略版本定位的 _find_target_version_path 辅助函数和调用代码]
+        target_version_path = _find_target_version_path(config_path,run_version) # ... a call to _find_target_version_path ...
+        if not target_version_path: return ""
+
+        summary_stats_file = target_version_path / 'summary_stats.json'
+        if not summary_stats_file.exists(): return ""
 
         stats = load_json_with_numpy(summary_stats_file)
-        ic_stats_periods_dict = stats.get('ic_analysis', {})
-        quantile_stats_periods_dict = stats.get('quantile_backtest', {})
-        fm_stat_results_periods_dict = stats.get('fama_macbeth', {})
-        turnover_stats_periods_dict = stats.get('turnover', {})
-        style_correlation_dict = stats.get('style_correlation', {})
 
-        # 找到最佳周期 (基于最高ICIR)
-        try:
-            best_period = max(ic_stats_periods_dict, key=lambda p: ic_stats_periods_dict[p].get('ic_ir', -np.inf))
-        except ValueError:
-            logger.warning("结果字典为空，无法确定最佳周期。")
-            return ""
+        # --- 【核心改造】同时加载 processed 和 raw 的统计数据 ---
+        ic_stats_proc = stats.get('ic_analysis_processed', {})
+        q_stats_proc = stats.get('quantile_backtest_processed', {})
+        ic_stats_raw = stats.get('ic_analysis_raw', {})  # 如果不存在，会是空字典
+        q_stats_raw = stats.get('quantile_backtest_raw', {})  # 如果不存在，会是空字典
 
-        logger.info(f"  > 自动识别最佳周期为: {best_period}")
+        fm_stats = stats.get('fama_macbeth', {})
+        turnover_stats = stats.get('turnover', {})
+        style_corr = stats.get('style_correlation', {})
 
-        # --- 2. 创建 3x2 图表布局 ---
+        best_period = self._find_best_period_by_rank(ic_stats_proc, q_stats_proc, fm_stats)
+
+        # --- 2. 创建图表布局 ---
         fig = plt.figure(figsize=(24, 30))
-        gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.45, wspace=0.25)
-        fig.suptitle(f'单因子 "{factor_name}" 综合评估报告 (基准: {backtest_base_on_index} | 配置: {default_config})',
-                     fontsize=32, y=0.97)
+        gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.5, wspace=0.25)
+        run_version_str = target_version_path.name
+        fig.suptitle(
+            f'单因子 "{factor_name}" 综合评估报告\n(基准: {backtest_base_on_index} | 配置: {default_config} | 版本: {run_version_str})',
+            fontproperties=cn_font, fontsize=32, y=0.98)
 
-        # --- A. 核心指标 vs. 持有周期 ---
+        # --- A. 核心指标对比 (Raw vs. Processed) ---
         ax_a = fig.add_subplot(gs[0, 0])
-        periods_numeric = sorted([int(p[:-1]) for p in ic_stats_periods_dict.keys()])
+        periods_numeric = sorted([int(p[:-1]) for p in ic_stats_proc.keys()])
         periods_str = [f'{p}d' for p in periods_numeric]
-        icir_values = [ic_stats_periods_dict.get(p, {}).get('ic_ir', np.nan) for p in periods_str]
-        sharpe_values = [quantile_stats_periods_dict.get(p, {}).get('tmb_sharpe', np.nan) for p in periods_str]
-        ax_a.plot(periods_numeric, icir_values, marker='o', linestyle='-', lw=2.5, label='ICIR')
-        ax_a_twin = ax_a.twinx()
-        ax_a_twin.plot(periods_numeric, sharpe_values, marker='s', linestyle='--', color='C1', label='分层Sharpe')
-        ax_a.set_title('A. 核心指标 vs. 持有周期 (寻找最佳周期)', fontsize=18)
-        # ... (此处省略了与之前版本相同的详细格式化代码)
-        ax_a.grid(True, linestyle='--', alpha=0.6);
-        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.92))
 
-        # --- B. 最佳周期分层净值曲线 ---
+        # 绘制纯净因子的表现
+        icir_proc = [ic_stats_proc.get(p, {}).get('ic_ir', np.nan) for p in periods_str]
+        sharpe_proc = [q_stats_proc.get(p, {}).get('tmb_sharpe', np.nan) for p in periods_str]
+        ax_a.plot(periods_numeric, icir_proc, marker='o', lw=2.5, label='ICIR (纯净)')
+        ax_a_twin = ax_a.twinx()
+        ax_a_twin.plot(periods_numeric, sharpe_proc, marker='s', linestyle='-', color='C1', label='分层Sharpe (纯净)')
+
+        # 【智能绘图】如果存在原始因子的数据，则用虚线叠加
+        if ic_stats_raw and q_stats_raw:
+            icir_raw = [ic_stats_raw.get(p, {}).get('ic_ir', np.nan) for p in periods_str]
+            sharpe_raw = [q_stats_raw.get(p, {}).get('tmb_sharpe', np.nan) for p in periods_str]
+            ax_a.plot(periods_numeric, icir_raw, marker='o', lw=1.5, linestyle='--', color='C0', alpha=0.7,
+                      label='ICIR (原始)')
+            ax_a_twin.plot(periods_numeric, sharpe_raw, marker='s', lw=1.5, linestyle=':', color='C1', alpha=0.7,
+                           label='分层Sharpe (原始)')
+
+        ax_a.set_title('A. 核心指标对比 (纯净 vs. 原始)', fontproperties=cn_font, fontsize=18)
+        ax_a.set_xlabel('持有周期 (天)', fontproperties=cn_font, fontsize=14)
+        ax_a.set_ylabel('ICIR', fontproperties=cn_font, fontsize=14)
+        ax_a_twin.set_ylabel('分层Sharpe', fontproperties=cn_font, fontsize=14)
+        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.93), prop=cn_font)
+        ax_a.grid(True, linestyle='--', alpha=0.6)
+
+        # --- B. 最佳周期分层净值曲线 (Raw vs. Processed) ---
         ax_b = fig.add_subplot(gs[0, 1])
-        q_returns_df = pd.read_parquet(config_path / f"quantile_returns_{best_period}.parquet")
-        tmb_cum = (1 + q_returns_df['TopMinusBottom']).cumprod()
-        ax_b.fill_between(tmb_cum.index, 1, tmb_cum, color='grey', alpha=0.3, label=f'多空组合 ({best_period})')
-        for quantile in [q for q in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'] if q in q_returns_df.columns]:
-            (1 + q_returns_df[quantile]).cumprod().plot(ax=ax_b, label=f'{quantile}', lw=2)
-        ax_b.set_title(f'B. 最佳周期 ({best_period}) 分层累计净值', fontsize=18)
-        # ... (省略格式化代码) ...
-        ax_b.legend();
-        ax_b.grid(True, linestyle='--', alpha=0.6)
+        try:
+            # 始终绘制纯净因子的分层
+            q_returns_proc_df = pd.read_parquet(
+                target_version_path / f"quantile_returns_processed_{best_period}.parquet")
+            tmb_cum_proc = (1 + q_returns_proc_df['TopMinusBottom']).cumprod()
+            ax_b.fill_between(tmb_cum_proc.index, 1, tmb_cum_proc, color='grey', alpha=0.3,
+                              label=f'多空组合 (纯净, {best_period})')
+            for quantile in [q for q in ['Q1', 'Q5'] if q in q_returns_proc_df.columns]:  # 只画Q1,Q5简化
+                (1 + q_returns_proc_df[quantile]).cumprod().plot(ax=ax_b, label=f'{quantile} (纯净)', lw=2.5)
+
+            # 【智能绘图】如果存在原始因子的分层数据，则用虚线叠加多空组合
+            q_returns_raw_path = target_version_path / f"quantile_returns_raw_{best_period}.parquet"
+            if q_returns_raw_path.exists():
+                q_returns_raw_df = pd.read_parquet(q_returns_raw_path)
+                (1 + q_returns_raw_df['TopMinusBottom']).cumprod().plot(ax=ax_b,
+                                                                        label=f'多空组合 (原始, {best_period})',
+                                                                        linestyle='--', lw=2.0)
+
+        except FileNotFoundError:
+            ax_b.text(0.5, 0.5, f"未能加载分层收益数据", ha='center', va='center', fontproperties=cn_font)
+        ax_b.set_title(f'B. 最佳周期 ({best_period}) 分层累计净值', fontproperties=cn_font, fontsize=18)
+        ax_b.set_ylabel('累计净值', fontproperties=cn_font, fontsize=14)
+        ax_b.legend(prop=cn_font);
+        ax_b.grid(True)
 
         # --- C. 最佳周期累计IC vs. F-M纯净Alpha收益 ---
         ax_c = fig.add_subplot(gs[1, 0])
         ax_c_twin = ax_c.twinx()
-        ic_series = pd.read_parquet(config_path / f"ic_series_{best_period}.parquet")
-        fm_returns = pd.read_parquet(config_path / f"fm_returns_series_{best_period}.parquet")
-        ic_series.cumsum().plot(ax=ax_c, label=f'累计IC ({best_period})', lw=2.5, color='C0')
-        (1 + fm_returns).cumprod().plot(ax=ax_c_twin, label=f'F-M纯净收益 ({best_period})', lw=2.5, color='C1',
-                                        linestyle='--')
-        ax_c.set_title(f'C. 最佳周期 ({best_period}) IC vs. F-M Alpha', fontsize=18)
-        # ... (省略格式化代码) ...
-        ax_c.grid(True, linestyle='--', alpha=0.6);
-        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.61))
+        try:
+            ic_series = pd.read_parquet(target_version_path / f"ic_series_processed_{best_period}.parquet")
+            fm_returns = pd.read_parquet(target_version_path / f"fm_returns_series_{best_period}.parquet")
+            ic_series.cumsum().plot(ax=ax_c, label=f'累计IC ({best_period})', lw=2.5, color='C0')
+            (1 + fm_returns).cumprod().plot(ax=ax_c_twin, label=f'F-M纯净收益 ({best_period})', lw=2.5, color='C1',
+                                            linestyle='--')
+        except FileNotFoundError:
+            ax_c.text(0.5, 0.5, "未能加载IC或F-M序列数据", ha='center', va='center', fontproperties=cn_font)
+        ax_c.set_title(f'C. 最佳周期 ({best_period}) IC vs. F-M Alpha', fontproperties=cn_font, fontsize=18)
+        ax_c.set_ylabel('累计IC', fontproperties=cn_font, fontsize=14);
+        ax_c_twin.set_ylabel('F-M纯净收益', fontproperties=cn_font, fontsize=14)
+        ax_c.grid(True);
+        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.62), prop=cn_font)
 
         # --- D. 因子自身特性 (自相关性 & 换手率) ---
         ax_d = fig.add_subplot(gs[1, 1])
-        processed_factor_df = pd.read_parquet(config_path / "processed_factor.parquet")
-        mean_factor = processed_factor_df.mean(axis=1).dropna()
-        if len(mean_factor) > 1:
-            pd.plotting.autocorrelation_plot(mean_factor, ax=ax_d, color='C2', lw=2.5)
+        try:
+            processed_factor_df = pd.read_parquet(target_version_path / "processed_factor.parquet")
+            mean_factor = processed_factor_df.mean(axis=1).dropna()
+            if len(mean_factor) > 20:
+                acf_values = acf(mean_factor, nlags=252, fft=True)
+                ax_d.plot(acf_values, marker='.', linestyle='-', color='#2E8B57', label='自相关系数')
+                n_obs = len(mean_factor);
+                confidence_interval = 1.96 / np.sqrt(n_obs)
+                ax_d.axhline(y=confidence_interval, color='grey', linestyle='--', lw=1.5)
+                ax_d.axhline(y=-confidence_interval, color='grey', linestyle='--', lw=1.5)
+            else:
+                ax_d.text(0.5, 0.5, "有效数据点过少\n无法计算自相关性", ha='center', va='center',
+                          fontproperties=cn_font)
+        except FileNotFoundError:
+            ax_d.text(0.5, 0.5, "未能加载processed_factor.parquet", ha='center', va='center',
+                      fontproperties=cn_font)
         ax_d_twin = ax_d.twinx()
-        turnover_data = {int(p[:-1]): d['turnover_annual'] for p, d in turnover_stats_periods_dict.items()}
-        pd.Series(turnover_data).sort_index().plot(kind='bar', ax=ax_d_twin, alpha=0.6, color='C3')
-        ax_d.set_title('D. 因子特性：自相关性 vs. 换手率', fontsize=18)
-        # ... (省略格式化代码) ...
+        turnover_data = {p: d['turnover_annual'] for p, d in turnover_stats.items()}
+        turnover_series = pd.Series(turnover_data)
+        turnover_series.index = pd.Categorical(turnover_series.index,
+                                               categories=sorted(turnover_series.index, key=lambda x: int(x[:-1])),
+                                               ordered=True)
+        turnover_series = turnover_series.sort_index()
+        color_cycle = plt.get_cmap('Paired')
+        for i, (period, turnover_value) in enumerate(turnover_series.items()):
+            ax_d_twin.bar(int(period[:-1]), turnover_value, width=5, alpha=0.7,
+                          color=color_cycle(i / len(turnover_series)), label=f'年化换手率 ({period})')
+        ax_d.set_title('D. 因子特性：自相关性 vs. 换手率', fontproperties=cn_font, fontsize=18)
+        ax_d.set_xlabel('滞后期 / 持有周期 (天)', fontproperties=cn_font, fontsize=14)
+        ax_d.set_ylabel('自相关系数', fontproperties=cn_font, fontsize=14, color='#2E8B57')
+        ax_d_twin.set_ylabel('年化换手率', fontproperties=cn_font, fontsize=14, color='C0')
+        ax_d.set_xlim(left=-5, right=260);
+        ax_d.set_xticks([0, 50, 100, 150, 200, 250])
+        lines_d, labels_d = ax_d.get_legend_handles_labels();
+        lines_twin, labels_twin = ax_d_twin.get_legend_handles_labels()
+        ax_d.legend(lines_d + lines_twin, labels_d + labels_twin, loc='upper right', prop=cn_font)
+        ax_d.grid(True, linestyle='--', alpha=0.6)
 
-        # --- E. 风格暴露分析 (因子“DNA”鉴定) ---
+        # --- E. 风格暴露分析 ---
         ax_e = fig.add_subplot(gs[2, 0])
-        pd.Series(style_correlation_dict).sort_values(ascending=True).plot(kind='barh', ax=ax_e)
-        ax_e.set_title('E. 风格暴露分析 (独特性)', fontsize=18)
-        ax_e.axvline(0, color='black', linestyle='--', lw=1)
-        ax_e.grid(True, axis='x', linestyle='--', alpha=0.6)
+        pd.Series(style_corr).sort_values(ascending=True).plot(kind='barh', ax=ax_e)
+        ax_e.set_title('E. 风格暴露分析 (独特性)', fontproperties=cn_font, fontsize=18)
+        ax_e.axvline(0, color='black', linestyle='--', lw=1);
+        ax_e.grid(True, axis='x')
 
         # --- F. 核心指标汇总表 ---
         ax_f = fig.add_subplot(gs[2, 1])
         ax_f.axis('off')
         summary_data = []
         for period in periods_str:
-            ic_ir = ic_stats_periods_dict.get(period, {}).get('ic_ir', np.nan)
-            tmb_sharpe = quantile_stats_periods_dict.get(period, {}).get('tmb_sharpe', np.nan)
-            fm_t_stat = fm_stat_results_periods_dict.get(period, {}).get('t_statistic', np.nan)
-            mean_abs_t = fm_stat_results_periods_dict.get(period, {}).get('mean_abs_t_stat', np.nan)
-            turnover = turnover_stats_periods_dict.get(period, {}).get('turnover_annual', np.nan)
-            summary_data.append(
-                [f'{period}', f'{ic_ir:.2f}', f'{tmb_sharpe:.2f}', f'{fm_t_stat:.2f}', f'{mean_abs_t:.2f}',
-                 f'{turnover:.2f}'])
+            summary_data.append([
+                f'{period}',
+                f"{ic_stats_proc.get(period, {}).get('ic_ir', np.nan):.2f}",
+                f"{q_stats_proc.get(period, {}).get('tmb_sharpe', np.nan):.2f}",
+                f"{fm_stats.get(period, {}).get('t_statistic', np.nan):.2f}",
+                f"{fm_stats.get(period, {}).get('mean_abs_t_stat', np.nan):.2f}",
+                f"{turnover_stats.get(period, {}).get('turnover_annual', np.nan):.2f}"
+            ])
         columns = ['周期', 'ICIR', '分层Sharpe', 'F-M t值', 't值绝对值均值', '年化换手率']
-        table = ax_f.table(cellText=summary_data, colLabels=columns, loc='center', cellLoc='center')
+        table = ax_f.table(cellText=summary_data, colLabels=columns, loc='center')
+        ax_f.set_title('F. 核心指标汇总', fontproperties=cn_font, fontsize=18, y=0.85)
         table.auto_set_font_size(False);
-        table.set_fontsize(16);
-        table.scale(1.0, 2.5)
-        ax_f.set_title('F. 核心指标汇总', fontsize=18, y=0.85)
+        table.set_fontsize(14)
+        for cell in table.get_celld().values():
+            cell.set_text_props(fontproperties=cn_font)
 
-        # --- 统一调整X轴日期格式 ---
         for ax in [ax_b, ax_c]:
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
             plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
         # --- 最终布局与保存 ---
         plt.tight_layout(rect=[0, 0, 1, 0.96])
-        path = f'{results_path}/{backtest_base_on_index}/{factor_name}/{factor_name}_unified_report_{default_config}.png'
-        plt.savefig(path, dpi=200, bbox_inches='tight')
+        report_dir = base_path / 'reports'
+        report_dir.mkdir(parents=True, exist_ok=True)
+        save_path = report_dir / f"{factor_name}_unified_report_{default_config}_{run_version_str}.png"
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
         plt.close(fig)
-        logger.info(f"✓ 统一评估报告已保存至: {path}")
-        return str(path)
+        logger.info(f"✓ 统一评估报告已保存至: {save_path}")
+        return str(save_path)
+
 
     def plot_robustness_report(self,
                                backtest_base_on_index: str,
                                factor_name: str,
-                               results_path: str
+                               results_path: str,
+                               run_version: str = 'latest'
                                ) -> str:
         """
-        【V1.0】生成 C2C vs. O2C 稳健性对比报告 (2x2布局)。
-        从硬盘加载 C2C 和 O2C 两份结果进行对比。
+        【V2.1 数据结构适配版】生成 C2C vs. O2C 稳健性对比报告 (2x2布局)。
+        能够正确地从包含 raw/processed 的新数据结构中，提取【processed】结果进行对比。
         """
-        logger.info(f"开始为因子 {factor_name} 生成稳健性对比报告...")
+        logger.info(f"为因子 {factor_name} (版本: {run_version}) 生成稳健性对比报告...")
 
-        # --- 1. 定位并加载 C2C 和 O2C 两份数据 ---
+        # --- 1. 定位并加载 C2C 和 O2C 两份【指定版本】的数据 ---
         base_path = Path(results_path) / backtest_base_on_index / factor_name
-        c2c_path = base_path / 'c2c'
-        o2c_path = base_path / 'o2c'
 
-        if not c2c_path.exists() or not o2c_path.exists():
-            logger.warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C)，无法生成稳健性报告。")
+        def _find_target_version_path(config_path, version):
+            if not config_path.is_dir(): return None
+            version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
+            if not version_dirs: return None
+            if version == 'latest':
+                return sorted(version_dirs)[-1]
+            else:
+                path_to_find = config_path / version
+                return path_to_find if path_to_find in version_dirs else None
+
+        c2c_version_path = _find_target_version_path(base_path / 'c2c', run_version)
+        o2c_version_path = _find_target_version_path(base_path / 'o2c', run_version)
+
+        if not c2c_version_path or not o2c_version_path:
+            logger.warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，无法生成稳健性报告。")
             return ""
 
-        stats_c2c = load_json_with_numpy(c2c_path / 'summary_stats.json')
-        stats_o2c = load_json_with_numpy(o2c_path / 'summary_stats.json')
+        try:
+            stats_c2c = load_json_with_numpy(c2c_version_path / 'summary_stats.json')
+            stats_o2c = load_json_with_numpy(o2c_version_path / 'summary_stats.json')
+        except FileNotFoundError:
+            logger.warning(f"因子 {factor_name} 的 summary_stats.json 文件缺失，无法生成稳健性报告。")
+            return ""
 
-        # 确定最佳周期 (基于更严格的O2C)
-        best_period = max(stats_o2c['ic_analysis'], key=lambda p: stats_o2c['ic_analysis'][p].get('ic_ir', -np.inf))
+        # --- 【核心修正】从新的数据结构中，提取【processed】部分的统计结果 ---
+        ic_stats_c2c = stats_c2c.get('ic_analysis_processed', {})
+        ic_stats_o2c = stats_o2c.get('ic_analysis_processed', {})
+        q_stats_c2c = stats_c2c.get('quantile_backtest_processed', {})
+        q_stats_o2c = stats_o2c.get('quantile_backtest_processed', {})
+        fm_stats_o2c = stats_o2c.get('fama_macbeth', {})  # F-M通常只在processed上跑
+
+        # 确定最佳周期 (基于更严格的O2C的processed结果)
+        try:
+            best_period = self._find_best_period_by_rank(ic_stats_o2c, q_stats_o2c, fm_stats_o2c)
+        except Exception as e:
+            logger.warning(f"因子 {factor_name} 的O2C结果无法确定最佳周期: {e}")
+            return ""
 
         # --- 2. 创建 2x2 图表布局 ---
         fig, axes = plt.subplots(2, 2, figsize=(24, 20))
-        fig.suptitle(f'因子 "{factor_name}" Alpha稳健性分析 (C2C vs. O2C)', fontsize=32, y=0.97)
+        run_version_str = c2c_version_path.name
+        fig.suptitle(f'因子 "{factor_name}" Alpha稳健性分析 (C2C vs. O2C)\n(版本: {run_version_str})',
+                     fontproperties=cn_font, fontsize=32, y=0.98)
         axes = axes.flatten()
 
         # --- A. 核心指标对比 (ICIR分组柱状图) ---
-        periods = sorted(stats_c2c['ic_analysis'].keys(), key=lambda p: int(p[:-1]))
-        icir_c2c = [stats_c2c['ic_analysis'][p].get('ic_ir', 0) for p in periods]
-        icir_o2c = [stats_o2c['ic_analysis'][p].get('ic_ir', 0) for p in periods]
+        periods = sorted(ic_stats_c2c.keys(), key=lambda p: int(p[:-1]))
+        icir_c2c = [ic_stats_c2c.get(p, {}).get('ic_ir', 0) for p in periods]
+        icir_o2c = [ic_stats_o2c.get(p, {}).get('ic_ir', 0) for p in periods]
         x = np.arange(len(periods))
         width = 0.35
         axes[0].bar(x - width / 2, icir_c2c, width, label='ICIR (C2C)')
         axes[0].bar(x + width / 2, icir_o2c, width, label='ICIR (O2C)')
-        axes[0].set_title('A. ICIR 对比', fontsize=18)
+        axes[0].set_title('A. ICIR 对比 (纯净因子)', fontproperties=cn_font, fontsize=18)
+        # ... (坐标轴、图例等格式化代码不变) ...
+        axes[0].set_ylabel('ICIR值', fontproperties=cn_font, fontsize=14)
+        axes[0].set_xlabel('持有周期 (天)', fontproperties=cn_font, fontsize=14)
         axes[0].set_xticks(x);
-        axes[0].set_xticklabels(periods);
-        axes[0].legend()
-        axes[0].grid(True, axis='y', linestyle='--', alpha=0.6)
+        axes[0].set_xticklabels(periods, fontproperties=cn_font);
+        axes[0].legend(prop=cn_font)
 
         # --- B. 最佳周期多空组合净值对比 ---
-        q_returns_c2c = pd.read_parquet(c2c_path / f"quantile_returns_{best_period}.parquet")
-        q_returns_o2c = pd.read_parquet(o2c_path / f"quantile_returns_{best_period}.parquet")
-        (1 + q_returns_c2c['TopMinusBottom']).cumprod().plot(ax=axes[1], label=f'多空组合 (C2C, {best_period})',
-                                                             linestyle='--')
-        (1 + q_returns_o2c['TopMinusBottom']).cumprod().plot(ax=axes[1], label=f'多空组合 (O2C, {best_period})')
-        axes[1].set_title(f'B. 最佳周期 ({best_period}) 多空组合净值对比', fontsize=18)
-        axes[1].legend();
-        axes[1].grid(True, linestyle='--', alpha=0.6)
+        try:
+            # 【核心修正】加载带有 `_processed` 后缀的正确文件
+            q_returns_c2c = pd.read_parquet(c2c_version_path / f"quantile_returns_processed_{best_period}.parquet")
+            q_returns_o2c = pd.read_parquet(o2c_version_path / f"quantile_returns_processed_{best_period}.parquet")
+            (1 + q_returns_c2c['TopMinusBottom']).cumprod().plot(ax=axes[1], label=f'多空组合 (C2C, {best_period})',
+                                                                 linestyle='--')
+            (1 + q_returns_o2c['TopMinusBottom']).cumprod().plot(ax=axes[1], label=f'多空组合 (O2C, {best_period})')
+        except FileNotFoundError:
+            axes[1].text(0.5, 0.5, "未能加载分层收益数据", ha='center', va='center', fontproperties=cn_font)
+        axes[1].set_title(f'B. 最佳周期 ({best_period}) 多空组合净值对比', fontproperties=cn_font, fontsize=18)
+        # ... (坐标轴、图例等格式化代码不变) ...
+        axes[1].set_ylabel('累计净值', fontproperties=cn_font, fontsize=14);
+        axes[1].legend(prop=cn_font);
 
         # --- C. 最佳周期F-M纯净Alpha对比 ---
-        fm_returns_c2c = pd.read_parquet(c2c_path / f"fm_returns_series_{best_period}.parquet")
-        fm_returns_o2c = pd.read_parquet(o2c_path / f"fm_returns_series_{best_period}.parquet")
-        (1 + fm_returns_c2c).cumprod().plot(ax=axes[2], label=f'F-M Alpha (C2C, {best_period})', linestyle='--')
-        (1 + fm_returns_o2c).cumprod().plot(ax=axes[2], label=f'F-M Alpha (O2C, {best_period})')
-        axes[2].set_title(f'C. 最佳周期 ({best_period}) F-M Alpha 对比', fontsize=18)
-        axes[2].legend();
-        axes[2].grid(True, linestyle='--', alpha=0.6)
+        try:
+            # F-M 收益序列通常不带后缀，因为只对 processed 因子计算
+            fm_returns_c2c = pd.read_parquet(c2c_version_path / f"fm_returns_series_{best_period}.parquet")
+            fm_returns_o2c = pd.read_parquet(o2c_version_path / f"fm_returns_series_{best_period}.parquet")
+            (1 + fm_returns_c2c).cumprod().plot(ax=axes[2], label=f'F-M Alpha (C2C, {best_period})', linestyle='--')
+            (1 + fm_returns_o2c).cumprod().plot(ax=axes[2], label=f'F-M Alpha (O2C, {best_period})')
+        except FileNotFoundError:
+            axes[2].text(0.5, 0.5, "未能加载F-M收益序列数据", ha='center', va='center', fontproperties=cn_font)
+        axes[2].set_title(f'C. 最佳周期 ({best_period}) F-M Alpha 对比', fontproperties=cn_font, fontsize=18)
+        # ... (坐标轴、图例等格式化代码不变) ...
+        axes[2].set_ylabel('累计净值', fontproperties=cn_font, fontsize=14);
+        axes[2].legend(prop=cn_font);
 
         # --- D. Alpha衰减率量化总览 ---
         axes[3].axis('off')
         summary_data = []
         for period in periods:
-            s_c2c = stats_c2c['quantile_backtest'][period].get('tmb_sharpe', 0)
-            s_o2c = stats_o2c['quantile_backtest'][period].get('tmb_sharpe', 0)
+            s_c2c = q_stats_c2c.get(period, {}).get('tmb_sharpe', 0)
+            s_o2c = q_stats_o2c.get(period, {}).get('tmb_sharpe', 0)
             decay = (s_o2c - s_c2c) / abs(s_c2c) if abs(s_c2c) > 1e-6 else 0
-            summary_data.append([f'{period}', f'{s_c2c:.2f}', f'{s_o2c:.2f}', f'{decay:.1%}'])
+            summary_data.append([f'{period}d', f'{s_c2c:.2f}', f'{s_o2c:.2f}', f'{decay:.1%}'])
         columns = ['周期', 'Sharpe (C2C)', 'Sharpe (O2C)', '衰减率']
         table = axes[3].table(cellText=summary_data, colLabels=columns, loc='center')
-        table.auto_set_font_size(False);
-        table.set_fontsize(16);
-        table.scale(1.0, 2.5)
-        axes[3].set_title('D. Sharpe 稳健性分析', fontsize=18, y=0.85)
+        axes[3].set_title('D. Sharpe 稳健性分析 (纯净因子)', fontproperties=cn_font, fontsize=18, y=0.85)
+        # ... (表格格式化代码不变) ...
+        for cell in table.get_celld().values():
+            cell.set_text_props(fontproperties=cn_font)
 
-        # --- 最终布局与保存 ---
+        # ... (统一调整X轴日期格式和最终保存的逻辑不变) ...
         plt.tight_layout(rect=[0, 0, 1, 0.96])
-        path = self.output_dir / backtest_base_on_index / factor_name / f"{factor_name}_robustness_report.png"
+        report_dir = base_path / 'reports'
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        path = report_dir / f"{factor_name}_robustness_report_{run_version_str}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(path, dpi=200, bbox_inches='tight')
         plt.close(fig)
         logger.info(f"✓ 稳健性对比报告已保存至: {path}")
         return str(path)
+
+    # 把它放在你的 VisualizationManager 类或者一个工具模块中
+    def _find_best_period_by_rank(self,
+                                  ic_stats: Dict,
+                                  quantile_stats: Dict,
+                                  fm_stats: Dict) -> str:
+        """
+        通过对多个核心指标进行综合排名，来选择最佳周期。
+        """
+        if not ic_stats: return "21d"  # 默认值
+
+        periods = list(ic_stats.keys())
+        if not periods: return "21d"
+
+        # 1. 提取各个指标的Series
+        icir_series = pd.Series({p: ic_stats.get(p, {}).get('ic_ir', -np.inf) for p in periods})
+        sharpe_series = pd.Series({p: quantile_stats.get(p, {}).get('tmb_sharpe', -np.inf) for p in periods})
+        fmt_series = pd.Series({p: abs(fm_stats.get(p, {}).get('t_statistic', 0)) for p in periods})
+
+        # 2. 对每个指标进行排名 (分数越高，排名越靠前)
+        rank_icir = icir_series.rank(ascending=False, method='first')
+        rank_sharpe = sharpe_series.rank(ascending=False, method='first')
+        rank_fmt = fmt_series.rank(ascending=False, method='first')
+
+        # 3. 计算综合排名得分 (总排名数字越小越好)
+        combined_rank_score = rank_icir * 0.4 + rank_sharpe * 0.4 + rank_fmt * 0.2
+
+        # 4. 选出综合排名得分最低（即排名最靠前）的周期
+        best_period = combined_rank_score.idxmin()
+
+        return best_period
+
+def _find_target_version_path(config_path, version):
+        if not config_path.is_dir(): return None
+        version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
+        if not version_dirs: return None
+        if version == 'latest':
+            return sorted(version_dirs)[-1]
+        else:
+            path_to_find = config_path / version
+            return path_to_find if path_to_find in version_dirs else None

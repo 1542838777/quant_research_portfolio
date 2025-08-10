@@ -8,24 +8,22 @@
 
 支持批量测试、结果可视化和报告生成
 """
-from functools import partial
-
 import os
 import sys
 import warnings
 from datetime import datetime
+from functools import partial
+from typing import Callable, Any, Optional
 from typing import Dict, Tuple, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import Callable
-from pandas import Series
+from pandas import Series, DataFrame
 from scipy import stats
 
-from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
-    calculate_rolling_beta
-from projects._03_factor_selection.factor_manager.selector.factor_selector import calculate_factor_score
+from projects._03_factor_selection.config.config_file.load_config_file import is_debug
+from projects._03_factor_selection.factor_manager.factor_manager import FactorResultsManager
 from projects._03_factor_selection.utils.factor_processor import FactorProcessor, PointInTimeIndustryMap
 from projects._03_factor_selection.visualization_manager import VisualizationManager
 from quant_lib import logger
@@ -36,8 +34,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from quant_lib.evaluation import (
     calculate_ic,
-    calculate_quantile_returns, fama_macbeth, calculate_quantile_daily_returns, calculate_turnover,
-    calcu_forward_returns_close_close, calcu_forward_returns_open_close
+    calculate_quantile_returns, fama_macbeth, calculate_turnover,
+    calcu_forward_returns_close_close, calcu_forward_returns_open_close, quantile_stats_result
 
 )
 
@@ -49,7 +47,8 @@ from quant_lib.evaluation import (
 
 warnings.filterwarnings('ignore')
 
-#使用时 注意shift
+
+# 使用时 注意shift
 def prepare_industry_dummies(
         pit_map: PointInTimeIndustryMap,
         trade_dates: pd.DatetimeIndex,
@@ -131,6 +130,8 @@ def prepare_industry_dummies(
 
     print(f"  成功生成 {len(dummy_dfs)} 个 {level} 级别的行业哑变量。")
     return dummy_dfs
+
+
 class FactorAnalyzer:
     """
     单因子(质检中心 IC分析、分层回测、F-M回归、绘图等）
@@ -162,6 +163,7 @@ class FactorAnalyzer:
         self.n_quantiles = self.config.get('quantiles', 5)
         # 初始化因子预处理器
         self.factor_processor = FactorProcessor(self.config)
+        self.factorResultsManager = FactorResultsManager()
         self.stock_pools_dict = data_manager.stock_pools_dict
 
         # 初始化数据
@@ -197,7 +199,7 @@ class FactorAnalyzer:
 
     def test_ic_analysis(self,
                          factor_data: pd.DataFrame,
-                         returns_calculator: Callable[[int, pd.DataFrame,pd.DataFrame], pd.DataFrame],  # 具体化Callable
+                         returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame],  # 具体化Callable
                          close_df: pd.DataFrame,
                          factor_name: str) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
         """
@@ -212,10 +214,10 @@ class FactorAnalyzer:
             IC分析结果字典
         """
 
-
         ic_series_periods_dict, stats_periods_dict = calculate_ic(factor_data, close_df,
                                                                   forward_periods=self.test_common_periods,
-                                                                  method='spearman', returns_calculator = returns_calculator, min_stocks=10)
+                                                                  method='spearman',
+                                                                  returns_calculator=returns_calculator, min_stocks=10)
 
         return ic_series_periods_dict, stats_periods_dict
 
@@ -223,7 +225,7 @@ class FactorAnalyzer:
                                factor_data: pd.DataFrame,
                                returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame],
                                close_df: pd.DataFrame,
-                               factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame],Dict]:
+                               factor_name: str) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         分层回测法测试
 
@@ -234,22 +236,27 @@ class FactorAnalyzer:
         Returns:
             分层回测结果字典
         """
-        quantile_returns_periods_dict, quantile_stats_periods_dict = calculate_quantile_returns(
+        # a) 获取分层【周期】收益率的时间序列
+        quantile_returns_periods_dict = calculate_quantile_returns(
             factor_data,
-
             returns_calculator,
             close_df,
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
         )
-        # 【新增】调用换手率计算
+
+        quantile_returns_periods_dict, quantile_stats_periods_dict = quantile_stats_result(
+            quantile_returns_periods_dict, self.n_quantiles)
+
+        return quantile_returns_periods_dict, quantile_stats_periods_dict
+
+    def test_turnover_result(self, factor_data):
         logger.info("    > 正在计算因子换手率...")
         turnover_series_periods_dict = calculate_turnover(
             factor_df=factor_data,
             n_quantiles=self.n_quantiles,
             forward_periods=self.test_common_periods
         )
-        # 【新增】计算换手率的统计指标并整合
         turnover_stats_periods_dict = {}
         for period, turnover_series in turnover_series_periods_dict.items():
             turnover_stats_periods_dict[period] = {
@@ -261,7 +268,7 @@ class FactorAnalyzer:
                 # 年化算出来25.2
                 # 资金来回滚动25次 有点费税费！#
             }
-        return quantile_returns_periods_dict, quantile_stats_periods_dict,turnover_stats_periods_dict
+        return turnover_stats_periods_dict
 
     # def test_fama_macbeth(self,
     #                       factor_data: pd.DataFrame,
@@ -274,12 +281,27 @@ class FactorAnalyzer:
     #                       factor_name=factor_name)
     # 纯测试结果
     def comprehensive_test(self,
-                           target_factor_name: str,
-                           target_factor_df,
+                           target_factor_name: str = None,
+                           factor_df: pd.DataFrame = None,
                            preprocess_method: str = "standard",
+                           returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame] = None,
+                           start_date: str = None, end_date: str = None,
                            need_process_factor: bool = True,
+                           do_ic_test: bool = True, do_turnover_test: bool = True, do_quantile_test: bool = True,
+                           do_fama_test: bool = True, do_style_correlation_test: bool = True,
+
                            ) -> Tuple[
-        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        pd.DataFrame,
+        Optional[Dict[str, pd.Series]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, float]]
+    ]:
         """
         综合测试 - 执行所有三种测试方法
 
@@ -287,28 +309,35 @@ class FactorAnalyzer:
         Returns:
             综合测试结果字典
         """
+        if (not need_process_factor) & (not is_debug):
+            raise ValueError("圣餐环境 不能跳过中xinghua")
         logger.info(f"开始测试因子: {target_factor_name}")
-        target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
+        # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
 
-        (auxiliary_dfs_base_own_stock_pool,final_neutral_dfs,style_category,pit_map  
-            )= self.prepare_date_for_process_factor(target_factor_name, target_factor_df)
+        (auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
+         ) = self.prepare_date_for_process_factor(target_factor_name, factor_df)
+        oring_raw_df = factor_df.copy(deep=True)
         if need_process_factor:
             # 1. 因子预处理
-            target_factor_df = self.factor_processor.process_factor(
-                target_factor_df=target_factor_df,
+            factor_df = self.factor_processor.process_factor(
+                target_factor_df=factor_df,
                 target_factor_name=target_factor_name,
                 auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
-                pit_map = pit_map
+                pit_map=pit_map
             )
-            
-        #数据准备
-        close_df,open_df,circ_mv_df,style_factor_dfs= self.prepare_date_for_core_test(target_factor_name)
-        c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)  # todo增加另外 的 收益率计算！
-        o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
-        return self.core_three_test(target_factor_df, target_factor_name, open_df, c2c_calculator, close_df,
-                                    final_neutral_dfs, circ_mv_df, style_factor_dfs)
+
+        # 数据准备
+        close_df, open_df, circ_mv_df, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name)
+
+        ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.core_three_test(
+            factor_df, target_factor_name, open_df, returns_calculator, close_df,
+            final_neutral_dfs, circ_mv_df, style_factor_dfs, do_ic_test,
+            do_turnover_test,
+            do_quantile_test, do_fama_test, do_style_correlation_test)
+
+        return factor_df, ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
     # ok
     def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
@@ -826,7 +855,6 @@ class FactorAnalyzer:
             }
         }
 
-
     # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     def get_pct_chg_beta_dict(self):
         dict = {}
@@ -865,44 +893,80 @@ class FactorAnalyzer:
                 'total_mv'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
 
-    def test_single_factor_entity_service(self,
-                                          target_factor_name: str,
-                                          preprocess_method: str = "standard",
-                                          **test_kwargs) -> Tuple[
-        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    def test_factor_entity_service(self,  # todo 如果是合成因子，那么不需要双轨吧 确实
+                                   factor_name: str,
+                                   factor_df: pd.DataFrame,
+                                   preprocess_method: str = "standard",
+                                   need_process_factor: bool = True,
+                                   is_composite_factor: bool = False
+                                   ) -> Dict[str, Any]:
         """
         测试单个因子
         综合评分
         保存结果
         画图保存
-        Args:
-
-            factor_name: 因子名称
-
-            **test_kwargs: 测试参数
         """
-        # 执行测试
-        ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict ,turnover_stats_periods_dict,style_correlation_dict= \
-            (
-                self.comprehensive_test(
-                    target_factor_name=target_factor_name,
-                    target_factor_df=self.target_factors_dict[target_factor_name],
-                    preprocess_method="standard"
-                ))
-        target_factor_df = self.target_factors_dict[target_factor_name]
-        overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df,target_factor_name,
-                                                                             self.target_factors_style_category_dict[
-                                                                                 target_factor_name], "standard",
-                                                                             ic_series_periods_dict,
-                                                                             ic_stats_periods_dict,
-                                                                             quantile_daily_returns_for_plot_dict,
-                                                                             quantile_stats_periods_dict,
-                                                                             factor_returns_series_periods_dict,
-                                                                             fm_stat_results_periods_dict,
-                                                                             turnover_stats_periods_dict,style_correlation_dict
-                                                                             )
+        start_date, end_date, target_school, stock_index, stock_pool_name, close_df, open_df, style_category, test_configurations = self.prepare_date_for_entity_service(
+            factor_name)
+        all_configs_results = {}
+        if is_composite_factor:
+           return  self.test_factor_entity_service_for_composite_factor(factor_name,factor_df,test_configurations,start_date,end_date,stock_index)
+        for calculator_name, func in test_configurations.items():
+            # 执行测试
+            raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
+                target_factor_name=factor_name,
+                factor_df=factor_df,
+                returns_calculator=func,
+                preprocess_method="standard",
+                start_date=start_date,
+                end_date=end_date,
+                need_process_factor=False,
+                do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
+                do_style_correlation_test=False
+            )
+            proceessed_df, ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
+                target_factor_name=factor_name,
+                factor_df=factor_df,
+                returns_calculator=func,
+                preprocess_method="standard",
+                start_date=start_date,
+                end_date=end_date,
+                need_process_factor=False,  # todo 注意该回去
+                do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
+                do_style_correlation_test=True
+            )
+            single_config_results = {
+                "raw_factor_df": raw_factor_df,
+                "processed_factor_df": proceessed_df,
+                "ic_series_periods_dict_raw": ic_s_raw,
+                "ic_stats_periods_dict_raw": ic_st_raw,
+                "ic_series_periods_dict_processed": ic_s,
+                "ic_stats_periods_dict_processed": ic_st,
+                "quantile_returns_series_periods_dict_raw": q_r_raw,
+                "quantile_stats_periods_dict_raw": q_st_raw,
+                "quantile_returns_series_periods_dict_processed": q_r,
+                "quantile_stats_periods_dict_processed": q_st,
+                "fm_returns_series_periods_dict": fm_returns_series_dict,
+                "fm_stat_results_periods_dict": fm_summary_dict,
+                "turnover_stats_periods_dict": turnover,
+                "style_correlation_dict": style_correlation_dict
+            }
+            # b) 将本次配置的所有结果打包
+            self.factorResultsManager._save_factor_results(  # 假设保存函数在FactorManager中
+                factor_name=factor_name,
+                stock_index=stock_index,
+                start_date=start_date,
+                end_date=end_date,
+                returns_calculator_func_name=calculator_name,
+                results=single_config_results
+            )
+            all_configs_results[calculator_name] = single_config_results
+        # overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df, target_factor_name,
+        #                                                                      style_category, "standard",
+        #                                                                      ic_s, ic_st, q_r, q_st, fm_r, fm_st, turnover_st, style_corr
+        #                                                                      )
 
-        return ic_series_periods_dict, quantile_daily_returns_for_plot_dict, factor_returns_series_periods_dict, overrall_summary_stats
+        return all_configs_results
 
     def purify_summary_rows_contain_periods(self, comprehensive_results):
         factor_category = comprehensive_results.get('factor_category', 'Unknown')  # 使用.get增加健壮性
@@ -941,8 +1005,8 @@ class FactorAnalyzer:
                 'monotonicity_spearman': quantile_stats_periods_dict[period]['monotonicity_spearman'],
                 'ic_mean': ic_stats_periods_dict[period]['ic_mean']
             }
-            score = calculate_factor_score(summary_row)
-            summary_row['score'] = score
+            # score = calculate_factor_score(summary_row)
+            # summary_row['score'] = score
             purify_summary_rows.append(summary_row)
         return purify_summary_rows
 
@@ -967,57 +1031,70 @@ class FactorAnalyzer:
         for factor_name, factor_data in target_factors_dict.items():
             try:
                 # 执行测试
-                ic_series_periods_dict, quantile_returns_series_periods_dict, factor_returns_series_periods_dict, summary_stats = (
-                    self.test_single_factor_entity_service(
-                        target_factor_name=factor_name,
-                    ))
-                results[factor_name] = summary_stats
+                results.append(self.test_factor_entity_service(
+                    factor_name=factor_name,
+                    factor_df=factor_data,
+                    need_process_factor=True
+                ))
             except Exception as e:
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
 
         return results
 
-    def core_three_test(self, target_factor_processed, target_factor_name,open_df,
+    def core_three_test(self, factor_df, target_factor_name, open_df,
                         returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame],
                         close_df,
-                        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict):
+                        prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict,
+                        do_ic_test, do_turnover_test, do_quantile_test, do_fama_test, do_style_correlation_test
+                        ) -> tuple[
+        dict[str, Series] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,
+        dict[Any, Any] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,
+        dict[str, float] | None]:
+
         # 1. IC值分析
         logger.info("\t2. 正式测试 之 IC值分析...")
-
-        ic_series_periods_dict, ic_stats_periods_dict = self.test_ic_analysis(target_factor_processed, returns_calculator, close_df,
-                                                                              target_factor_name)
-
+        ic_s = ic_st = q_r = q_st = turnover = fm_returns_series_dict = fm_t_stats_series_dict = fm_summary_dict = style_correlation_dict = None
+        if do_ic_test:
+            ic_s, ic_st = self.test_ic_analysis(factor_df,
+                                                returns_calculator, close_df,
+                                                target_factor_name)
         # 2. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
-        quantile_returns_series_periods_dict, quantile_stats_periods_dict,turnover_stats_periods_dict = self.test_quantile_backtest(
-            target_factor_processed, returns_calculator,close_df, target_factor_name)
+        if do_quantile_test:
+            q_r, q_st = self.test_quantile_backtest(
+                factor_df, returns_calculator, close_df, target_factor_name)
 
-        primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
+        if do_turnover_test:
+            turnover = self.test_turnover_result(factor_df)
+
+        # primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
         # # 这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
         # quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed,returns_calculator, close_df, 5,
         #                                                                         primary_period_key)
 
         # 3. Fama-MacBeth回归
-        logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
-        factor_returns_series_periods_dict, factor_t_stats_series_periods_dict,fm_stat_results_periods_dict = fama_macbeth(
-            factor_data=target_factor_processed, returns_calculator =returns_calculator,close_df=close_df, forward_periods=self.test_common_periods,
-            neutral_dfs={}, circ_mv_df=circ_mv_shift_df,
-            factor_name=target_factor_name)
+        if do_fama_test:
+            logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
+            fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict = fama_macbeth(
+                factor_data=factor_df, returns_calculator=returns_calculator, close_df=close_df,
+                forward_periods=self.test_common_periods,
+                neutral_dfs={}, circ_mv_df=circ_mv_shift_df,
+                factor_name=target_factor_name)
 
         # 【新增】4. 风格相关性分析
         logger.info("\t5.  正式测试 之 风格相关性分析...")
-        style_correlation_dict = self.test_style_correlation(
-            target_factor_processed,
-            style_factors_dict
-        )
-        return (ic_series_periods_dict, ic_stats_periods_dict,
-                quantile_returns_series_periods_dict, quantile_stats_periods_dict,
-                factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict )
+        if do_style_correlation_test:
+            style_correlation_dict = self.test_style_correlation(
+                factor_df,
+                style_factors_dict
+            )
+        return ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
-    def landing_for_core_three_analyzer_result(self, target_factor_df,target_factor_name, category, preprocess_method,
+    def landing_for_core_three_analyzer_result(self, target_factor_df, target_factor_name, category, preprocess_method,
                                                ic_series_periods_dict, ic_stats_periods_dict,
                                                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
-                                               factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict ):
+                                               factor_returns_series_periods_dict, fm_stat_results_periods_dict,
+                                               turnover_stats_periods_dict, style_correlation_dict):
         #  综合评价
         evaluation_score_dict = self.evaluation_score_dict(ic_stats_periods_dict,
                                                            quantile_stats_periods_dict,
@@ -1063,7 +1140,6 @@ class FactorAnalyzer:
 
         return overrall_summary_stats
 
-
     def get_style_factors(self, stock_pool_name: str) -> Dict[str, pd.DataFrame]:
         """获取常见的风格因子, 并与股票池对齐"""
         style_factors = {}
@@ -1083,7 +1159,7 @@ class FactorAnalyzer:
         # 波动率 (Volatility): 股价波动性。如过去N天的年化波动率。
         #
         # 真实数据案例： 假设你发明了一个“分析师上调评级次数”因子，回测发现效果很好。但如果你计算它和规模因子的相关性，发现高达0.6。这说明分析师更倾向于覆盖和评级大市值的公司。那么你的因子收益，很大一部分其实只是搭了“大盘股效应”的便车，并非真正独特的Alpha。当市场风格从大盘切换到小盘时，你的因子可能会突然失效。#
-        for factor_name in ['small_cap', 'pb', 'ps_ttm']:# todo 最后期增加别的剩余的风格因子
+        for factor_name in ['small_cap', 'pb', 'ps_ttm']:  # todo 最后期增加别的剩余的风格因子
             #   build_df_dict... 函数可以获取因子数据并应用T-1原则
             df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
                 factor_name=factor_name,
@@ -1119,12 +1195,12 @@ class FactorAnalyzer:
 
         return correlation_results
 
-    def prepare_date_for_process_factor(self,target_factor_name,target_factor_df):
+    def prepare_date_for_process_factor(self, target_factor_name, target_factor_df):
         # 目标因子基础信息准备
         target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
         style_category = self.factor_manager.get_style_category(target_factor_name)
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
-        # 
+        #
         # # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
         # close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
         #                                                                              need_shift=False)[
@@ -1173,9 +1249,9 @@ class FactorAnalyzer:
         }
         # style_factor_dfs = self.get_style_factors(stock_pool_name)
 
-        return auxiliary_dfs_base_own_stock_pool,final_neutral_dfs,style_category,pit_map
+        return auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
 
-    def prepare_date_for_core_test(self,target_factor_name):
+    def prepare_date_for_core_test(self, target_factor_name):
         target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
         stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
         close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
@@ -1189,3 +1265,69 @@ class FactorAnalyzer:
             need_shift=False)[stock_pool_name]['circ_mv']
         style_factor_dfs = self.get_style_factors(stock_pool_name)
         return close_df, open_df, circ_mv_df, style_factor_dfs
+
+    def prepare_date_for_entity_service(self, factor_name):
+        start_date = self.factor_manager.data_manager.config['backtest']['start_date']
+        end_date = self.factor_manager.data_manager.config['backtest']['end_date']
+        target_school = self.factor_manager.get_school_code_by_factor_name(factor_name)
+        stock_index = self.factor_manager.get_stock_pool_index_by_factor_name(factor_name)
+        stock_pool_name = self.factor_manager.get_stock_pool_name_by_factor_school(target_school)
+        style_category = \
+            self.factor_manager.data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,
+                                                                                                 'style_category').iloc[
+                0]
+        close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+                                                                                     need_shift=False)[
+            stock_pool_name]['close']  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
+                                                                                    need_shift=False)[
+            stock_pool_name]['open']
+
+        # 准备收益率计算器
+        c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)
+        o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
+        # 定义测试配置
+        test_configurations = {
+            'c2c': c2c_calculator,
+            'o2c': o2c_calculator
+        }
+        returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
+        returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
+        return start_date, end_date, target_school, stock_index, stock_pool_name, close_df, open_df, style_category, returns_calculator_result
+
+    def test_factor_entity_service_for_composite_factor(self, factor_name, factor_df,test_configurations,start_date,end_date,stock_index):
+        all_configs_results = {}
+        for calculator_name, func in test_configurations.items():
+            proceessed_df, ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
+                target_factor_name=factor_name,
+                factor_df=factor_df,
+                returns_calculator=func,
+                preprocess_method="standard",
+                start_date=start_date,
+                end_date=end_date,
+                need_process_factor=False,  # #todo 测试模式
+                do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
+                do_style_correlation_test=True
+            )
+            single_config_results = {
+                "processed_factor_df": proceessed_df,
+                "ic_series_periods_dict_processed": ic_s,
+                "ic_stats_periods_dict_processed": ic_st,
+                "quantile_returns_series_periods_dict_processed": q_r,
+                "quantile_stats_periods_dict_processed": q_st,
+                "fm_returns_series_periods_dict": fm_returns_series_dict,
+                "fm_stat_results_periods_dict": fm_summary_dict,
+                "turnover_stats_periods_dict": turnover,
+                "style_correlation_dict": style_correlation_dict
+            }
+            # b) 将本次配置的所有结果打包
+            self.factorResultsManager._save_factor_results(  # 假设保存函数在FactorManager中
+                factor_name=factor_name,
+                stock_index=stock_index,
+                start_date=start_date,
+                end_date=end_date,
+                returns_calculator_func_name=calculator_name,
+                results=single_config_results
+            )
+            all_configs_results[calculator_name] = single_config_results
+        return all_configs_results

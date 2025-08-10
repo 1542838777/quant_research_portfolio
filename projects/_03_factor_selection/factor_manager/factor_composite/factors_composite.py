@@ -139,17 +139,9 @@ if __name__ == '__main__':
     # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
     # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
     #     stock_pool_name]
-
-    ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
-        turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
-                                       , target_factor_df= value_composite_df,
-                                       need_process_factor = False)
-    # landing 存储宝贵的测试结果
-    category = data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name, 'style_category').iloc[0]
-    overrall_summary_stats = factor_analyzer.landing_for_core_three_analyzer_result(value_composite_df,factor_name, category, "standard",
-                                                                                    ic_series_periods_dict,
-                                                                                    ic_stats_periods_dict,
-                                                                                    quantile_daily_returns_for_plot_dict,
-                                                                                    quantile_stats_periods_dict,
-                                                                                    factor_returns_series_periods_dict,
-                                                                                    fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict)
+    #
+    # ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
+    #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
+    #                                    , target_factor_df= value_composite_df,
+    #                                    need_process_factor = False)
+    factor_analyzer.test_factor_entity_service(factor_name,value_composite_df,need_process_factor=False)

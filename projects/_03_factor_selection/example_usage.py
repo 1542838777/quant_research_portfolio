@@ -28,7 +28,7 @@ from projects._03_factor_selection.factor_manager.registry.factor_registry impor
 
 # 导入重构后的模块 - 使用绝对导入
 from projects._03_factor_selection.factory.strategy_factory import StrategyFactory
-from quant_lib.config.logger_config import setup_logger
+from quant_lib.config.logger_config import setup_logger, log_success
 
 # 配置日志
 logger = setup_logger(__name__)
@@ -47,81 +47,40 @@ def main():
 
     target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factor_manager.get_backtest_ready_factor_entity()
     factor_analyzer = FactorAnalyzer(factor_manager=factor_manager,
+
                                      target_factors_dict = target_factors_dict,
                                      target_factors_category_dict = target_factors_category_dict,
                                      target_factor_school_type_dict= target_factors_school_dict)
 
     # 6. 批量测试因子
     logger.info("5. 批量测试因子...")
-    try:
-        batch_results = factor_analyzer.batch_test_factors(
-            target_factors_dict=target_factors_dict
-        )
-        logger.info(f"✓ 批量测试完成，成功测试 {len(batch_results)} 个因子")
-        print()
-    except Exception as e:
-        # traceback.print_exc()
-        raise ValueError(f"✗ 批量测试失败: {e}") from e
+    batch_results = factor_analyzer.batch_test_factors(
+        target_factors_dict=target_factors_dict
+    )
+    log_success(f"✓ 批量测试完成，成功测试 {len(batch_results)} 个因子")
 
-    # 7. 查看因子性能汇总
-    logger.info("6. 因子性能汇总...")
-    performance_summary = factory.get_factor_performance_summary()
-    logger.info("Top 5 因子:")
-    logger.info(f"\n{performance_summary.head()}")
-
-    # 8. 按类别查看表现
-    logger.info("7. 各类别因子表现...")
-    for category in FactorCategory:
-        try:
-            top_factors = factory.get_top_factors(category=category, top_n=2)
-            if top_factors:
-                logger.info(f"{category.value}类: {', '.join(top_factors)}")
-        except:
-            continue
-
-    # 9. 分析因子相关性
-    print("\n8. 分析因子相关性...")
-    try:
-        corr_matrix, corr_fig = factory.analyze_factor_correlation(target_factors_dict)
-        print(f"✓ 因子相关性分析完成")
-
-        # 保存相关性热力图
-        corr_fig.savefig("workspace/factor_correlation.png")
-        print(f"  相关性热力图已保存到: workspace/factor_correlation.png")
-    except Exception as e:
-        print(f"✗ 因子相关性分析失败: {e}")
-
-    # 10. 因子聚类可视化
-    print("\n9. 因子聚类可视化...")
-    try:
-        cluster_fig = factory.visualize_factor_clusters(target_factors_dict, n_clusters=3)
-        if cluster_fig:
-            cluster_fig.savefig("workspace/factor_clusters.png")
-            print(f"✓ 因子聚类可视化已保存到: workspace/factor_clusters.png")
-    except Exception as e:
-        print(f"✗ 因子聚类可视化失败: {e}")
-
-    # 11. 多因子优化
-    print("\n10. 多因子优化...")
-    try:
-        optimized_factor = factory.optimize_factors(
-            factor_data_dict=target_factors_dict,
-            intra_method='ic_weighted',
-            cross_method='max_diversification'
-        )
-        print(f"✓ 多因子优化完成，生成最终因子: {optimized_factor.shape}")
-    except Exception as e:
-        print(f"✗ 多因子优化失败: {e}")
-
-    # 12. 导出结果
-    print("\n11. 导出结果...")
-    try:
-        exported_files = factory.export_results()
-        print("✓ 结果导出完成:")
-        for file_type, file_path in exported_files.items():
-            print(f"  {file_type}: {file_path}")
-    except Exception as e:
-        print(f"✗ 结果导出失败: {e}")
+    #
+    # # 11. 多因子优化
+    # print("\n10. 多因子优化...")
+    # try:
+    #     optimized_factor = factory.optimize_factors(
+    #         factor_data_dict=target_factors_dict,
+    #         intra_method='ic_weighted',
+    #         cross_method='max_diversification'
+    #     )
+    #     print(f"✓ 多因子优化完成，生成最终因子: {optimized_factor.shape}")
+    # except Exception as e:
+    #     print(f"✗ 多因子优化失败: {e}")
+    #
+    # # 12. 导出结果
+    # print("\n11. 导出结果...")
+    # try:
+    #     exported_files = factory.export_results()
+    #     print("✓ 结果导出完成:")
+    #     for file_type, file_path in exported_files.items():
+    #         print(f"  {file_type}: {file_path}")
+    # except Exception as e:
+    #     print(f"✗ 结果导出失败: {e}")
 
     print("\n" + "=" * 80)
     print("演示完成!")
