@@ -426,9 +426,10 @@ def calculate_turnover(
         turnover_matrix = np.ceil(quantiles * n_quantiles) != np.ceil(quantiles_shifted * n_quantiles)
 
         # 每日换手率 = 发生变动的股票数 / 当天有效股票总数
-        daily_turnover = turnover_matrix.sum(axis=1) / factor_df.notna().sum(axis=1)
+        valid_counts = factor_df.notna().sum(axis=1)
+        daily_turnover = turnover_matrix.sum(axis=1) / valid_counts.where(valid_counts > 0, np.nan)
 
-        turnover_periods_dict[f'{period}d'] = daily_turnover.dropna().rename('turnover')
+    turnover_periods_dict[f'{period}d'] = daily_turnover.dropna().rename('turnover')
 
     return turnover_periods_dict
 

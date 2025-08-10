@@ -255,6 +255,11 @@ class FactorAnalyzer:
             turnover_stats_periods_dict[period] = {
                 'turnover_mean': turnover_series.mean(),  # 周期平均换手率
                 'turnover_annual': turnover_series.mean() * (252 / int(period[:-1]))  # 年化换手率
+                ##
+                # 假设平均每天10%的股票变动分位组数。
+                # 周期10天
+                # 年化算出来25.2
+                # 资金来回滚动25次 有点费税费！#
             }
         return quantile_returns_periods_dict, quantile_stats_periods_dict,turnover_stats_periods_dict
 
@@ -988,9 +993,9 @@ class FactorAnalyzer:
             target_factor_processed, returns_calculator,close_df, target_factor_name)
 
         primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
-        # 这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
-        quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed,returns_calculator, close_df, 5,
-                                                                                primary_period_key)
+        # # 这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
+        # quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed,returns_calculator, close_df, 5,
+        #                                                                         primary_period_key)
 
         # 3. Fama-MacBeth回归
         logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
@@ -1006,7 +1011,7 @@ class FactorAnalyzer:
             style_factors_dict
         )
         return (ic_series_periods_dict, ic_stats_periods_dict,
-                quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict,
+                quantile_returns_series_periods_dict, quantile_stats_periods_dict,
                 factor_returns_series_periods_dict, fm_stat_results_periods_dict,turnover_stats_periods_dict,style_correlation_dict )
 
     def landing_for_core_three_analyzer_result(self, target_factor_df,target_factor_name, category, preprocess_method,
@@ -1041,29 +1046,20 @@ class FactorAnalyzer:
                                                                     file_name_prefix='fm_return_series')
         # 画图保存
         all_periods = ic_stats_periods_dict.keys()
-        for period in all_periods:
-
-            self.visualizationManager.plot_single_factor_results(
-                comprehensive_results['backtest_base_on_index'],
-                target_factor_name,
-                period,
-                ic_series_periods_dict,
-                ic_stats_periods_dict,
-                quantile_daily_returns_for_plot_dict,
-                quantile_stats_periods_dict,
-                factor_returns_series_periods_dict,
-                fm_stat_results_periods_dict)
-
-            self.visualizationManager.plot_diagnostics_report(
-                comprehensive_results['backtest_base_on_index'],
-                target_factor_name,
-                ic_series_periods_dict,
-                turnover_stats_periods_dict,
-                style_correlation_dict ,
-                target_factor_df,
-                period
-
-            )
+        # 在所有计算结束后，只调用一次统一报告函数
+        self.visualizationManager.plot_unified_factor_report(
+            backtest_base_on_index=comprehensive_results['backtest_base_on_index'],
+            factor_name=target_factor_name,
+            ic_series_periods_dict=ic_series_periods_dict,
+            ic_stats_periods_dict=ic_stats_periods_dict,
+            quantile_returns_series_periods_dict=quantile_daily_returns_for_plot_dict,
+            quantile_stats_periods_dict=quantile_stats_periods_dict,
+            factor_returns_series_periods_dict=factor_returns_series_periods_dict,
+            fm_stat_results_periods_dict=fm_stat_results_periods_dict,
+            turnover_stats_periods_dict=turnover_stats_periods_dict,
+            style_correlation_dict=style_correlation_dict,
+            factor_df=target_factor_df  # 传入未经shift的T日因子
+        )
 
         return overrall_summary_stats
 

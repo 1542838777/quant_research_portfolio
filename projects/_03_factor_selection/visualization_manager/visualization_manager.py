@@ -263,6 +263,17 @@ class VisualizationManager:
         mean_factor = factor_df.mean(axis=1).dropna()
         pd.plotting.autocorrelation_plot(mean_factor, ax=ax2)
         ax2.set_title('B. 因子自相关性 (持续性)')
+        ##
+        #
+        # 相关系数，范围在-1到1之间。
+        #
+        # 解读： 它衡量的是，在所有股票上，今天的因子值排序与**Lag天前的因子值排序**的相似程度。
+        #
+        # +1：今天的排名和Lag天前的排名一模一样。
+        #
+        # 0：今天的排名和Lag天前的排名毫无关系，是完全独立的。
+        #
+        # -1：今天的排名和Lag天前的排名正好完全相反。#
 
         # 3. 【左下】因子换手率图
         ax3 = fig.add_subplot(gs[1, 0])
@@ -276,6 +287,13 @@ class VisualizationManager:
         pd.Series(style_correlation_dict).plot(kind='barh', ax=ax4)
         ax4.set_title('D. 与常见风格因子相关性 (独特性)')
         ax4.axvline(0, color='black', linestyle='--', lw=1)
+        ##
+        # ##
+        #         #  检验新因子是否独特<br>（与Size, Value等基础风格因子比） | > 0.7 | 丢弃 |
+        #         # | | 0.5 ~ 0.7 | 中性化后再测试，若仍有效则保留 |
+        #         # | | < 0.5 | 保留 |
+        #         # | 从因子库中挑选组合<br>（因子与因子之间比） | > 0.5 | “二选一”，或只保留更好的那个 |
+        #         # | | < 0.5 | 可以考虑同时使用 |##
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
@@ -286,3 +304,171 @@ class VisualizationManager:
         plt.savefig(path, dpi=300, bbox_inches='tight')
         plt.close()
         return str(path)
+
+    def plot_unified_factor_report(self,
+                                   backtest_base_on_index: str,
+                                   factor_name: str,
+                                   # 传入所有周期的测试结果
+                                   ic_series_periods_dict: Dict[str, pd.Series],
+                                   ic_stats_periods_dict: Dict[str, Dict[str, Any]],
+                                   quantile_returns_series_periods_dict: Dict[str, pd.DataFrame],
+                                   quantile_stats_periods_dict: Dict[str, Dict[str, Any]],
+                                   factor_returns_series_periods_dict: Dict[str, pd.Series],
+                                   fm_stat_results_periods_dict: Dict[str, Dict[str, Any]],
+                                   turnover_stats_periods_dict: Dict[str, Dict[str, Any]],
+                                   style_correlation_dict: Dict[str, float],
+                                   factor_df: pd.DataFrame,  # 传入未经shift的T日因子
+                                   save_plots: bool = True):
+        """
+        【V5.0 终极版】生成单因子综合评估报告 (3x2布局)。
+        一张图表，包含所有核心信息，用于最终决策。
+        """
+        if not ic_stats_periods_dict:
+            logger.warning(f"因子 {factor_name} 的统计结果为空，无法生成报告。")
+            return ""
+
+        logger.info(f"开始为因子 {factor_name} 生成统一评估报告...")
+
+        # --- 1. 创建 3x2 图表布局 ---
+        fig = plt.figure(figsize=(24, 30))
+        gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.4, wspace=0.25)
+        fig.suptitle(f'单因子 "{factor_name}" 综合评估报告 (基准: {backtest_base_on_index})', fontsize=32, y=0.97)
+
+        # --- 2. 找到“最佳周期” (用于细节展示) ---
+        # 我们以 ICIR 作为核心标准来选择最佳周期
+        try:
+            best_period = max(ic_stats_periods_dict, key=lambda p: ic_stats_periods_dict[p].get('ic_ir', -np.inf))
+            logger.info(f"  > 自动识别最佳周期为: {best_period} (基于最高ICIR)")
+        except ValueError:
+            best_period = list(ic_stats_periods_dict.keys())[0]  # Fallback
+            logger.warning(f"  > 无法确定最佳周期，使用第一个周期: {best_period}")
+
+        # ==============================================================================
+        #                             开始绘制六个面板
+        # ==============================================================================
+
+        # --- A. 核心指标 vs. 持有周期 (寻找最佳“甜点区”) ---
+        ax_a = fig.add_subplot(gs[0, 0])
+        periods_numeric = sorted([int(p[:-1]) for p in ic_stats_periods_dict.keys()])
+        periods_str = [f'{p}d' for p in periods_numeric]
+
+        icir_values = [ic_stats_periods_dict.get(p, {}).get('ic_ir', np.nan) for p in periods_str]
+        sharpe_values = [quantile_stats_periods_dict.get(p, {}).get('tmb_sharpe', np.nan) for p in periods_str]
+
+        ax_a.plot(periods_numeric, icir_values, marker='o', linestyle='-', lw=2.5, label='ICIR')
+        ax_a.set_ylabel('ICIR', color='C0', fontsize=14)
+        ax_a.tick_params(axis='y', labelcolor='C0')
+
+        ax_a_twin = ax_a.twinx()
+        ax_a_twin.plot(periods_numeric, sharpe_values, marker='s', linestyle='--', lw=2.5, color='C1',
+                       label='分层Sharpe')
+        ax_a_twin.set_ylabel('分层Sharpe', color='C1', fontsize=14)
+        ax_a_twin.tick_params(axis='y', labelcolor='C1')
+
+        ax_a.set_title('A. 核心指标 vs. 持有周期 (寻找最佳周期)', fontsize=18)
+        ax_a.set_xlabel('持有周期 (天)', fontsize=14)
+        ax_a.axhline(0, color='black', linestyle=':', lw=1)
+        ax_a.grid(True, linestyle='--', alpha=0.6)
+        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.92))
+
+        # --- B. 最佳周期分层净值曲线 ---
+        ax_b = fig.add_subplot(gs[0, 1])
+        q_returns = quantile_returns_series_periods_dict.get(best_period)
+        if q_returns is not None:
+            tmb_cum = (1 + q_returns['TopMinusBottom']).cumprod()
+            ax_b.fill_between(tmb_cum.index, 1, tmb_cum, color='grey', alpha=0.3, label=f'多空组合 ({best_period})')
+            quantile_cols = [q for q in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'] if q in q_returns.columns]
+            for quantile in quantile_cols:
+                (1 + q_returns[quantile]).cumprod().plot(ax=ax_b, label=f'{quantile}', lw=2)
+        ax_b.set_title(f'B. 最佳周期 ({best_period}) 分层累计净值', fontsize=18)
+        ax_b.set_ylabel('累计净值', fontsize=14)
+        ax_b.axhline(1, color='black', linestyle='--', lw=1)
+        ax_b.legend()
+        ax_b.grid(True, linestyle='--', alpha=0.6)
+
+        # --- C. 最佳周期累计IC vs. F-M纯净Alpha收益 ---
+        ax_c = fig.add_subplot(gs[1, 0])
+        ax_c_twin = ax_c.twinx()
+        ic_series = ic_series_periods_dict.get(best_period)
+        fm_returns = factor_returns_series_periods_dict.get(best_period)
+
+        if ic_series is not None:
+            ic_series.cumsum().plot(ax=ax_c, label=f'累计IC ({best_period})', lw=2.5, color='C0')
+        ax_c.set_ylabel('累计IC', color='C0', fontsize=14)
+        ax_c.tick_params(axis='y', labelcolor='C0')
+
+        if fm_returns is not None:
+            (1 + fm_returns).cumprod().plot(ax=ax_c_twin, label=f'F-M纯净收益 ({best_period})', lw=2.5, color='C1',
+                                            linestyle='--')
+        ax_c_twin.set_ylabel('累计净值', color='C1', fontsize=14)
+        ax_c_twin.tick_params(axis='y', labelcolor='C1')
+
+        ax_c.set_title(f'C. 最佳周期 ({best_period}) IC vs. F-M Alpha', fontsize=18)
+        ax_c.grid(True, linestyle='--', alpha=0.6)
+        fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.61))
+
+        # --- D. 因子自身特性 (自相关性 & 换手率) ---
+        ax_d = fig.add_subplot(gs[1, 1])
+        mean_factor = factor_df.mean(axis=1).dropna()
+        if len(mean_factor) > 1:
+            pd.plotting.autocorrelation_plot(mean_factor, ax=ax_d, color='C2', lw=2.5, label='因子自相关性')
+        ax_d.set_ylabel('自相关系数', color='C2', fontsize=14)
+        ax_d.tick_params(axis='y', labelcolor='C2')
+
+        ax_d_twin = ax_d.twinx()
+        turnover_data = {int(p[:-1]): d['turnover_annual'] for p, d in turnover_stats_periods_dict.items()}
+        pd.Series(turnover_data).sort_index().plot(kind='bar', ax=ax_d_twin, alpha=0.6, color='C3', label='年化换手率')
+        ax_d_twin.set_ylabel('年化换手率', color='C3', fontsize=14)
+        ax_d_twin.tick_params(axis='y', labelcolor='C3')
+
+        ax_d.set_title('D. 因子特性：自相关性 vs. 换手率', fontsize=18)
+        fig.legend(loc='upper left', bbox_to_anchor=(0.53, 0.61))
+
+        # --- E. 风格暴露分析 (因子“DNA”鉴定) ---
+        ax_e = fig.add_subplot(gs[2, 0])
+        pd.Series(style_correlation_dict).sort_values(ascending=True).plot(kind='barh', ax=ax_e)
+        ax_e.set_title('E. 风格暴露分析 (独特性)', fontsize=18)
+        ax_e.axvline(0, color='black', linestyle='--', lw=1)
+        ax_e.grid(True, axis='x', linestyle='--', alpha=0.6)
+
+        # --- F. 核心指标汇总表 ---
+        ax_f = fig.add_subplot(gs[2, 1])
+        ax_f.axis('off')
+        summary_data = []
+        for period in periods_str:  # 使用与图A一致的排序
+            ic_ir = ic_stats_periods_dict.get(period, {}).get('ic_ir', np.nan)
+            tmb_sharpe = quantile_stats_periods_dict.get(period, {}).get('tmb_sharpe', np.nan)
+            fm_t_stat = fm_stat_results_periods_dict.get(period, {}).get('t_statistic', np.nan)
+            mean_abs_t = fm_stat_results_periods_dict.get(period, {}).get('mean_abs_t_stat', np.nan)
+            turnover = turnover_stats_periods_dict.get(period, {}).get('turnover_annual', np.nan)
+            summary_data.append(
+                [f'{period}', f'{ic_ir:.2f}', f'{tmb_sharpe:.2f}', f'{fm_t_stat:.2f}', f'{mean_abs_t:.2f}',
+                 f'{turnover:.2f}'])
+
+        columns = ['周期', 'ICIR', '分层Sharpe', 'F-M t值', 't值绝对值均值', '年化换手率']
+        table = ax_f.table(cellText=summary_data, colLabels=columns, loc='center', cellLoc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(16)
+        table.scale(1.0, 2.5)
+        ax_f.set_title('F. 核心指标汇总', fontsize=18, y=0.85)
+
+        # --- 统一调整X轴日期格式 ---
+        for ax in [ax_b, ax_c]:
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+            for label in ax.get_xticklabels():
+                label.set_rotation(30)
+                label.set_ha('right')
+
+        # --- 最终布局与保存 ---
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        if save_plots:
+            path = Path(self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_unified_report.png")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(path, dpi=300, bbox_inches='tight')
+            plt.close(fig)  # 明确关闭fig对象
+            logger.info(f"✓ 统一评估报告已保存至: {path}")
+            return str(path)
+        else:
+            plt.show()
+            return ""
