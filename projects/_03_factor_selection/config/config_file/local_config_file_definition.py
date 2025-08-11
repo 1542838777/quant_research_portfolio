@@ -93,7 +93,7 @@ style_factor_list =  [
 EVAL_SETTING_FAST = {
     "n_groups": 5,
     "forward_periods": [21], # 只跑一个周期
-    "returns_calculator": ['o2c'], # 只用一种计算方式
+    "returns_calculator": ['o2c','c2c'], # 只用一种计算方式
     # style_factor_list 可以保持完整，因为它不影响计算速度
     "style_factor_list": [
     ]

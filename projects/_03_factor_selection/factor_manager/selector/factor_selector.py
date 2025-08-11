@@ -465,7 +465,7 @@ Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。�
 
     # logger.info(f"因子 {summary_row.get('factor_name', '')}: Base({base_score:.1f}) - Robustness({robustness_penalty:.1f}) - Purity({purity_penalty:.1f}) = Final({max(0, final_score):.1f})")
 
-    return max(0, final_score)
+    return  final_score
 
 def load_fm_returns_matrix(
         leaderboard_df: pd.DataFrame,
@@ -525,5 +525,5 @@ def load_fm_returns_matrix(
 if __name__ == '__main__':
     fase = FactorSelector()
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000300.SH', TARGET_PERIOD='21d')
-    # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
     fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
+    # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
