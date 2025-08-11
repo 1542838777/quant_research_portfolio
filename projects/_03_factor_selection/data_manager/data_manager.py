@@ -219,6 +219,7 @@ class DataManager:
             'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
             'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
+            'total_mv',
             'list_date',  # 上市日期,
             'delist_date',  # 退市日期,用于构建标准动态股票池
 

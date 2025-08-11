@@ -101,7 +101,7 @@ class FactorCalculator:
         print("    > 正在计算 cfp_ratio...")
         # --- 步骤一：获取依赖的因子 ---
         cashflow_ttm_df = self.factor_manager.get_factor('cashflow_ttm')
-        total_mv_df = self.factor_manager.get_factor('small_cap')
+        total_mv_df = self.factor_manager.get_factor('total_mv')
 
         # --- 步骤二：对齐数据 (使用 .align) ---
         mv_aligned, ttm_aligned = total_mv_df.align(cashflow_ttm_df, join='inner', axis=None)
@@ -109,7 +109,7 @@ class FactorCalculator:
         # --- 步骤三：风险控制与预处理 (核心) ---
         # 1. 过滤小市值公司：这是不可逾越的纪律 （市值小，表示分母小，更容易被操控，比如现金突然多了10w，但是市值为1，那不是猛增10w倍率
         #    在实盘中，这个阈值甚至可能是20亿(2e9)或30亿(3e9) total_mv单位 万
-        mv_aligned[mv_aligned < 1e4] = np.nan
+        mv_aligned[mv_aligned < 2e5] = np.nan
 
         # 2. 过滤掉退市或长期停牌等市值为0或负的异常情况 ！
         mv_aligned[mv_aligned <= 0] = np.nan

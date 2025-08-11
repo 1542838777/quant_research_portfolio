@@ -2,7 +2,9 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-#    # === 规模 (Size) ===
+    #     - 'turnover_rate_90d_mean'
+    - 'cfp_ratio'
+    # === 规模 (Size) ===
     - 'momentum_120d'
     - 'reversal_21d'
     - 'volatility_90d'
@@ -15,8 +17,8 @@ target_factors_for_evaluation:
     - 'ep_ratio'
     - 'sp_ratio'
     - 'cfp_ratio'
-#
-#    # === 质量 (Quality) ===
+
+    # === 质量 (Quality) ===
     - 'roe_ttm'
     - 'gross_margin_ttm'
     - 'debt_to_assets'
@@ -54,26 +56,26 @@ stock_pool_profiles:
   # ----------------------------------------------------------------------------
   institutional_stock_pool:
     # 启用指数过滤，
-      index_filter:
-        enable: true
-        index_code: '000300.SH'  #
+    index_filter:
+      enable: true
+      index_code: '000300.SH'  #
 
-      filters:
-        # --- 普适性风险过滤 (强制性) ---
-        remove_st: true          # 必须剔除ST股票
-        remove_new_stocks: true  # 必须剔除上市不足6个月的新股
-        adapt_tradeable_matrix_by_suspend_resume: true #适配停经历复牌事件的可交易股票池
+    filters:
+      # --- 普适性风险过滤 (强制性) ---
+      remove_st: true          # 必须剔除ST股票
+      remove_new_stocks: true  # 必须剔除上市不足6个月的新股
+      adapt_tradeable_matrix_by_suspend_resume: true #适配停经历复牌事件的可交易股票池
 
-        # --- 指标过滤 (针对指数池内部) ---
-        # 在中证800这个优等生群体中，再剔除流动性最差的10%，作为风险控制
-        min_liquidity_percentile: 0.10
+      # --- 指标过滤 (针对指数池内部) ---
+      # 在中证800这个优等生群体中，再剔除流动性最差的10%，作为风险控制
+      min_liquidity_percentile: 0.10
 
-        # 中证800本身已是市值筛选的结果，此项可禁用或设为非常宽松的保险丝
-        min_market_cap_percentile: 0.05
+      # 中证800本身已是市值筛选的结果，此项可禁用或设为非常宽松的保险丝
+      min_market_cap_percentile: 0.05
 
-        # --- 可交易性过滤 (强制性) ---
-        remove_next_day_suspended: true  # 必须剔除次日停牌
-        remove_next_day_limit_up: true   # 必须剔除次日涨停
+      # --- 可交易性过滤 (强制性) ---
+      remove_next_day_suspended: true  # 必须剔除次日停牌
+      remove_next_day_limit_up: true   # 必须剔除次日涨停
 
   # ----------------------------------------------------------------------------
   # Profile 2: 全市场观察池 (Full Market Observation Profile)
@@ -82,26 +84,26 @@ stock_pool_profiles:
   # ----------------------------------------------------------------------------
   microstructure_stock_pool:
     # 禁用指数过滤，使用全市场股票
-      index_filter:
-        enable: false
-        index_code: '' # 无需指定
+    index_filter:
+      enable: false
+      index_code: '' # 无需指定
 
-      filters:
-        # --- 普适性风险过滤 (强制性) ---
-        remove_st: true          # 必须剔除ST股票
-        remove_new_stocks: true  # 必须剔除上市不足6个月的新股
-        adapt_tradeable_matrix_by_suspend_resume: true #适配停经历复牌事件的可交易股票池
+    filters:
+      # --- 普适性风险过滤 (强制性) ---
+      remove_st: true          # 必须剔除ST股票
+      remove_new_stocks: true  # 必须剔除上市不足6个月的新股
+      adapt_tradeable_matrix_by_suspend_resume: true #适配停经历复牌事件的可交易股票池
 
-        # --- 指标过滤 (基于全市场) ---
-        # 剔除全市场流动性最差的20%的“僵尸股”，保留真实的“散户博弈区”
-        min_liquidity_percentile: 0.20
+      # --- 指标过滤 (基于全市场) ---
+      # 剔除全市场流动性最差的20%的“僵尸股”，保留真实的“散户博弈区”
+      min_liquidity_percentile: 0.20
 
-        # 剔除全市场市值最小的20%的“尘埃股”，同样是为了研究的有效性
-        min_market_cap_percentile: 0.20
+      # 剔除全市场市值最小的20%的“尘埃股”，同样是为了研究的有效性
+      min_market_cap_percentile: 0.20
 
-        # --- 可交易性过滤 (强制性) ---
-        remove_next_day_suspended: true  # 必须剔除次日停牌
-        remove_next_day_limit_up: true   # 必须剔除次日涨停
+      # --- 可交易性过滤 (强制性) ---
+      remove_next_day_suspended: true  # 必须剔除次日停牌
+      remove_next_day_limit_up: true   # 必须剔除次日涨停
     # '000906.SH'  # 中证800指数代码
     # index_code: '000300.SH'  # 沪深300
     # index_code: '000905.SH'  # 中证500
@@ -138,29 +140,13 @@ preprocessing:
 evaluation:
   n_groups: 5  # 分层回测的分组数
   quantiles: 5  # 分层回测的分组数
-  forward_periods: [ 5,21]
-#  forward_periods: [1, 5, 10, 21, 40, 60, 120]
+  forward_periods: [ 5,21 ]
+  #  forward_periods: [1, 5, 10, 21, 40, 60, 120]
 
-  returns_calculator: ['c2c','o2c']
+  returns_calculator: [ 'c2c','o2c' ]
   style_factor_list: [
-            # 规模因子 (必须对数化)
-            'small_cap',
-            # 价值因子 (建议用倒数)
-            'bm_ratio', 'sp_ratio', 'ep_ratio',
-            # 成长因子
-            'net_profit_growth_ttm',
-            'revenue_growth_ttm',
-            # 质量因子
-            'roe_ttm',
-            'gross_margin_ttm',
-            # 风险/波动因子
-            'volatility_90d',
-            'beta',
-            # 动量/反转因子
-            'reversal_21d',  # A股常用短期反转
-            # 流动性因子
-            'ln_turnover_value_90d'
-        ]
+
+  ]
 
 # 因子选择设置
 factor_selection:
@@ -179,7 +165,7 @@ other_backtest:
   benchmark: '000300.SH'  # 基准指数
 
 
-# 因子定义
+  # 因子定义
   # 
   #action 如果是基础数据 比如无需计算的 那就 action: null 如果需要计算 那就action: technical_calcu
   #cal_require_base_fields_from_daily 如果依赖的require字段都是是日频级别的， 就为True 否则False
@@ -255,7 +241,7 @@ factor_definition:
     style_category: 'size'
     description: '流通市值的对数。必须取对数以缓解数据右偏，是进行回归和中性化时最标准的规模因子。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['circ_mv']
+    cal_require_base_fields: [ 'circ_mv' ]
     cal_require_base_fields_from_daily: True
 
   # === 价值 (Value) ===
@@ -263,31 +249,31 @@ factor_definition:
     style_category: 'value'
     description: '账面市值比(Book-to-Market)，即市净率(PB)倒数。Fama-French三因子模型的核心成员。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['pb']
+    cal_require_base_fields: [ 'pb' ]
     cal_require_base_fields_from_daily: True
   - name: 'ep_ratio'
     style_category: 'value'
     description: '盈利收益率(Earnings Yield)，即市盈率(PE_TTM)倒数，比PE更能直接比较。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['pe_ttm']
+    cal_require_base_fields: [ 'pe_ttm' ]
     cal_require_base_fields_from_daily: True
   - name: 'sp_ratio'
     style_category: 'value'
     description: '销售收益率(Sales Yield)，即市销率(PS_TTM)倒数，对亏损的成长股有很好的评估价值。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['ps_ttm']
+    cal_require_base_fields: [ 'ps_ttm' ]
     cal_require_base_fields_from_daily: True
   - name: 'cfp_ratio'
     style_category: 'value'
     description: '现金流市值比(TTM)，衡量公司的“造血”能力相对于其市值的水平，盈利质量的试金石。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['cashflow_ttm', 'total_mv'] # cashflow_ttm是财报数据，total_mv是日频数据
+    cal_require_base_fields: [ 'cashflow_ttm', 'total_mv' ] # cashflow_ttm是财报数据，total_mv是日频数据
     cal_require_base_fields_from_daily: False # 因为依赖了非日频的财报数据
   - name: 'value_composite'
     style_category: 'value'
     description: '价值合成因子，通过对bm_ratio, ep_ratio, sp_ratio等多个价值因子进行打分、标准化后再合成，旨在创建一个更稳健的价值度量。'
     action: 'composite' # 表明这是一个合成因子
-    cal_require_base_fields: ['bm_ratio', 'sp_ratio', 'ep_ratio']
+    cal_require_base_fields: [ 'bm_ratio', 'sp_ratio', 'ep_ratio' ]
     cal_require_base_fields_from_daily: False # 依赖于计算后的因子
 
   # === 质量 (Quality) ===
@@ -295,19 +281,19 @@ factor_definition:
     style_category: 'quality'
     description: '净资产收益率(Return on Equity)，衡量公司为股东创造利润的能力，巴菲特最看重的指标之一。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['net_profit_ttm', 'total_equity'] # 依赖财报数据
+    cal_require_base_fields: [ 'net_profit_ttm', 'total_equity' ] # 依赖财报数据
     cal_require_base_fields_from_daily: False
   - name: 'gross_margin_ttm'
     style_category: 'quality'
     description: '销售毛利率(TTM)，反映了公司产品或服务的“护城河”和议价能力。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['total_revenue_ttm', 'op_cost_ttm'] # 依赖财报数据
+    cal_require_base_fields: [ 'total_revenue_ttm', 'op_cost_ttm' ] # 依赖财报数据
     cal_require_base_fields_from_daily: False
   - name: 'debt_to_assets'
     style_category: 'quality'
     description: '资产负债率，衡量公司的财务杠杆和偿债风险，是稳健性的重要体现。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['total_debt', 'total_assets'] # 依赖财报数据
+    cal_require_base_fields: [ 'total_debt', 'total_assets' ] # 依赖财报数据
     cal_require_base_fields_from_daily: False
 
   # === 成长 (Growth) ===
@@ -329,13 +315,13 @@ factor_definition:
     style_category: 'growth'
     description: '净利润同比增长率(YoY)，最直接的成长性指标。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['net_profit_single_q'] # 依赖单季度财报数据
+    cal_require_base_fields: [ 'net_profit_single_q' ] # 依赖单季度财报数据
     cal_require_base_fields_from_daily: False
   - name: 'total_revenue_growth_yoy'
     style_category: 'growth'
     description: '营业收入同比增长率(YoY)，衡量公司市场扩张和占有率的能力。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['total_revenue_single_q'] # 依赖单季度财报数据
+    cal_require_base_fields: [ 'total_revenue_single_q' ] # 依赖单季度财报数据
     cal_require_base_fields_from_daily: False
 
   # === 动量与反转 (Momentum & Reversal) ===
@@ -356,14 +342,14 @@ factor_definition:
     style_category: 'momentum'
     description: '120日（约半年）累计收益率，捕捉中期价格惯性。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['close']
+    cal_require_base_fields: [ 'close' ]
     cal_require_base_fields_from_daily: True
   - name: 'reversal_21d'
     # 【新增】 A股市场效应非常显著的短期反转因子
     style_category: 'momentum' # 类别上仍属动量大类
     description: '21日（约1个月）收益率的负向。A股短期反转效应显著，即前期涨多的股票后期倾向于跌。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['close']
+    cal_require_base_fields: [ 'close' ]
     cal_require_base_fields_from_daily: True
 
   # === 风险 (Risk / Volatility) ===
@@ -371,20 +357,20 @@ factor_definition:
     style_category: 'risk'
     description: '贝塔系数，衡量个股相对于市场基准的系统性风险。（你到底是跟着别人屁股后面转，还是凭自己的真本事 （用到协同'
     action: 'technical_calcu'
-    cal_require_base_fields: ['pct_chg', 'benchmark_pct_chg']
+    cal_require_base_fields: [ 'pct_chg', 'benchmark_pct_chg' ]
     cal_require_base_fields_from_daily: False
   - name: 'volatility_120d'
     style_category: 'risk'
     description: '120日年化波动率，衡量个股自身的价格波动风险。低波动股票有时反而有超额收益。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['pct_chg']
+    cal_require_base_fields: [ 'pct_chg' ]
     cal_require_base_fields_from_daily: True
   - name: 'volatility_90d'
     # 【新增】 与Beta互补，衡量自身风险
     style_category: 'risk'
     description: '90日年化波动率，衡量个股自身的价格波动风险（特质风险）。低波动股票有时反而有超额收益。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['pct_chg']
+    cal_require_base_fields: [ 'pct_chg' ]
     cal_require_base_fields_from_daily: True
 
   # === 流动性 (Liquidity) ===
@@ -406,20 +392,20 @@ factor_definition:
     style_category: 'liquidity'
     description: '90日（约一季度）平均换手率，比单日或月度指标更能平滑地衡量股票的交易活跃度。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['turnover_rate']
+    cal_require_base_fields: [ 'turnover_rate' ]
     cal_require_base_fields_from_daily: True
   - name: 'ln_turnover_value_90d'
     # 【新增】 90日日均成交额的对数
     style_category: 'liquidity'
     description: '90日日均成交额的对数。反映了资产的绝对流动性水平，是冲击成本的重要代理变量。建议取对数。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['amount']
+    cal_require_base_fields: [ 'amount' ]
     cal_require_base_fields_from_daily: True
   - name: 'amihud_liquidity'
     # 【修正与增强】 修正命名，更清晰
     style_category: 'liquidity'
     description: 'Amihud非流动性指标，衡量单位成交额能引起多大的价格波动，是冲击成本的优秀代理变量。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['pct_chg', 'amount'] # 依赖日收益率和成交额
+    cal_require_base_fields: [ 'pct_chg', 'amount' ] # 依赖日收益率和成交额
     cal_require_base_fields_from_daily: True
 #todo  、 大单、...

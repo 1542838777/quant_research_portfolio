@@ -426,7 +426,7 @@ class FactorProcessor:
             logger.info(f"    > '{factor_school}' 派因子无需中性化。")
             return processed_factor
 
-        logger.info(f"    > {target_factor_name} 将对以下风格进行中性化: {factors_to_neutralize}")
+        # logger.info(f"    > {target_factor_name} 将对以下风格进行中性化: {factors_to_neutralize}")
 
         skipped_days_count = 0
         total_days = len(processed_factor.index)
@@ -695,7 +695,7 @@ class FactorProcessor:
                 daily_factor_series = factor_data.loc[date].dropna()
                 if daily_factor_series.empty:
                     processed_data[date] = pd.Series(dtype=float)
-                    log_warning(f"标准化过程中，发现当天{date}所有股票因子值都为空")
+                    log_warning(f"标准化过程中，发现当天{date}所有股票因子值都为空( 如果是 微观结构因子&连续&10条以内 那:正常 因为微观结构因子 根据时间序列残差化(滑动取的均值)")
                     continue
 
                 # 在循环内部，为每一天获取正确的历史地图
