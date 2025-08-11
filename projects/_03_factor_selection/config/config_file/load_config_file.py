@@ -14,7 +14,7 @@ from quant_lib.config.logger_config import log_warning
 fast_periods = ('20250524','20250710')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
-longest_periods = ('20180701','20250710')
+longest_periods = ('20190101','20250710')
 
 
 massive_test_mode = {
@@ -120,7 +120,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram = 东北证券_CSI1000_more_filter_mode
+trans_pram =massive_test_mode
 is_debug = True
 
 

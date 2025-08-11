@@ -3,6 +3,7 @@
 
 负责对因子进行自动分类、聚类和特征提取。
 """
+import re
 
 import pandas as pd
 import numpy as np

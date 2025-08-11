@@ -33,7 +33,7 @@ from quant_lib.config.constant_config import permanent__day
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from quant_lib.config.logger_config import setup_logger, log_warning
+from quant_lib.config.logger_config import setup_logger, log_warning, log_flow_start
 
 warnings.filterwarnings('ignore')
 
@@ -141,6 +141,7 @@ class FactorProcessor:
         Returns:
             预处理后的因子数据
         """
+        log_flow_start(f"{target_factor_name}因子进入因子预处理...")
         processed_target_factor_df = target_factor_df.copy()
         auxiliary_dfs = auxiliary_dfs.copy()
 
@@ -349,7 +350,7 @@ class FactorProcessor:
 
         # --- 路径一：全市场去极值 (逻辑基本不变) ---
         if pit_industry_map is None or industry_config is None:
-            print("  执行全市场去极值...")
+            logger.info("  执行全市场去极值...")
             method = winsorization_config.get('method', 'mad')
             if method == 'mad':
                 params = {'threshold': winsorization_config.get('mad_threshold', 5),
@@ -362,8 +363,8 @@ class FactorProcessor:
 
         # --- 路径二：分行业去极值 (采用回溯逻辑) ---
         else:
-            print(
-                f"  执行分行业去极值 (主行业: {industry_config['primary_level']}, 回溯至: {industry_config['fallback_level']})...")
+            logger.info(
+                f"  执行分行业去极值 (主行业: {industry_config['primary_level']}, 当样本不足会自动回溯至: {industry_config['fallback_level']})...")
 
             # 按天循环，在截面日上执行矢量化操作
             processed_data = {}
@@ -481,14 +482,28 @@ class FactorProcessor:
 
             # --- c) 样本量检查 (逻辑不变，但更健壮) ---
             num_predictors = X_df.shape[1]
-            if len(combined_df) < num_predictors + 5:
-                logger.warning(
-                    f"  警告: 日期 {date.date()} 清理后样本数不足 ({len(combined_df)} < {num_predictors + 5})，跳过中性化。")
-                # 注意：这里我们只跳过当天的中性化，而不将当天的所有因子值设为NaN，除非你确实希望如此
-                # processed_factor.loc[date] = np.nan
+            MIN_SAMPLES_ABSOLUTE = 150  # 绝对最小样本数
+            MIN_SAMPLES_RELATIVE_FACTOR = 3  # 相对最小样本倍数
+
+            # 同时满足相对和绝对两个条件
+            is_sample_insufficient = (len(combined_df) < MIN_SAMPLES_ABSOLUTE) or \
+                                     (len(combined_df) < MIN_SAMPLES_RELATIVE_FACTOR * num_predictors)
+
+            if is_sample_insufficient:
+                log_warning(
+                    f"  警告: 日期 {date.date()} 清理后样本数不足 "
+                    f"({len(combined_df)}), 未满足 N > {MIN_SAMPLES_ABSOLUTE} 且 N > {MIN_SAMPLES_RELATIVE_FACTOR}*K 的条件，"
+                    f"跳过中性化。"
+                )
+                # 【重要决策】当样本不足时，是保留原始因子值，还是设为空值？
+                # 设为空值(NaN)是更保守、更诚实的选择。它承认了当天无法生成一个可靠的中性化信号。
+                # 如果保留原始因子值（即：直接continue），意味着在这一天你交易的是一个未被中性化的、有风险暴露的因子。
+
+                ##
+                # 如果直接continue ()：这意味着在样本不足的日期，processed_factor 中保留的是原始因子值。这会使你的“纯净因子”在某些天突然变回“原始因子”，导致风险暴露不一致。#
+                processed_factor.loc[date] = np.nan  #
                 skipped_days_count += 1
                 continue
-
             # --- d) 执行回归并计算残差 ---
             y_clean = combined_df['factor']
             # 使用 sm.add_constant 添加截距项，是 statsmodels 的标准做法

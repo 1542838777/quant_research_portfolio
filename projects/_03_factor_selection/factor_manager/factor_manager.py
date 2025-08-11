@@ -589,6 +589,7 @@ class FactorManager:
         target_factors_for_evaluation = self.data_manager.config['target_factors_for_evaluation']['fields']
 
         for target_factor_name in target_factors_for_evaluation:
+            logger.info(f"get_backtest_ready_factor_entity加载{target_factor_name}")
             # category
             category = self.get_style_category(target_factor_name)
             school = self.get_school_code_by_factor_name(target_factor_name)

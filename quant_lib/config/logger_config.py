@@ -1,6 +1,6 @@
 import logging
 
-from quant_lib.config.symbols_constants import SUCCESS, WARNING, FAIL
+from quant_lib.config.symbols_constants import SUCCESS, WARNING, FAIL, RUNNING
 
 
 def setup_logger(name: str = None, level: str = 'INFO') -> logging.Logger:
@@ -32,6 +32,7 @@ def setup_logger(name: str = None, level: str = 'INFO') -> logging.Logger:
     return logger
 
 logger = setup_logger(__name__, level='INFO')
+def log_flow_start(msg): logger.info(f"{RUNNING} {msg}")
 def log_success(msg): logger.info(f"{SUCCESS} {msg}")
 def log_warning(msg): logger.info(f"{WARNING} {msg}")
 def log_notice(msg): logger.info(f"{FAIL} {msg}")
