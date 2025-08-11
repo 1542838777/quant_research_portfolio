@@ -11,7 +11,11 @@
 Author: Quantitative Research Team
 Date: 2024-12-19
 """
-import matplotlib.dates as mdates # 导入日期格式化模块
+import glob
+import os
+import re
+
+import matplotlib.dates as mdates  # 导入日期格式化模块
 
 import pandas as pd
 import numpy as np
@@ -31,7 +35,6 @@ from datetime import datetime
 import warnings
 import sys
 
-
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
@@ -49,7 +52,9 @@ from quant_lib.utils.json_utils import load_json_with_numpy
 logger = setup_logger(__name__)
 
 ##fname 为你下载的字体库路径，注意 SourceHanSansSC-Bold.otf 字体的路径，这里放到工程本地目录下。
-cn_font = FontProperties(fname=r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\quant_lib\font\SourceHanSansSC-Regular.otf", size=12)
+cn_font = FontProperties(
+    fname=r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\quant_lib\font\SourceHanSansSC-Regular.otf",
+    size=12)
 x1 = np.array([1, 2, 3, 4])
 y2 = np.array([6, 2, 13, 10])
 
@@ -57,6 +62,7 @@ plt.plot(x1, y2)
 plt.xlabel("X轴", fontproperties=cn_font)
 plt.ylabel("Y轴", fontproperties=cn_font)
 plt.title("测试", fontproperties=cn_font)
+
 
 class VisualizationManager:
     """
@@ -87,13 +93,13 @@ class VisualizationManager:
         # 颜色配置
         self.colors = {
             'primary': '#1f77b4',
-            'secondary': '#ff7f0e', 
+            'secondary': '#ff7f0e',
             'success': '#2ca02c',
             'danger': '#d62728',
             'warning': '#ff7f0e',
             'info': '#17a2b8'
         }
-        
+
         # logger.info(f"可视化管理器初始化完成，输出目录: {output_dir}")
 
     def _setup_style(self, style: str):
@@ -165,7 +171,8 @@ class VisualizationManager:
         ax1_twin = ax1.twinx()
         primary_ic = ic_series_periods_dict.get(target_period)
         if primary_ic is not None:
-            ax1.bar(primary_ic.index, primary_ic.values, width=1.0, color='royalblue', alpha=0.6, label=f'IC序列 ({target_period})')
+            ax1.bar(primary_ic.index, primary_ic.values, width=1.0, color='royalblue', alpha=0.6,
+                    label=f'IC序列 ({target_period})')
         ax1.axhline(0, color='black', linestyle='--', lw=1)
         ax1.set_ylabel('IC值 (单期)', color='royalblue', fontsize=14)
         ax1.tick_params(axis='y', labelcolor='royalblue')
@@ -185,10 +192,11 @@ class VisualizationManager:
         if primary_q_returns is not None:
             # a) 绘制多空组合累计收益（灰色区域）
             tmb_cum_returns = (1 + primary_q_returns['TopMinusBottom']).cumprod()
-            ax2.fill_between(tmb_cum_returns.index, 1, tmb_cum_returns, color='grey', alpha=0.3, label=f'多空组合 ({target_period})')
+            ax2.fill_between(tmb_cum_returns.index, 1, tmb_cum_returns, color='grey', alpha=0.3,
+                             label=f'多空组合 ({target_period})')
 
             # b) 绘制每个分层的累计净值曲线
-            quantile_cols = [q for q in ['Q1','Q2','Q3','Q4','Q5'] if q in primary_q_returns.columns]
+            quantile_cols = [q for q in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'] if q in primary_q_returns.columns]
             for quantile in quantile_cols:
                 (1 + primary_q_returns[quantile]).cumprod().plot(ax=ax2, label=f'{quantile} ({target_period})', lw=2)
 
@@ -197,7 +205,7 @@ class VisualizationManager:
         ax2.axhline(1, color='black', linestyle='--', lw=1)
         ax2.legend()
         ax2.grid(True)
-        ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=6)) # 每年一个主刻度
+        ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=6))  # 每年一个主刻度
         ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
         ax2.tick_params(axis='x', rotation=45)
 
@@ -218,7 +226,8 @@ class VisualizationManager:
         ax4 = fig.add_subplot(gs[1, 1])
         ax4.axis('off')
         summary_data = []
-        periods = sorted(ic_stats_periods_dict.keys(), key=lambda x: int(x[:-1]) if x[:-1].isdigit() else 99) # 兼容'20d_monthly'
+        periods = sorted(ic_stats_periods_dict.keys(),
+                         key=lambda x: int(x[:-1]) if x[:-1].isdigit() else 99)  # 兼容'20d_monthly'
         for period in periods:
             ic_ir = ic_stats_periods_dict.get(period, {}).get('ic_ir', np.nan)
             tmb_sharpe = quantile_stats_periods_dict.get(period, {}).get('tmb_sharpe', np.nan)
@@ -235,7 +244,8 @@ class VisualizationManager:
         ax4.set_title('D. 核心指标汇总', fontsize=18, y=0.85)
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        path = Path(self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_{target_period}_evaluation.png")
+        path = Path(
+            self.output_dir / factor_name / f"{factor_name}_in_{backtest_base_on_index}_{target_period}_evaluation.png")
         path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(path, dpi=300, bbox_inches='tight')
         plt.close()
@@ -332,7 +342,8 @@ class VisualizationManager:
 
         # ... (版本定位逻辑不变) ...
         # [为简洁，省略版本定位的 _find_target_version_path 辅助函数和调用代码]
-        target_version_path = _find_target_version_path(config_path,run_version) # ... a call to _find_target_version_path ...
+        target_version_path = _find_target_version_path(config_path,
+                                                        run_version)  # ... a call to _find_target_version_path ...
         if not target_version_path: return ""
 
         summary_stats_file = target_version_path / 'summary_stats.json'
@@ -520,6 +531,7 @@ class VisualizationManager:
         return str(save_path)
 
 
+
     def plot_robustness_report(self,
                                backtest_base_on_index: str,
                                factor_name: str,
@@ -534,16 +546,6 @@ class VisualizationManager:
 
         # --- 1. 定位并加载 C2C 和 O2C 两份【指定版本】的数据 ---
         base_path = Path(results_path) / backtest_base_on_index / factor_name
-
-        def _find_target_version_path(config_path, version):
-            if not config_path.is_dir(): return None
-            version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
-            if not version_dirs: return None
-            if version == 'latest':
-                return sorted(version_dirs)[-1]
-            else:
-                path_to_find = config_path / version
-                return path_to_find if path_to_find in version_dirs else None
 
         c2c_version_path = _find_target_version_path(base_path / 'c2c', run_version)
         o2c_version_path = _find_target_version_path(base_path / 'o2c', run_version)
@@ -683,12 +685,200 @@ class VisualizationManager:
 
         return best_period
 
-def _find_target_version_path(config_path, version):
-        if not config_path.is_dir(): return None
-        version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
-        if not version_dirs: return None
-        if version == 'latest':
-            return sorted(version_dirs)[-1]
+    def plot_ic_report(self,
+                       backtest_base_on_index: str,
+                       factor_name: str,
+                       results_path: str,
+                       default_config: str = 'o2c',
+                       run_version: str = 'latest',
+                       target_period: str = '21d') -> None:
+        """
+        【最终修正版】根据字典式数据结构，绘制指定因子的IC序列与多周期累计IC图。
+        """
+        logger.info(f"  > 正在为因子 {factor_name} 绘制专项IC报告 (字典数据源)...")
+
+        # --- 1. 定位并加载数据 ---
+        try:
+            base_path = Path(results_path) / backtest_base_on_index / factor_name
+            config_path = base_path / default_config
+            target_version_path = _find_target_version_path(config_path, run_version)
+            if not target_version_path:
+                return
+
+            # 调用你的函数，现在我们知道 ic_dict 是一个 {天数: DataFrame} 的字典
+            ic_dict = extrat_day_map_df(target_version_path, "ic_series_processed")
+            if not ic_dict:
+                logger.warning(f"    > extrat_day_map_df 未返回任何数据，无法绘制IC报告。")
+                return
+
+        except Exception as e:
+            logger.error(f"    > 加载或处理IC字典数据时出错: {e}")
+            return
+
+        # --- 2. 【核心修正】数据准备：从字典到绘图专用DataFrame ---
+        logger.info("    > 正在将IC字典转换为绘图所需的数据格式...")
+
+        ic_series_list = []
+        cumulative_ic_series_list = []
+
+        # 按周期天数排序，以保证图例和颜色顺序的稳定
+        sorted_days = sorted(ic_dict.keys())
+
+        for days in sorted_days:
+            df = ic_dict[days]
+            # 提取单列IC序列
+            ic_series = df.iloc[:, 0]
+
+            # 1. 准备IC序列DataFrame
+            ic_series.name = f'ic_{days}d'
+            ic_series_list.append(ic_series)
+
+            # 2. 准备累计IC序列DataFrame
+            cumulative_ic = ic_series.cumsum()
+            cumulative_ic.name = f'cumulative_ic_{days}d'
+            cumulative_ic_series_list.append(cumulative_ic)
+
+        # 将序列列表合并成两个“宽表”DataFrame，便于绘图
+        ic_series_df = pd.concat(ic_series_list, axis=1)
+        cumulative_ic_df = pd.concat(cumulative_ic_series_list, axis=1)
+
+        # --- 3. 开始绘图 ---
+        logger.info("    > 开始绘制IC图表...")
+        fig, ax1 = plt.subplots(figsize=(16, 8))
+
+        # a. 在左轴 (ax1) 绘制IC序列柱状图
+        ic_series_col = f'ic_{target_period}'
+        if ic_series_col in ic_series_df.columns:
+            ax1.bar(ic_series_df.index, ic_series_df[ic_series_col],
+                    color='cornflowerblue', alpha=0.8,
+                    label=f'IC序列 ({target_period})', width=1.5)
         else:
-            path_to_find = config_path / version
-            return path_to_find if path_to_find in version_dirs else None
+            logger.warning(f"    > 未在数据中找到指定的 target_period: {target_period}，无法绘制柱状图。")
+
+        ax1.set_ylabel('IC值 (单期)', color='royalblue', fontsize=12)
+        ax1.tick_params(axis='y', labelcolor='royalblue')
+        ax1.axhline(0, color='black', linestyle='--', linewidth=1)
+        ax1.grid(True, axis='y', linestyle='--', alpha=0.5)
+
+        # b. 创建共享X轴的右轴 (ax2)，用于绘制累计IC曲线
+        ax2 = ax1.twinx()
+
+        color_cycle = ['lightcoral', 'darkgoldenrod', 'forestgreen', 'darkcyan', 'mediumpurple', 'sandybrown']
+
+        for i, days in enumerate(sorted_days):
+            period_str = f'{days}d'
+            cum_ic_col = f'cumulative_ic_{period_str}'
+            ax2.plot(cumulative_ic_df.index, cumulative_ic_df[cum_ic_col],
+                     color=color_cycle[i % len(color_cycle)],
+                     label=f'累计IC ({period_str})',
+                     linewidth=2.5)
+
+        ax2.set_ylabel('累计IC', fontsize=12)
+
+        # c. 设置图表整体样式
+        fig.suptitle(f"A. 因子IC序列与累计IC (有效性)", fontsize=18, y=0.95)
+
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc='upper left')
+
+        fig.autofmt_xdate()
+        report_dir = base_path / 'reports'
+
+        path = report_dir / f"{factor_name}_back_report_ic_{target_version_path.name}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+    def plot_quantile_report(self,
+                             backtest_base_on_index: str,
+                             factor_name: str,
+                             results_path: str,
+                             default_config: str = 'o2c',
+                             run_version: str = 'latest',
+                             target_period: str = '21d') -> None:
+        """
+        【新增】绘制指定周期的分层累计净值图（复现图B）。
+        """
+        logger.info(f"  > 正在为因子 {factor_name} 绘制专项分层回测报告...")
+
+        # --- 1. 定位并加载数据 ---
+        base_path = Path(results_path) / backtest_base_on_index / factor_name
+        config_path = base_path / default_config
+        target_version_path = _find_target_version_path(config_path, run_version)
+        if not target_version_path:
+            logger.warning(f"    > 未找到因子 {factor_name} 的有效成果版本，跳过分层报告绘制。")
+            return
+
+        # 加载核心的分层收益率时间序列数据
+        quantile_returns_file = target_version_path / 'quantile_returns_processed_21d.parquet'
+        if not quantile_returns_file.exists():
+            logger.warning(f"    > {quantile_returns_file} 不存在，无法绘制分层报告。")
+            return
+
+        # Parquet文件通常需要指定key来读取，或者它本身就是一个DataFrame
+        # 这里假设它是一个字典结构，key是周期
+        returns_df = pd.read_parquet(quantile_returns_file)
+        if returns_df is None:
+            logger.warning(f"    > 在成果文件中未找到周期 {target_period} 的分层收益数据。")
+            return
+
+        # --- 2. 数据处理 ---
+        # 计算累计净值
+        net_worth_df = (1 + returns_df).cumprod()
+
+        # --- 3. 绘图 ---
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # a. 绘制多空组合 (灰色填充区域)
+        if 'TopMinusBottom' in net_worth_df.columns:
+            ax.fill_between(net_worth_df.index, 1, net_worth_df['TopMinusBottom'],
+                            color='darkgray', alpha=0.5, label=f'多空组合 ({target_period})')
+
+        # b. 绘制各分位数组合净值曲线
+        quantile_cols = [col for col in net_worth_df.columns if col.startswith('Q')]
+        colors = ['lightcoral', 'darkgoldenrod', 'darkkhaki', 'mediumseagreen', 'dodgerblue']  # Q1 to Q5
+        for i, col in enumerate(quantile_cols):
+            ax.plot(net_worth_df.index, net_worth_df[col], color=colors[i % len(colors)],
+                    label=f'{col} ({target_period})')
+
+        # c. 设置图表标题和图例
+        ax.set_title(f"因子 [{factor_name}] 分层累计净值 ({target_period})", fontsize=16)
+        ax.axhline(1, color='black', linestyle='--', linewidth=1)
+        ax.set_ylabel('累计净值')
+        ax.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        fig.autofmt_xdate()
+        report_dir = base_path / 'reports'
+
+        path = report_dir / f"{factor_name}_back_report_quantile_{target_version_path.name}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+
+def _find_target_version_path(config_path, version):
+    if not config_path.is_dir(): return None
+    version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
+    if not version_dirs: return None
+    if version == 'latest':
+        return sorted(version_dirs)[-1]
+    else:
+        path_to_find = config_path / version
+        return path_to_find if path_to_find in version_dirs else None
+
+
+def extrat_day_map_df(folder_path, name_prefix):
+    folder = Path(folder_path)
+    ic_dict = {}
+
+    # 遍历匹配 ic_series_processed_xd.parquet 文件
+    for file in folder.glob(f"{name_prefix}_*d.parquet"):
+        # 用正则提取天数
+        match = re.search(r"ic_series_processed_(\d+)d\.parquet", file.name)
+        if match:
+            days = int(match.group(1))
+            df = pd.read_parquet(file)
+            ic_dict[days] = df
+
+    return ic_dict
