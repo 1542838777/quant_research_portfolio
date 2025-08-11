@@ -23,8 +23,6 @@ from projects._03_factor_selection.config.config_file.load_config_file import _l
 from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL_UNLIMITED, \
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
 
-from projects._03_factor_selection.factor_manager.factor_technical_cal.factor_technical_cal import \
-    calculate_rolling_beta
 from quant_lib.data_loader import DataLoader
 
 # 添加项目根目录到路径
