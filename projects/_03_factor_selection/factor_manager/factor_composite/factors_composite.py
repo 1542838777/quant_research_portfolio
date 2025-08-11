@@ -144,4 +144,4 @@ if __name__ == '__main__':
     #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
     #                                    , target_factor_df= value_composite_df,
     #                                    need_process_factor = False)
-    factor_analyzer.test_factor_entity_service(factor_name,value_composite_df,need_process_factor=False,is_composite_factor = False)
+    factor_analyzer.test_factor_entity_service(factor_name,value_composite_df,need_process_factor=False,is_composite_factor = True)

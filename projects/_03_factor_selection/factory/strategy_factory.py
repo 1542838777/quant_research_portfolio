@@ -223,7 +223,6 @@ class StrategyFactory:
         # 如果提供了selected_factors，加载因子数据
         if factor_data_dict is None:
             factor_data_dict = {}
-            # TODO: 实现从存储中加载因子数据
 
         # 获取因子评分
         factor_scores = {}

@@ -551,15 +551,12 @@ class VisualizationManager:
         o2c_version_path = _find_target_version_path(base_path / 'o2c', run_version)
 
         if not c2c_version_path or not o2c_version_path:
-            logger.warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，无法生成稳健性报告。")
-            return ""
-
+            raise ValueError(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，无法生成稳健性报告。")
         try:
             stats_c2c = load_json_with_numpy(c2c_version_path / 'summary_stats.json')
             stats_o2c = load_json_with_numpy(o2c_version_path / 'summary_stats.json')
         except FileNotFoundError:
-            logger.warning(f"因子 {factor_name} 的 summary_stats.json 文件缺失，无法生成稳健性报告。")
-            return ""
+            raise ValueError(f"因子 {factor_name} 的 summary_stats.json 文件缺失，无法生成稳健性报告。")
 
         # --- 【核心修正】从新的数据结构中，提取【processed】部分的统计结果 ---
         ic_stats_c2c = stats_c2c.get('ic_analysis_processed', {})
@@ -696,6 +693,7 @@ class VisualizationManager:
         【最终合并版】生成一个包含IC分析和分层回测的2x1标准分析面板。
         """
         logger.info(f"为因子 {factor_name} 生成标准分析面板...")
+        target_period = self._find_best_period_by_rank_on(run_version, factor_name, results_path, backtest_base_on_index)
 
         # --- 1. 定位并加载所有需要的数据 ---
         try:
@@ -710,12 +708,11 @@ class VisualizationManager:
             quantile_returns_dict = extrat_day_map_df(target_version_path, "quantile_returns_processed")
 
             if not ic_dict or not quantile_returns_dict:
-                logger.warning("IC或分层收益数据加载不完整，无法生成分析面板。")
-                return
+                raise ValueError("IC或分层收益数据加载不完整，无法生成分析面板。")
 
         except Exception as e:
-            logger.error(f"加载数据时出错: {e}")
-            return
+            raise ValueError(f"加载数据时出错: {e}")
+
 
         # --- 2. 创建一个 1x2 的子图画布 ---
         # figsize宽度设大一些，以容纳两个子图
@@ -850,176 +847,150 @@ class VisualizationManager:
         ax.legend(lines + lines2, labels + labels2, loc='upper left', prop=cn_font)
 
         ax.tick_params(axis='x', rotation=30)
-    def plot_ic_report(self,
-                       backtest_base_on_index: str,
-                       factor_name: str,
-                       results_path: str,
-                       default_config: str = 'o2c',
-                       run_version: str = 'latest',
-                       target_period: str = '21d') -> None:
-        """
-        【最终修正版】根据字典式数据结构，绘制指定因子的IC序列与多周期累计IC图。
-        """
-        logger.info(f"  > 正在为因子 {factor_name} 绘制专项IC报告 (字典数据源)...")
 
-        # --- 1. 定位并加载数据 ---
+    def plot_attribution_panel(self,
+                               backtest_base_on_index: str,
+        factor_name: str,
+        results_path: str,
+        default_config: str = 'o2c',
+        run_version: str = 'latest',
+        target_period: str = 'daily') -> None:
+        """
+        【最终重构版】生成一个并排对比“原始因子”与“纯净因子”分层表现的分析面板。
+        """
+        logger.info(f"为因子 {factor_name} 生成因子归因分析面板...")
+
+        # --- 1. 定位并加载所有需要的数据 ---
         try:
+            # ... (这部分代码保持不变) ...
             base_path = Path(results_path) / backtest_base_on_index / factor_name
             config_path = base_path / default_config
             target_version_path = _find_target_version_path(config_path, run_version)
-            if not target_version_path:
-                return
+            if not target_version_path: return
 
-            # 调用你的函数，现在我们知道 ic_dict 是一个 {天数: DataFrame} 的字典
-            ic_dict = extrat_day_map_df(target_version_path, "ic_series_processed")
-            if not ic_dict:
-                logger.warning(f"    > extrat_day_map_df 未返回任何数据，无法绘制IC报告。")
-                return
+            raw_returns_file = target_version_path / 'q_daily_returns_df_raw.parquet'
+            if not raw_returns_file.exists():
+                raise ValueError(f"未找到原始因子收益文件: {raw_returns_file}，无法生成归因面板。")
+            returns_df_raw = pd.read_parquet(raw_returns_file)
+
+            processed_returns_file = target_version_path / 'q_daily_returns_df_processed.parquet'
+            if not processed_returns_file.exists():
+                raise ValueError(f"未找到纯净因子收益文件: {processed_returns_file}，无法生成归因面板。")
+            returns_df_processed = pd.read_parquet(processed_returns_file)
 
         except Exception as e:
-            logger.error(f"    > 加载或处理IC字典数据时出错: {e}")
+            logger.error(f"加载归因分析数据时出错: {e}")
             return
 
-        # --- 2. 【核心修正】数据准备：从字典到绘图专用DataFrame ---
-        logger.info("    > 正在将IC字典转换为绘图所需的数据格式...")
+        # --- 2. 创建一个 1x2 的子图画布 ---
+        fig, axes = plt.subplots(1, 2, figsize=(25, 8), sharey=True)
 
-        ic_series_list = []
-        cumulative_ic_series_list = []
+        # --- 3. 【核心修改】调用新的、更简洁的绘图辅助函数 ---
+        # a) 在左侧子图绘制原始因子表现
+        self._plot_daily_quantile_subplot(
+            ax=axes[0],
+            returns_df=returns_df_raw,
+            title="A. 原始因子 (Raw Factor) 分层回测",
+            period_label=target_period  # target_period 现在只作为图例的标签
+        )
 
-        # 按周期天数排序，以保证图例和颜色顺序的稳定
-        sorted_days = sorted(ic_dict.keys())
+        # b) 在右侧子图绘制纯净因子表现
+        self._plot_daily_quantile_subplot(
+            ax=axes[1],
+            returns_df=returns_df_processed,
+            title="B. 纯净因子 (Processed Factor) 分层回测",
+            period_label=target_period
+        )
 
-        for days in sorted_days:
-            df = ic_dict[days]
-            # 提取单列IC序列
-            ic_series = df.iloc[:, 0]
+        # --- 4. 设置整个图表的总标题和布局 ---
+        fig.suptitle(f"因子 [{factor_name}] 价值归因分析: 处理前 vs. 处理后", fontsize=20, y=1.02,
+                     fontproperties=cn_font)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-            # 1. 准备IC序列DataFrame
-            ic_series.name = f'ic_{days}d'
-            ic_series_list.append(ic_series)
+        # --- 5. 保存整个图表面板 ---
+        # ... (保存逻辑保持不变) ...
+        try:
+            report_dir = base_path / 'reports'
+            path = report_dir / f"{factor_name}_attribution_panel_{target_version_path.name}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(path, dpi=200, bbox_inches='tight')
+            logger.info(f"    > 因子归因分析面板已保存至: {path}")
+        except Exception as e:
+            logger.error(f"    > 保存归因分析面板时出错: {e}")
+        finally:
+            plt.close(fig)
 
-            # 2. 准备累计IC序列DataFrame
-            cumulative_ic = ic_series.cumsum()
-            cumulative_ic.name = f'cumulative_ic_{days}d'
-            cumulative_ic_series_list.append(cumulative_ic)
 
-        # 将序列列表合并成两个“宽表”DataFrame，便于绘图
-        ic_series_df = pd.concat(ic_series_list, axis=1)
-        cumulative_ic_df = pd.concat(cumulative_ic_series_list, axis=1)
-
-        # --- 3. 开始绘图 ---
-        logger.info("    > 开始绘制IC图表...")
-        fig, ax1 = plt.subplots(figsize=(16, 8))
-
-        # a. 在左轴 (ax1) 绘制IC序列柱状图
-        ic_series_col = f'ic_{target_period}'
-        if ic_series_col in ic_series_df.columns:
-            ax1.bar(ic_series_df.index, ic_series_df[ic_series_col],
-                    color='cornflowerblue', alpha=0.8,
-                    label=f'IC序列 ({target_period})', width=1.5)
-        else:
-            logger.warning(f"    > 未在数据中找到指定的 target_period: {target_period}，无法绘制柱状图。")
-
-        ax1.set_ylabel('IC值 (单期)', color='royalblue', fontsize=12)
-        ax1.tick_params(axis='y', labelcolor='royalblue')
-        ax1.axhline(0, color='black', linestyle='--', linewidth=1)
-        ax1.grid(True, axis='y', linestyle='--', alpha=0.5)
-
-        # b. 创建共享X轴的右轴 (ax2)，用于绘制累计IC曲线
-        ax2 = ax1.twinx()
-
-        color_cycle = ['lightcoral', 'darkgoldenrod', 'forestgreen', 'darkcyan', 'mediumpurple', 'sandybrown']
-
-        for i, days in enumerate(sorted_days):
-            period_str = f'{days}d'
-            cum_ic_col = f'cumulative_ic_{period_str}'
-            ax2.plot(cumulative_ic_df.index, cumulative_ic_df[cum_ic_col],
-                     color=color_cycle[i % len(color_cycle)],
-                     label=f'累计IC ({period_str})',
-                     linewidth=2.5)
-
-        ax2.set_ylabel('累计IC', fontsize=12)
-
-        # c. 设置图表整体样式
-        fig.suptitle(f"A. 因子IC序列与累计IC (有效性)", fontsize=18, y=0.95)
-
-        lines, labels = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax2.legend(lines + lines2, labels + labels2, loc='upper left')
-
-        fig.autofmt_xdate()
-        report_dir = base_path / 'reports'
-
-        path = report_dir / f"{factor_name}_back_report_ic_{target_version_path.name}.png"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(path, dpi=200, bbox_inches='tight')
-        plt.close(fig)
-
-    def plot_quantile_report(self,
-                             backtest_base_on_index: str,
-                             factor_name: str,
-                             results_path: str,
-                             default_config: str = 'o2c',
-                             run_version: str = 'latest',
-                             target_period: str = '21d') -> None:
+    # ==========================================================================================
+    #  二、新的私有绘图辅助函数 (Private Helper Method)
+    # ==========================================================================================
+    def _plot_daily_quantile_subplot(self, ax, returns_df, title, period_label):
         """
-        【新增】绘制指定周期的分层累计净值图（复现图B）。
+        【新增-绘图专用】在指定的子图(ax)上，根据给定的每日收益DataFrame绘制分层回测图。
+        这个函数更纯粹，直接接收DataFrame，逻辑清晰。
         """
-        logger.info(f"  > 正在为因子 {factor_name} 绘制专项分层回测报告...")
-
-        # --- 1. 定位并加载数据 ---
-        base_path = Path(results_path) / backtest_base_on_index / factor_name
-        config_path = base_path / default_config
-        target_version_path = _find_target_version_path(config_path, run_version)
-        if not target_version_path:
-            logger.warning(f"    > 未找到因子 {factor_name} 的有效成果版本，跳过分层报告绘制。")
+        if returns_df is None or returns_df.empty:
+            ax.text(0.5, 0.5, "数据为空", horizontalalignment='center', verticalalignment='center',
+                    fontproperties=cn_font)
             return
 
-        # 加载核心的分层收益率时间序列数据
-        quantile_returns_file = target_version_path / 'quantile_returns_processed_21d.parquet'
-        if not quantile_returns_file.exists():
-            logger.warning(f"    > {quantile_returns_file} 不存在，无法绘制分层报告。")
-            return
-
-        # Parquet文件通常需要指定key来读取，或者它本身就是一个DataFrame
-        # 这里假设它是一个字典结构，key是周期
-        returns_df = pd.read_parquet(quantile_returns_file)
-        if returns_df is None:
-            logger.warning(f"    > 在成果文件中未找到周期 {target_period} 的分层收益数据。")
-            return
-
-        # --- 2. 数据处理 ---
-        # 计算累计净值
+        # --- 数据处理：计算累计净值 ---
         net_worth_df = (1 + returns_df).cumprod()
 
-        # --- 3. 绘图 ---
-        fig, ax = plt.subplots(figsize=(12, 6))
+        # --- 绘图逻辑 (与之前相同，但数据源更直接) ---
+        ax_twin = ax.twinx()
 
-        # a. 绘制多空组合 (灰色填充区域)
-        if 'TopMinusBottom' in net_worth_df.columns:
-            ax.fill_between(net_worth_df.index, 1, net_worth_df['TopMinusBottom'],
-                            color='darkgray', alpha=0.5, label=f'多空组合 ({target_period})')
+        if 'TopMinusBottom' in returns_df.columns:
+            tmb_net_worth = (1 + returns_df['TopMinusBottom']).cumprod()
+            ax_twin.fill_between(tmb_net_worth.index, 1, tmb_net_worth, color='lightgray', alpha=0.8,
+                                 label=f'多空组合 ({period_label})')
 
-        # b. 绘制各分位数组合净值曲线
-        quantile_cols = [col for col in net_worth_df.columns if col.startswith('Q')]
-        colors = ['lightcoral', 'darkgoldenrod', 'darkkhaki', 'mediumseagreen', 'dodgerblue']  # Q1 to Q5
+        quantile_cols = sorted([col for col in net_worth_df.columns if col.startswith('Q')])
+        colors = ['lightcoral', 'darkgoldenrod', 'darkkhaki', 'mediumseagreen', 'dodgerblue']
         for i, col in enumerate(quantile_cols):
-            ax.plot(net_worth_df.index, net_worth_df[col], color=colors[i % len(colors)],
-                    label=f'{col} ({target_period})')
+            ax.plot(net_worth_df.index, net_worth_df[col], color=colors[i % len(colors)], label=f'{col} ({period_label})',
+                    linewidth=2)
 
-        # c. 设置图表标题和图例
-        ax.set_title(f"因子 [{factor_name}] 分层累计净值 ({target_period})", fontsize=16)
-        ax.axhline(1, color='black', linestyle='--', linewidth=1)
-        ax.set_ylabel('累计净值')
-        ax.legend()
-        plt.grid(True, linestyle='--', alpha=0.7)
-        fig.autofmt_xdate()
-        report_dir = base_path / 'reports'
+        # --- 设置样式 ---
+        ax.set_title(title, fontsize=16, fontproperties=cn_font)
+        ax.set_ylabel('分层累计净值', fontproperties=cn_font, color='darkslategray')
+        ax.tick_params(axis='y', labelcolor='darkslategray')
+        ax.axhline(1, color='black', linestyle='--', linewidth=0.8)
+        ax.grid(True, linestyle='--', alpha=0.7)
 
-        path = report_dir / f"{factor_name}_back_report_quantile_{target_version_path.name}.png"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(path, dpi=200, bbox_inches='tight')
-        plt.close(fig)
+        ax_twin.set_ylabel('多空组合累计净值', fontproperties=cn_font, color='gray')
+        ax_twin.tick_params(axis='y', labelcolor='gray')
+
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax_twin.get_legend_handles_labels()
+        ax.legend(lines + lines2, labels + labels2, loc='upper left', prop=cn_font)
+        ax.tick_params(axis='x', rotation=30)
+
+    def _find_best_period_by_rank_on(self,run_version,factor_name,results_path,backtest_base_on_index):
+        # --- 1. 定位并加载 C2C 和 O2C 两份【指定版本】的数据 ---
+        base_path = Path(results_path) / backtest_base_on_index / factor_name
+
+        c2c_version_path = _find_target_version_path(base_path / 'c2c', run_version)
+        o2c_version_path = _find_target_version_path(base_path / 'o2c', run_version)
+
+        if not c2c_version_path or not o2c_version_path:
+            raise ValueError(
+                f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，无法生成稳健性报告。")
+        try:
+            stats_c2c = load_json_with_numpy(c2c_version_path / 'summary_stats.json')
+            stats_o2c = load_json_with_numpy(o2c_version_path / 'summary_stats.json')
+        except FileNotFoundError:
+            raise ValueError(f"因子 {factor_name} 的 summary_stats.json 文件缺失，无法生成稳健性报告。")
+
+        # --- 【核心修正】从新的数据结构中，提取【processed】部分的统计结果 ---
+        ic_stats_c2c = stats_c2c.get('ic_analysis_processed', {})
+        ic_stats_o2c = stats_o2c.get('ic_analysis_processed', {})
+        q_stats_c2c = stats_c2c.get('quantile_backtest_processed', {})
+        q_stats_o2c = stats_o2c.get('quantile_backtest_processed', {})
+        fm_stats_o2c = stats_o2c.get('fama_macbeth', {})  # F-M通常只在processed上跑
+
+        # 确定最佳周期 (基于更严格的O2C的processed结果)
+        return   self._find_best_period_by_rank(ic_stats_o2c, q_stats_o2c, fm_stats_o2c)
 
 
 def _find_target_version_path(config_path, version):

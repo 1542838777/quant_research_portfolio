@@ -35,7 +35,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from quant_lib.evaluation import (
     calculate_ic,
     calculate_quantile_returns, fama_macbeth, calculate_turnover,
-    calcu_forward_returns_close_close, calcu_forward_returns_open_close, quantile_stats_result
+    calcu_forward_returns_close_close, calcu_forward_returns_open_close, quantile_stats_result,
+    calculate_quantile_daily_returns
 
 )
 
@@ -296,6 +297,7 @@ class FactorAnalyzer:
         Optional[Dict[str, pd.DataFrame]],
         Optional[Dict[str, pd.DataFrame]],
         Optional[Dict[str, pd.DataFrame]],
+        Optional[ pd.DataFrame],
         Optional[Dict[str, pd.DataFrame]],
         Optional[Dict[str, pd.DataFrame]],
         Optional[Dict[str, pd.DataFrame]],
@@ -331,13 +333,13 @@ class FactorAnalyzer:
         # 数据准备
         close_df, open_df, circ_mv_df, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name)
 
-        ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.core_three_test(
+        ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.core_three_test(
             factor_df, target_factor_name, open_df, returns_calculator, close_df,
             final_neutral_dfs, circ_mv_df, style_factor_dfs, do_ic_test,
             do_turnover_test,
             do_quantile_test, do_fama_test, do_style_correlation_test)
 
-        return factor_df, ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
+        return factor_df, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
     # ok
     def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
@@ -913,7 +915,7 @@ class FactorAnalyzer:
            return  self.test_factor_entity_service_for_composite_factor(factor_name,factor_df,test_configurations,start_date,end_date,stock_index)
         for calculator_name, func in test_configurations.items():
             # 执行测试
-            raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
+            raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw,q_st_raw, _, _, _, _, _ = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,
                 returns_calculator=func,
@@ -924,14 +926,14 @@ class FactorAnalyzer:
                 do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
                 do_style_correlation_test=False
             )
-            proceessed_df, ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
+            proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,
                 returns_calculator=func,
                 preprocess_method="standard",
                 start_date=start_date,
                 end_date=end_date,
-                need_process_factor=True,  # todo 注意该回去
+                need_process_factor=True,
                 do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
                 do_style_correlation_test=True
             )
@@ -942,10 +944,15 @@ class FactorAnalyzer:
                 "ic_stats_periods_dict_raw": ic_st_raw,
                 "ic_series_periods_dict_processed": ic_s,
                 "ic_stats_periods_dict_processed": ic_st,
+
                 "quantile_returns_series_periods_dict_raw": q_r_raw,
                 "quantile_stats_periods_dict_raw": q_st_raw,
+                "q_daily_returns_df_raw": q_daily_returns_df_raw,
+
                 "quantile_returns_series_periods_dict_processed": q_r,
                 "quantile_stats_periods_dict_processed": q_st,
+                "q_daily_returns_df_processed": q_daily_returns_df_proc,
+
                 "fm_returns_series_periods_dict": fm_returns_series_dict,
                 "fm_stat_results_periods_dict": fm_summary_dict,
                 "turnover_stats_periods_dict": turnover,
@@ -1048,7 +1055,7 @@ class FactorAnalyzer:
                         prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict,
                         do_ic_test, do_turnover_test, do_quantile_test, do_fama_test, do_style_correlation_test
                         ) -> tuple[
-        dict[str, Series] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,
+        dict[str, Series] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,pd.DataFrame | None,
         dict[Any, Any] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,
         dict[str, float] | None]:
 
@@ -1062,17 +1069,15 @@ class FactorAnalyzer:
         # 2. 分层回测
         logger.info("\t3.  正式测试 之 分层回测...")
         if do_quantile_test:
+            # 这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
             q_r, q_st = self.test_quantile_backtest(
                 factor_df, returns_calculator, close_df, target_factor_name)
 
         if do_turnover_test:
             turnover = self.test_turnover_result(factor_df)
 
-        # primary_period_key = list(quantile_returns_series_periods_dict.keys())[-1]
-        # # 这是中性化之后的分组收益，也就是纯净的单纯因子自己带来的收益。至于在真实的市场上，禁不禁得起考验，这个无法看出。需要在原始因子（未除杂/中性化），然后分组查看收益才行！
-        # quantile_daily_returns_for_plot_dict = calculate_quantile_daily_returns(target_factor_processed,returns_calculator, close_df, 5,
-        #                                                                         primary_period_key)
-
+        q_daily_returns_df = calculate_quantile_daily_returns(factor_df,returns_calculator,  5
+                                                                                )
         # 3. Fama-MacBeth回归
         if do_fama_test:
             logger.info("\t4.  正式测试 之 Fama-MacBeth回归...")
@@ -1089,7 +1094,7 @@ class FactorAnalyzer:
                 factor_df,
                 style_factors_dict
             )
-        return ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
+        return ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
     def landing_for_core_three_analyzer_result(self, target_factor_df, target_factor_name, category, preprocess_method,
                                                ic_series_periods_dict, ic_stats_periods_dict,
@@ -1318,7 +1323,7 @@ class FactorAnalyzer:
     def test_factor_entity_service_for_composite_factor(self, factor_name, factor_df,test_configurations,start_date,end_date,stock_index):
         all_configs_results = {}
         for calculator_name, func in test_configurations.items():
-            proceessed_df, ic_s, ic_st, q_r, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
+            proceessed_df, ic_s, ic_st, q_r,q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,
                 returns_calculator=func,
@@ -1334,6 +1339,7 @@ class FactorAnalyzer:
                 "ic_series_periods_dict_processed": ic_s,
                 "ic_stats_periods_dict_processed": ic_st,
                 "quantile_returns_series_periods_dict_processed": q_r,
+                "q_daily_returns_df_processed": q_daily_returns_df_proc,
                 "quantile_stats_periods_dict_processed": q_st,
                 "fm_returns_series_periods_dict": fm_returns_series_dict,
                 "fm_stat_results_periods_dict": fm_summary_dict,

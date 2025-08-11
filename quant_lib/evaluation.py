@@ -740,10 +740,8 @@ logger = logging.getLogger(__name__)
 def calculate_quantile_daily_returns(
         factor_df: pd.DataFrame,
         returns_calculator,  # 具体化Callable
-        price_df: pd.DataFrame,
-        n_quantiles,
-        primary_period_key
-) -> Dict[str, pd.DataFrame]:
+        n_quantiles
+) ->   pd.DataFrame:
     """
     【V3 最终版】计算因子分层组合的每日收益率。
     1. 修正了函数签名，防止因参数位置错误导致的TypeError。
@@ -769,8 +767,7 @@ def calculate_quantile_daily_returns(
     merged_df = pd.concat([factor_long, returns_1d_long], axis=1).dropna()
 
     if merged_df.empty:
-        logger.warning("  > 因子和单日收益数据没有重叠，无法计算分层收益。")
-        return {primary_period_key: pd.DataFrame()}
+        raise ValueError("  > 因子和单日收益数据没有重叠，无法计算分层收益。")
 
     # 3. 确保因子值为数值类型
     merged_df['factor'] = pd.to_numeric(merged_df['factor'], errors='coerce')
@@ -801,4 +798,4 @@ def calculate_quantile_daily_returns(
 
     # 8. 返回结果
     # 我们用一个固定的key，比如 '21d'，让绘图函数能找到它
-    return {primary_period_key: quantile_returns_wide.sort_index(axis=1)}
+    return  quantile_returns_wide.sort_index(axis=1)

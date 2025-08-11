@@ -87,8 +87,14 @@ class FactorSelector:
                 backtest_base_on_index=TARGET_STOCK_POOL,
                 factor_name=factor_name,
                 results_path=RESULTS_PATH,
-                default_config='c2c',  # 或 'c2c'
-                target_period='21d'  # 指定要展示哪个周期的分层结果
+                default_config='c2c'   # 或 'c2c'
+            )
+            # 调用新的归因分析面板函数
+            self.visualizationManager.plot_attribution_panel(
+                backtest_base_on_index=TARGET_STOCK_POOL,
+                factor_name=factor_name,
+                results_path=RESULTS_PATH,
+                default_config='o2c'
             )
 
     def build_leaderboard(self,
@@ -158,7 +164,8 @@ class FactorSelector:
 
             c2c_fm = stats_c2c.get('fama_macbeth', {}).get(target_period, {})
             o2c_fm = stats_o2c.get('fama_macbeth', {}).get(target_period, {})
-
+            if (len(o2c_fm) ==0) and (len(c2c_ic) ==0) or(len(c2c_q) ==0) :
+                continue
             # 5. 合并为一行宽表数据
             row = {
                 'factor_name': factor_name,
@@ -516,5 +523,5 @@ def load_fm_returns_matrix(
 
 if __name__ == '__main__':
     fase = FactorSelector()
-    fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
+    fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='5d')
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')

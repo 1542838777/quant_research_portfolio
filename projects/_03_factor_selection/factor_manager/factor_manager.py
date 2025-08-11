@@ -81,7 +81,7 @@ class FactorResultsManager:
             'quantile_backtest_processed': quantile_stats_periods_dict_processed,
             'fama_macbeth': fm_stat_results_periods_dict,
             'turnover': turnover_stats_periods_dict,
-            'style_correlation':style_correlation_dict # todo 完善
+            'style_correlation':style_correlation_dict
         }
         with open(output_path / 'summary_stats.json', 'w') as f:
             # 使用自定义的Encoder来处理numpy类型
@@ -92,6 +92,12 @@ class FactorResultsManager:
 
         ic_series_periods_dict_raw = results.get("ic_series_periods_dict_raw", {})
         ic_series_periods_dict_processed = results.get("ic_series_periods_dict_processed", {})
+
+
+
+        q_daily_returns_df_raw = results.get("q_daily_returns_df_raw", pd.DataFrame())
+        q_daily_returns_df_processed = results.get("q_daily_returns_df_processed", pd.DataFrame())
+
         quantile_returns_series_periods_dict_raw = results.get("quantile_returns_series_periods_dict_raw", {})
         quantile_returns_series_periods_dict_processed = results.get("quantile_returns_series_periods_dict_processed", {})
         fm_returns_series_periods_dict = results.get("fm_returns_series_periods_dict", {})
@@ -106,6 +112,9 @@ class FactorResultsManager:
 
         for period, df in quantile_returns_series_periods_dict_raw.items():
             df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
+
+        q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
+        q_daily_returns_df_processed.to_parquet(output_path / f'q_daily_returns_df_processed.parquet')
 
         for period, df in quantile_returns_series_periods_dict_processed.items():
             df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
