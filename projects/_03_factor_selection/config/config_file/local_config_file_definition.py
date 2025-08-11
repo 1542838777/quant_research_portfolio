@@ -62,6 +62,47 @@ class FullQuantConfig:
 
 
 # ==============================================================================
+# 【新增】预设因子评价配置模板 (Evaluation Presets)
+# ==============================================================================
+
+# 模板1: 快速测试设置 (Fast/Debug Setting)
+# 只跑一个核心周期，节省时间
+EVAL_SETTING_FAST = {
+    "n_groups": 5,
+    "forward_periods": [21], # 只跑一个周期
+    "returns_calculator": ['o2c'], # 只用一种计算方式
+    # style_factor_list 可以保持完整，因为它不影响计算速度
+    "style_factor_list": [
+    ]
+}
+
+# 模板2: 标准研究设置 (Standard Research Setting)
+# 覆盖短、中、长周期，适用于大多数正式研究
+EVAL_SETTING_STANDARD = {
+    "n_groups": 5,
+    "forward_periods": [5, 21, 60], # 短、中、长
+    "returns_calculator": ['c2c', 'o2c'], # 对比两种方式
+    "style_factor_list": [
+        'ln_circ_mv', 'bp_ratio', 'sp_ttm', 'ep_ttm', 'net_profit_growth_ttm',
+        'revenue_growth_ttm', 'roe_ttm', 'gross_margin_ttm', 'volatility_90d',
+        'beta_120d', 'reversal_21d', 'ln_turnover_value_90d'
+    ]
+}
+
+# 模板3: 全面批量测试设置 (Massive Test Setting)
+# 最全面的配置，用于最终的、彻底的因子有效性检验
+EVAL_SETTING_FULL = {
+    "n_groups": 5,
+    "quantiles": 5, # 兼容旧命名
+    "forward_periods": [1, 5, 10, 21, 40, 60, 120],
+    "returns_calculator": ['c2c', 'o2c'],
+    "style_factor_list": [
+        'ln_circ_mv', 'bp_ratio', 'sp_ttm', 'ep_ttm', 'net_profit_growth_ttm',
+        'revenue_growth_ttm', 'roe_ttm', 'gross_margin_ttm', 'volatility_90d',
+        'beta_120d', 'reversal_21d', 'ln_turnover_value_90d'
+    ]
+}
+# ==============================================================================
 # 预设股票池模板 (Stock Pool Presets)
 # 你可以在这里定义所有常用的股票池配置
 # ==============================================================================

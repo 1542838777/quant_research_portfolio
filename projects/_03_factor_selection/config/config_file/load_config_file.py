@@ -9,7 +9,8 @@ import yaml
 from projects._03_factor_selection.config.config_file.local_config_file_definition import \
     pool_for_massive_test_CSI800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
-    CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile
+    CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST
+from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20250424','20250710')
 fast_periods_2 = ('20240301','20250710')
@@ -24,6 +25,7 @@ massive_test_mode = {
         **pool_for_massive_test_MICROSTRUCTURE_profile
     },
     'period': longest_periods,
+    'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
     'desc': '海量测试环境-用了沪深800 和 全A 股票池 （这是最真实的环境'
 }
 
@@ -42,6 +44,7 @@ fast_mode = {
         **CSI300_none_FFF_most_basic_profile
     },
     'period':fast_periods,
+    'evaluation': EVAL_SETTING_FAST,  # <--- 【新增】
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
 
@@ -120,7 +123,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =东北证券_CSI1000_more_filter_mode
+trans_pram =fast_mode
 is_debug = True
 
 
@@ -165,6 +168,13 @@ def _load_local_config(config_path: str) -> Dict[str, Any]:
     config['backtest']['end_date'] =end
 
     config['stock_pool_profiles']=dynamic_config['stock_pool_profiles']
+
+    # --- 【核心新增】动态更新 evaluation 配置 ---
+    if 'evaluation' in trans_pram:
+        logger.info("  > 发现模式中的 [evaluation] 配置，正在应用...")
+        # 使用 .update() 可以灵活地覆盖YAML中的部分或全部设置
+        # 比如模式中只定义了 forward_periods，则只会更新它，n_groups等会保持YAML中的默认值
+        config['evaluation'].update(trans_pram['evaluation'])
     return config
 
 def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子测试"):

@@ -141,10 +141,27 @@ evaluation:
   quantiles: 5  # 分层回测的分组数
   forward_periods: [ 5,21]
 #  forward_periods: [1, 5, 10, 21, 40, 60, 120]
-  ic_threshold: 0.02  # IC均值阈值
-  ir_threshold: 0.3  # IR阈值
-  returns_calculator: ['c2c','o2c']
 
+  returns_calculator: ['c2c','o2c']
+  style_factor_list: [
+            # 规模因子 (必须对数化)
+            'small_cap',
+            # 价值因子 (建议用倒数)
+            'bm_ratio', 'sp_ratio', 'ep_ratio',
+            # 成长因子
+            'net_profit_growth_ttm',
+            'revenue_growth_ttm',
+            # 质量因子
+            'roe_ttm',
+            'gross_margin_ttm',
+            # 风险/波动因子
+            'volatility_90d',
+            'beta',
+            # 动量/反转因子
+            'reversal_21d',  # A股常用短期反转
+            # 流动性因子
+            'ln_turnover_value_90d'
+        ]
 
 # 因子选择设置
 factor_selection:
