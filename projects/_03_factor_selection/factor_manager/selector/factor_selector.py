@@ -55,13 +55,35 @@ class FactorSelector:
             self.visualizationManager.plot_unified_factor_report(
                 backtest_base_on_index=TARGET_STOCK_POOL,
                 factor_name=factor_name,
-                results_path=RESULTS_PATH,
-                default_config='c2c',  # 或 'c2c'
-                target_period='21d'  # 指定柱状图和报告标题的周期
+                results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
+                # 你可以决定主报告默认使用C2C还是O2C的结果
+                default_config='o2c'
             )
 
+            # 4.2 生成稳健性对比报告 (2x2 C2C vs O2C)
+            self.visualizationManager.plot_robustness_report(
+                backtest_base_on_index=TARGET_STOCK_POOL,
+                factor_name=factor_name,
+                results_path=RESULTS_PATH
+            )
+            #
+            # # 4.1 调用新的IC报告函数
+            # self.visualizationManager.plot_ic_report(
+            #     backtest_base_on_index=TARGET_STOCK_POOL,
+            #     factor_name=factor_name,
+            #     results_path=RESULTS_PATH,
+            #     default_config='c2c',  # 或 'c2c'
+            # )
+            #
+            # # 4.2 调用新的分层净值报告函数
+            # self.visualizationManager.plot_quantile_report(
+            #     backtest_base_on_index=TARGET_STOCK_POOL,
+            #     factor_name=factor_name,
+            #     results_path=RESULTS_PATH,
+            #     default_config='c2c',  # 或 'c2c'
+            #     target_period='21d')  # 指定要展示哪个周期的分层结果
             # 4.2 调用新的分层净值报告函数
-            self.visualizationManager.plot_quantile_report(
+            self.visualizationManager.plot_ic_quantile_panel(
                 backtest_base_on_index=TARGET_STOCK_POOL,
                 factor_name=factor_name,
                 results_path=RESULTS_PATH,
@@ -494,5 +516,5 @@ def load_fm_returns_matrix(
 
 if __name__ == '__main__':
     fase = FactorSelector()
-    fase.run_factor_analysis(TARGET_STOCK_POOL='000300.SH', TARGET_PERIOD='21d')
+    fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')

@@ -15,7 +15,8 @@ fast_periods = ('20250224','20250710')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
 longest_periods = ('20180701','20250710')
-# RUN_MODE = 'for_fast_test'
+
+
 massive_test_mode = {
     'mode': 'massive_test',
     'pools': {
@@ -103,8 +104,39 @@ def check_backtest_periods(start_date, end_date):
     if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):
         raise ValueError("回测时间太短")
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 trans_pram = fast_mode
 is_debug = True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def _load_local_config(config_path: str) -> Dict[str, Any]:
     # confirm_production_mode(massive_test_mode)

@@ -685,6 +685,171 @@ class VisualizationManager:
 
         return best_period
 
+    def plot_ic_quantile_panel(self,
+                               backtest_base_on_index: str,
+                               factor_name: str,
+                               results_path: str,
+                               default_config: str = 'o2c',
+                               run_version: str = 'latest',
+                               target_period: str = '21d') -> None:
+        """
+        【最终合并版】生成一个包含IC分析和分层回测的2x1标准分析面板。
+        """
+        logger.info(f"为因子 {factor_name} 生成标准分析面板...")
+
+        # --- 1. 定位并加载所有需要的数据 ---
+        try:
+            base_path = Path(results_path) / backtest_base_on_index / factor_name
+            config_path = base_path / default_config
+            target_version_path = _find_target_version_path(config_path, run_version)
+            if not target_version_path:
+                return
+
+            # 一次性加载IC和分层回测数据
+            ic_dict = extrat_day_map_df(target_version_path, "ic_series_processed")
+            quantile_returns_dict = extrat_day_map_df(target_version_path, "quantile_returns_processed")
+
+            if not ic_dict or not quantile_returns_dict:
+                logger.warning("IC或分层收益数据加载不完整，无法生成分析面板。")
+                return
+
+        except Exception as e:
+            logger.error(f"加载数据时出错: {e}")
+            return
+
+        # --- 2. 创建一个 1x2 的子图画布 ---
+        # figsize宽度设大一些，以容纳两个子图
+        fig, axes = plt.subplots(1, 2, figsize=(25, 8))
+
+        # --- 3. 在不同的子图上调用各自的绘图辅助函数 ---
+        self._plot_ic_subplot(axes[0], ic_dict, target_period)
+        self._plot_quantile_subplot(axes[1], quantile_returns_dict, target_period, factor_name)
+
+        # --- 4. 设置整个图表的总标题和布局 ---
+        fig.suptitle(f"因子 [{factor_name}] 核心分析面板 ({default_config.upper()})", fontsize=20, y=1.02,
+                     fontproperties=cn_font)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])  # 调整布局，防止标题重叠
+
+        # --- 5. 保存整个图表面板 ---
+        try:
+            report_dir = base_path / 'reports'
+            path = report_dir / f"{factor_name}_analysis_panel_{target_version_path.name}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(path, dpi=200, bbox_inches='tight')
+            logger.info(f"    > 分析面板已保存至: {path}")
+        except Exception as e:
+            logger.error(f"    > 保存分析面板图片时出错: {e}")
+        finally:
+            plt.close(fig)
+
+    # ==========================================================================================
+    #  二、私有绘图辅助函数 (Private Helper Methods)
+    # ==========================================================================================
+    def _plot_ic_subplot(self, ax, ic_dict, target_period):
+        """【私有】在指定的子图(ax)上绘制IC分析图。"""
+
+        # --- 数据准备 ---
+        ic_series_list, cumulative_ic_series_list = [], []
+        sorted_days = sorted(ic_dict.keys())
+
+        for days in sorted_days:
+            df = ic_dict[days]
+            ic_series = df.iloc[:, 0]
+            ic_series.name = f'ic_{days}d'
+            ic_series_list.append(ic_series)
+
+            cumulative_ic = ic_series.cumsum()
+            cumulative_ic.name = f'cumulative_ic_{days}d'
+            cumulative_ic_series_list.append(cumulative_ic)
+
+        ic_series_df = pd.concat(ic_series_list, axis=1)
+        cumulative_ic_df = pd.concat(cumulative_ic_series_list, axis=1)
+
+        # --- 在传入的ax上绘图 ---
+        ic_series_col = f'ic_{target_period}'
+        if ic_series_col in ic_series_df.columns:
+            ax.bar(ic_series_df.index, ic_series_df[ic_series_col], color='cornflowerblue', alpha=0.8,
+                   label=f'IC序列 ({target_period})', width=1.5)
+
+        ax.set_ylabel('IC值 (单期)', color='royalblue', fontsize=12, fontproperties=cn_font)
+        ax.tick_params(axis='y', labelcolor='royalblue')
+        ax.axhline(0, color='black', linestyle='--', linewidth=1)
+        ax.grid(True, axis='y', linestyle='--', alpha=0.5)
+
+        ax_twin = ax.twinx()
+        color_cycle = ['lightcoral', 'darkgoldenrod', 'forestgreen', 'darkcyan', 'mediumpurple', 'sandybrown']
+
+        for i, days in enumerate(sorted_days):
+            period_str = f'{days}d'
+            cum_ic_col = f'cumulative_ic_{period_str}'
+            ax_twin.plot(cumulative_ic_df.index, cumulative_ic_df[cum_ic_col], color=color_cycle[i % len(color_cycle)],
+                         label=f'累计IC ({period_str})', linewidth=2.5)
+
+        ax_twin.set_ylabel('累计IC', fontsize=12, fontproperties=cn_font)
+        ax.set_title("A. 因子IC序列与累计IC (有效性)", fontsize=16, fontproperties=cn_font)
+
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax_twin.get_legend_handles_labels()
+        ax_twin.legend(lines + lines2, labels + labels2, loc='upper left', prop=cn_font)
+        ax.tick_params(axis='x', rotation=30)
+
+    # (确保已导入: re, Path, plt, pd, np, logger)
+
+    def _plot_quantile_subplot(self, ax, quantile_returns_dict, target_period, factor_name):
+        """
+        【双Y轴修正版】在指定的子图(ax)上绘制分层回测图。
+        使用双Y轴分别展示分层组合与多空组合，解决尺度问题。
+        """
+
+        # --- 数据准备 ---
+        try:
+            days_key = int(re.search(r'(\d+)', target_period).group(1))
+            returns_df = quantile_returns_dict.get(days_key)
+            if returns_df is None:
+                ax.text(0.5, 0.5, f"未找到周期 {target_period} 的数据", horizontalalignment='center',
+                        verticalalignment='center', fontproperties=cn_font)
+                return
+        except (AttributeError, ValueError):
+            ax.text(0.5, 0.5, f"目标周期 '{target_period}' 格式错误", horizontalalignment='center',
+                    verticalalignment='center', fontproperties=cn_font)
+            return
+
+        net_worth_df = (1 + returns_df).cumprod()
+
+        # --- 在传入的ax(左轴)上绘制分层组合曲线 ---
+        quantile_cols = sorted([col for col in net_worth_df.columns if col.startswith('Q')])
+        colors = ['lightcoral', 'darkgoldenrod', 'darkkhaki', 'mediumseagreen', 'dodgerblue']
+        for i, col in enumerate(quantile_cols):
+            ax.plot(net_worth_df.index, net_worth_df[col], color=colors[i % len(colors)],
+                    label=f'{col} ({target_period})', linewidth=2)
+
+        ax.set_ylabel('分层累计净值', fontproperties=cn_font, color='darkslategray')  # 为左Y轴设置标签
+        ax.tick_params(axis='y', labelcolor='darkslategray')
+        ax.axhline(1, color='black', linestyle='--', linewidth=0.8)
+        ax.grid(True, linestyle='--', alpha=0.7)
+
+        # --- 【核心修正】创建并使用ax_twin(右轴)绘制多空组合 ---
+        ax_twin = ax.twinx()
+
+        if 'TopMinusBottom' in returns_df.columns:
+            tmb_net_worth = (1 + returns_df['TopMinusBottom']).cumprod()
+            ax_twin.fill_between(tmb_net_worth.index, 1, tmb_net_worth,
+                                 color='lightgray',  # 使用更浅的灰色
+                                 alpha=0.8,
+                                 label=f'多空组合 ({target_period})')
+
+        ax_twin.set_ylabel('多空组合累计净值', fontproperties=cn_font, color='gray')  # 为右Y轴设置标签
+        ax_twin.tick_params(axis='y', labelcolor='gray')
+
+        # --- 设置图表整体样式 ---
+        ax.set_title(f"B. 因子分层累计净值 ({target_period})", fontsize=16, fontproperties=cn_font)
+
+        # 统一处理双Y轴的图例
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax_twin.get_legend_handles_labels()
+        ax.legend(lines + lines2, labels + labels2, loc='upper left', prop=cn_font)
+
+        ax.tick_params(axis='x', rotation=30)
     def plot_ic_report(self,
                        backtest_base_on_index: str,
                        factor_name: str,
@@ -875,7 +1040,9 @@ def extrat_day_map_df(folder_path, name_prefix):
     # 遍历匹配 ic_series_processed_xd.parquet 文件
     for file in folder.glob(f"{name_prefix}_*d.parquet"):
         # 用正则提取天数
-        match = re.search(r"ic_series_processed_(\d+)d\.parquet", file.name)
+        match = re.search(r"quantile_returns_processed_(\d+)d\.parquet", file.name)
+        if name_prefix == 'ic_series_processed':
+            match = re.search(r"ic_series_processed_(\d+)d\.parquet", file.name)
         if match:
             days = int(match.group(1))
             df = pd.read_parquet(file)

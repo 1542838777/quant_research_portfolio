@@ -4,7 +4,7 @@ target_factors_for_evaluation:
   fields:
 #    # === 规模 (Size) ===
 #    - 'market_cap_log'
-    - 'total_revenue_growth_yoy'
+    - 'beta'
 #    - momentum_120d
 #    - reversal_21d
 #    - volatility_90d
