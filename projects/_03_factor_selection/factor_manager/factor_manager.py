@@ -199,7 +199,7 @@ class FactorManager:
 
         logger.info("因子管理器初始化完成")
 
-    # 返回未经过任何shift的数据 来自于raw_df的数据 ，以及自己手动计算的数据比如beta
+    # 返回未经过任何shift的数据 来自于raw_df的数据（比如 close high open） ，或自己手动计算的数据比如（net_profit_growth_yoy ：自己读库自己全全计算）
     def get_factor(self, factor_name: str) -> pd.DataFrame:
         """
         【核心】获取因子的统一接口。
@@ -593,14 +593,16 @@ class FactorManager:
             # category
             category = self.get_style_category(target_factor_name)
             school = self.get_school_code_by_factor_name(target_factor_name)
-            target_data_df = self.get_aligned_raw_factor(target_factor_name)
+            target_data_df = self.get_prepare_factor_for_analysis_aligned(target_factor_name,True)
             technical_df_dict.update({target_factor_name: target_data_df})
             technical_category_dict.update({target_factor_name: category})
             technical_school_dict.update({target_factor_name: school})
 
         return technical_df_dict, technical_category_dict, technical_school_dict
 
-    def get_aligned_raw_factor(self, factor_name):
+    def get_prepare_factor_for_analysis_aligned(self, factor_name,for_test):
+        if not for_test:
+            raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
         df = self.get_factor(factor_name)  ## 这是纯净的、T日的因子
         pool = self.get_stock_pool_by_factor_name(factor_name)  # 拿到之前基于t-1信息 构建的动态股票池
         # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1  方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了

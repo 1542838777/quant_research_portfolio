@@ -93,9 +93,6 @@ class FactorCalculator:
         # 主要字段：n_cashflow_act：经营活动产生的现金流量净额 进行滚动平均
         # 代码大篇幅主要处理脏数据！多来自于ipo，因为股票未上市前，用的不准确的数据！
 
-
-
-
     def _calculate_cfp_ratio(self) -> pd.DataFrame:
         """
             计算现金流市值比 (cfp_ratio = cashflow_ttm / total_mv)

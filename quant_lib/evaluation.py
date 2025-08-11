@@ -2,6 +2,7 @@ import vectorbt as vbt
 from pandas import Series
 
 from quant_lib import logger
+from quant_lib.config.logger_config import log_warning
 from quant_lib.utils.dataFrame_utils import align_dataframes
 
 """

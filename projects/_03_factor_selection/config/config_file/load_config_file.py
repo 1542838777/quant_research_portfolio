@@ -11,7 +11,7 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile
 from quant_lib.config.logger_config import log_warning
-fast_periods = ('20250524','20250710')
+fast_periods = ('20250424','20250710')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
 longest_periods = ('20190101','20250710')
@@ -120,7 +120,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =massive_test_mode
+trans_pram =fast_mode
 is_debug = True
 
 
