@@ -3,7 +3,8 @@
 target_factors_for_evaluation:
   fields:
 #    # === 规模 (Size) ===
-    - 'momentum_120d'
+    - 'beta'
+#    - 'momentum_120d'
 #    - 'reversal_21d'
 #    - 'volatility_90d'
 #    - 'turnover_rate_90d_mean'

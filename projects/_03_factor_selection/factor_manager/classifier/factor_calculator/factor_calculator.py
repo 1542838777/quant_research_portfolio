@@ -615,7 +615,7 @@ class FactorCalculator:
         【生产级】计算滚动12个月的营业总收入 (TTM)。
         利用通用TTM引擎计算得出。
         """
-        print("--- 调用通用引擎计算: revenue_ttm ---")
+        # print("--- 调用通用引擎计算: revenue_ttm ---")
         return self._calculate_financial_ttm_factor(
             factor_name='total_revenue_ttm',
             data_loader_func=load_income_df,
@@ -627,7 +627,7 @@ class FactorCalculator:
         【生产级】计算滚动12个月的营业总成本 (TTM)。
         利用通用TTM引擎计算得出。
         """
-        print("--- 调用通用引擎计算: op_cost_ttm ---")
+        # print("--- 调用通用引擎计算: op_cost_ttm ---")
         return self._calculate_financial_ttm_factor(
             factor_name='op_cost_ttm',
             data_loader_func=load_income_df,
@@ -665,7 +665,7 @@ class FactorCalculator:
         【内部函数】计算单季度归母净利润的长表。
         这是计算同比增长率的基础。
         """
-        print("--- 调用通用引擎计算: net_profit_single_q ---")
+        # print("--- 调用通用引擎计算: net_profit_single_q ---")
         return self._calculate_financial_single_q_factor(
             factor_name='net_profit_single_q',
             data_loader_func=load_income_df,

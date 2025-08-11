@@ -206,7 +206,7 @@ class FactorManager:
         """
         # 步骤1: 检查缓存，如果命中则直接返回 (行为不变)
         if factor_name in self.factors_cache:
-            logger.info(f"  > 从缓存中加载因子: {factor_name}")
+            # logger.info(f"  > 从缓存中加载因子: {factor_name}")
             return self.factors_cache[factor_name].copy()
 
         # 步骤2: 获取“原始”因子值，无论来源
@@ -215,13 +215,13 @@ class FactorManager:
 
         if hasattr(self.calculator, calculation_method_name):
             # 来源一：通过专门的函数计算
-            logger.info(f"  > 发现计算函数，开始计算: {calculation_method_name}...")
+            # logger.info(f"  > 发现计算函数，开始计算: {calculation_method_name}...")
             method_to_call = getattr(self.calculator, calculation_method_name)
             raw_factor_df = method_to_call()
 
         elif factor_name in self.data_manager.raw_dfs:
             # 来源二：直接从原始数据中加载
-            logger.info(f"  > 无计算函数，从raw_dfs加载: {factor_name}")
+            # logger.info(f"  > 无计算函数，从raw_dfs加载: {factor_name}")
             raw_factor_df = self.data_manager.raw_dfs[factor_name]
 
         else:

@@ -40,8 +40,8 @@ logger = setup_logger(__name__)
 
 def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
     dfs = raw_df.copy()
+    logger.info("原始字段缺失率体检报告:")
     for item_name, df in dfs.items():
-        logger.info("原始字段缺失率体检报告:")
         # missing_rate_daily = df.isna().mean(axis=1)
 
         # logger.info(f"{item_name}因子缺失率最高的10天 between {first_date} and {end_date}")
@@ -57,7 +57,7 @@ def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
         total_cells = df.size
         df_all_cells = df.isna().sum().sum()
         global_na_ratio = df_all_cells / total_cells
-        logger.info(_get_nan_comment(item_name, global_na_ratio))
+        logger.info(f'\t{_get_nan_comment(item_name, global_na_ratio)}')
 
 
 def _get_nan_comment(field: str, rate: float) -> str:
@@ -112,6 +112,10 @@ class DataManager:
         self.config = _load_local_config(config_path)
         self.backtest_start_date = self.config['backtest']['start_date']
         self.backtest_end_date = self.config['backtest']['end_date']
+        # 计算真正需要开始加载数据的日期
+        max_lookback_window = self.config['backtest']['max_lookback_window']
+        self.buffer_start_date = (pd.to_datetime(self.backtest_start_date) -
+                                  pd.DateOffset(days=max_lookback_window)).strftime('%Y%m%d')
         if need_data_deal:
             self.data_loader = DataLoader(data_path=LOCAL_PARQUET_DATA_DIR)
             self.raw_dfs = {}
@@ -125,18 +129,15 @@ class DataManager:
         Returns:
             处理后的数据字典
         """
-        # 获取时间范围
-        max_lookback_window = self.config['backtest']['max_lookback_window']
-        # 计算真正需要开始加载数据的日期
-        buffer_start_date = (pd.to_datetime(self.backtest_start_date) -
-                             pd.DateOffset(days=max_lookback_window)).strftime('%Y%m%d')
+
+
 
         # 确定所有需要的字段（一次性确定）
         all_required_fields = self._get_required_fields()
 
         # === 一次性加载所有raw数据(互相对齐) ===
         self.raw_dfs = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
-                                                                      start_date=buffer_start_date, end_date=self.backtest_end_date)
+                                                                      start_date=self.buffer_start_date, end_date=self.backtest_end_date)
 
         check_field_level_completeness(self.raw_dfs)
         logger.info(f"raw_dfs加载完成，共加载 {len(self.raw_dfs)} 个字段")
@@ -985,7 +986,7 @@ def fill_self(factor_name, df,_existence_matrix):
     if strategy is None:
         raise KeyError(f"因子 '{factor_name}' 的填充策略未在 FACTOR_FILL_CONFIG 中定义！请添加。")
 
-    logger.info(f"  > 正在对因子 '{factor_name}' 应用 '{strategy}' 填充策略...")
+    # logger.info(f"  > 正在对因子 '{factor_name}' 应用 '{strategy}' 填充策略...")
     if strategy == FILL_STRATEGY_FFILL_UNLIMITED:
         # 前向填充：适用于价格、市值、估值、行业等
         # 这些值在股票不交易时，应保持其最后一个已知值
