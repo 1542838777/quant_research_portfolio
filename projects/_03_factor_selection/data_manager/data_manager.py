@@ -126,23 +126,24 @@ class DataManager:
             处理后的数据字典
         """
         # 获取时间范围
-        start_date = self.config['backtest']['start_date']
-        end_date = self.config['backtest']['end_date']
+        max_lookback_window = self.config['backtest']['max_lookback_window']
+        # 计算真正需要开始加载数据的日期
+        buffer_start_date = (pd.to_datetime(self.backtest_start_date) -
+                             pd.DateOffset(days=max_lookback_window)).strftime('%Y%m%d')
 
         # 确定所有需要的字段（一次性确定）
         all_required_fields = self._get_required_fields()
 
         # === 一次性加载所有raw数据(互相对齐) ===
-
         self.raw_dfs = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
-                                                                      start_date=start_date, end_date=end_date)
+                                                                      start_date=buffer_start_date, end_date=self.backtest_end_date)
 
         check_field_level_completeness(self.raw_dfs)
         logger.info(f"raw_dfs加载完成，共加载 {len(self.raw_dfs)} 个字段")
 
         # === 第一阶段：基于已加载数据构建权威股票池 ===
         logger.info("第一阶段：构建两个权威股票池（各种过滤！）")
-        self._build_stock_pools_from_loaded_data(start_date, end_date)
+        self._build_stock_pools_from_loaded_data(self.backtest_start_date,self. backtest_end_date)
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被stock_pool_df 动了手脚了（低市值的会被置为nan，
 
     # ok
@@ -160,7 +161,7 @@ class DataManager:
         # print("1. 验证股票池构建所需数据...")
 
         # 验证必需字段是否已加载
-        required_fields_for_universe = ['close', 'circ_mv', 'turnover_rate', 'industry', 'list_date']
+        required_fields_for_universe = ['close', 'circ_mv', 'turnover_rate',  'list_date']
         missing_fields = [field for field in required_fields_for_universe if field not in self.raw_dfs]
 
         if missing_fields:
@@ -912,7 +913,9 @@ class DataManager:
         if 'close' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
+        #定基准！
         final_stock_pool_df = self.raw_dfs['close'].notna()  # close 有值的地方 ：true
+        final_stock_pool_df = final_stock_pool_df.reindex(self.trading_dates)
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
         # 【第一道防线：存在性过滤 - 必须置于最前！】
         # -------------------------------------------------------------------------

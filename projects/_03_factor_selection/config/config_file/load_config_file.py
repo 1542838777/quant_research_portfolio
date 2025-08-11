@@ -14,7 +14,7 @@ from quant_lib.config.logger_config import log_warning
 fast_periods = ('20250424','20250710')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
-longest_periods = ('20190101','20250710')
+longest_periods = ('20190328','20250710')
 
 
 massive_test_mode = {

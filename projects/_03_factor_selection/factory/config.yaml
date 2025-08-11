@@ -40,10 +40,10 @@ target_factors_for_evaluation:
 
 # 回测时间范围
 backtest:
-  start_date: '2018-01-01'
+  start_date: '2019-03-28'
   end_date: '2025-07-10'
   #计算预热期 ---
-  max_lookback_window: 315  # 你所有因子中需要的最大历史窗口 (ttm 12个月 但是要+3=ann_date 15*21 = 315
+  max_lookback_window: 450  # 你所有因子中需要的最大历史窗口 (ttm 12个月 但是要+3=ann_date 15*30 = 450
 # ==============================================================================
 stock_pool_profiles:
 
