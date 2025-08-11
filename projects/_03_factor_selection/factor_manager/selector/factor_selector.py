@@ -7,6 +7,7 @@ from plotly.data import stocks
 
 from projects._03_factor_selection.visualization_manager import VisualizationManager
 from quant_lib import logger
+from quant_lib.config.logger_config import log_warning
 from quant_lib.config.symbols_constants import WARNING
 from quant_lib.utils.json_utils import load_json_with_numpy
 
@@ -150,21 +151,21 @@ class FactorSelector:
             stats_o2c = _find_and_load_stats(factor_dir, 'o2c', run_version)
 
             # 3. 如果任何一个配置的结果缺失，则跳过这个因子，保证数据的完整性
-            if not stats_c2c or not stats_o2c:
+            if (not stats_c2c) and (not stats_o2c): #测试模式 为了快速验证代码，可以让过
                 log_warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，已跳过。")
                 continue
 
             # 4. 从加载的字典中，提取指定周期的核心指标
             # 使用 .get(key, {}) 来安全地处理 period 可能不存在的情况
-            c2c_q = stats_c2c.get('quantile_backtest_processed', {}).get(target_period, {})
-            o2c_q = stats_o2c.get('quantile_backtest_processed', {}).get(target_period, {})
+            c2c_q =  (stats_c2c or {}).get('quantile_backtest_processed', {}).get(target_period, {})
+            o2c_q =  (stats_o2c or {}).get('quantile_backtest_processed', {}).get(target_period, {})
 
-            c2c_ic = stats_c2c.get('ic_analysis_processed', {}).get(target_period, {})
-            o2c_ic = stats_o2c.get('ic_analysis_processed', {}).get(target_period, {})
+            c2c_ic =  (stats_c2c or {}).get('ic_analysis_processed', {}).get(target_period, {})
+            o2c_ic = (stats_o2c or {}).get('ic_analysis_processed', {}).get(target_period, {})
 
-            c2c_fm = stats_c2c.get('fama_macbeth', {}).get(target_period, {})
-            o2c_fm = stats_o2c.get('fama_macbeth', {}).get(target_period, {})
-            if (len(o2c_fm) ==0) and (len(c2c_ic) ==0) or(len(c2c_q) ==0) :
+            c2c_fm =  (stats_c2c or {}).get('fama_macbeth', {}).get(target_period, {})
+            o2c_fm = (stats_o2c or {}).get('fama_macbeth', {}).get(target_period, {})
+            if (len(o2c_fm) ==0) and (len(c2c_ic) ==0) and (len(c2c_q) ==0) :
                 continue
             # 5. 合并为一行宽表数据
             row = {
@@ -523,5 +524,5 @@ def load_fm_returns_matrix(
 
 if __name__ == '__main__':
     fase = FactorSelector()
-    fase.run_factor_analysis(TARGET_STOCK_POOL='000906.SH.SH', TARGET_PERIOD='5d')
+    fase.run_factor_analysis(TARGET_STOCK_POOL='000300.SH', TARGET_PERIOD='21d')
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')

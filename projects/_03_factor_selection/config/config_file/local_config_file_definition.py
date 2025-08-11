@@ -102,6 +102,16 @@ EVAL_SETTING_FULL = {
         'beta_120d', 'reversal_21d', 'ln_turnover_value_90d'
     ]
 }
+# 东
+dongbei_SETTING = {
+    "n_groups": 5,
+    "quantiles": 5, # 兼容旧命名
+    "forward_periods": [ 21],
+    "returns_calculator": ['c2c', 'o2c'],
+    "style_factor_list": [
+
+    ]
+}
 # ==============================================================================
 # 预设股票池模板 (Stock Pool Presets)
 # 你可以在这里定义所有常用的股票池配置

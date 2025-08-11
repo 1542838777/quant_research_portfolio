@@ -2,7 +2,7 @@ import time
 import pandas as pd
 
 from quant_lib.tushare.tushare_client import TushareClient
-from quant_lib.config.logger_config import setup_logger
+from quant_lib.config.logger_config import setup_logger, log_warning
 
 # 配置日志
 logger = setup_logger(__name__)

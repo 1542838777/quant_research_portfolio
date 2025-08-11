@@ -35,6 +35,8 @@ from pathlib import Path
 import os
 import datetime
 
+from quant_lib.config.logger_config import log_warning
+
 # 获取模块级别的logger
 logger = logging.getLogger(__name__)
 

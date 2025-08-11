@@ -9,7 +9,8 @@ import yaml
 from projects._03_factor_selection.config.config_file.local_config_file_definition import \
     pool_for_massive_test_CSI800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
-    CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST
+    CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
+    dongbei_SETTING
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20250424','20250710')
@@ -92,6 +93,7 @@ CSI300_more_filter_mode = {
         **CSI1000_more_filter_profile
     },
     'period':self_periods,
+    'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': 'CSI1000（）普适性过滤+流动率过滤'
 }
 CSI300_FFF_most_basic_mode = {
@@ -123,7 +125,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =fast_mode
+trans_pram =东北证券_CSI1000_more_filter_mode
 is_debug = True
 
 

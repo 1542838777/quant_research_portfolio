@@ -39,7 +39,7 @@ import sys
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
-from quant_lib.config.logger_config import setup_logger, log_success
+from quant_lib.config.logger_config import setup_logger, log_success, log_warning
 
 warnings.filterwarnings('ignore')
 
