@@ -27,6 +27,7 @@ from projects._03_factor_selection.factor_manager.factor_manager import FactorRe
 from projects._03_factor_selection.utils.factor_processor import FactorProcessor, PointInTimeIndustryMap
 from projects._03_factor_selection.visualization_manager import VisualizationManager
 from quant_lib import logger
+from quant_lib.config.logger_config import log_flow_start
 
 n_metrics_pass_rate_key = 'n_metrics_pass_rate'
 
@@ -317,7 +318,6 @@ class FactorAnalyzer:
 
         (auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
          ) = self.prepare_date_for_process_factor(target_factor_name, factor_df)
-        oring_raw_df = factor_df.copy(deep=True)
         if need_process_factor:
             # 1. 因子预处理
             factor_df = self.factor_processor.process_factor(
@@ -331,6 +331,10 @@ class FactorAnalyzer:
 
         # 数据准备
         close_df, open_df, circ_mv_df, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name)
+        status_text = "需要处理" if need_process_factor else "不需要处理"
+        log_flow_start(
+            f"因子 {target_factor_name}（{status_text}）经过预处理之后，进入 core_three_test 测试"
+        )
 
         ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.core_three_test(
             factor_df, target_factor_name, open_df, returns_calculator, close_df,
@@ -914,6 +918,7 @@ class FactorAnalyzer:
            return  self.test_factor_entity_service_for_composite_factor(factor_name,factor_df,test_configurations,start_date,end_date,stock_index)
         for calculator_name, func in test_configurations.items():
             # 执行测试
+            log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
             raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw,q_st_raw, _, _, _, _, _ = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,
@@ -925,6 +930,7 @@ class FactorAnalyzer:
                 do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
                 do_style_correlation_test=False
             )
+            log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
             proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,

@@ -524,5 +524,6 @@ def load_fm_returns_matrix(
 
 if __name__ == '__main__':
     fase = FactorSelector()
-    fase.run_factor_analysis(TARGET_STOCK_POOL='000300.SH', TARGET_PERIOD='21d')
+    # fase.run_factor_analysis(TARGET_STOCK_POOL='000300.SH', TARGET_PERIOD='21d')
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
+    fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')
