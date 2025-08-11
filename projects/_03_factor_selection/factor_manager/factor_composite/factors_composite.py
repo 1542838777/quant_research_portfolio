@@ -24,7 +24,6 @@ class FactorSynthesizer:
         self.factor_manager = factor_manager
         self.factor_analyzer = factor_analyzer
         self.processor = FactorProcessor(factor_manager.data_manager.config)
-        self.raw_dfs = factor_manager.data_manager.raw_dfs
         self.sub_factors = {
             'ep_ratio',
             'bm_ratio',

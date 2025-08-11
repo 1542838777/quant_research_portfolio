@@ -155,7 +155,7 @@ class FactorAnalyzer:
             raise RuntimeError("config 没有传递过来！")
         self.factor_manager = factor_manager
         data_manager = factor_manager.data_manager
-        if data_manager is None or 'close' not in data_manager.raw_dfs:
+        if self.factor_manager.data_manager is None or 'close' not in self.factor_manager.data_manager.raw_dfs:
             raise ValueError('close的df是必须的，请写入！')
 
         config = data_manager.config
@@ -176,7 +176,6 @@ class FactorAnalyzer:
         self.backtest_start_date = config['backtest']['start_date']
         self.backtest_end_date = config['backtest']['end_date']
         self.backtest_period = f"{pd.to_datetime(self.backtest_start_date).strftime('%Y%m%d')} ~ {pd.to_datetime(self.backtest_end_date).strftime('%Y%m%d')}"
-        self.raw_dfs = data_manager.raw_dfs  # 纯原生 只有dfs间的对齐 除此之外 没有任何过滤，也没有shift（1）
         self.visualizationManager = VisualizationManager(
             output_dir='D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\visualizations'
         )
@@ -349,7 +348,7 @@ class FactorAnalyzer:
             ret_dict[stock_poll_name] = {}
 
             for factor_name in factor_names:
-                ret_dict[stock_poll_name].update(self.raw_dfs[factor_name])
+                ret_dict[stock_poll_name].update(self.factor_manager.data_manager.raw_dfs[factor_name])
 
         return ret_dict
 
