@@ -311,8 +311,8 @@ class FactorAnalyzer:
         Returns:
             综合测试结果字典
         """
-        if (not need_process_factor) & (not is_debug):
-            raise ValueError("圣餐环境 不能跳过中xinghua")
+        # if (not need_process_factor) & (not is_debug):
+        #     raise ValueError("圣餐环境 不能跳过中xinghua")
         logger.info(f"开始测试因子: {target_factor_name}")
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
 
@@ -336,7 +336,8 @@ class FactorAnalyzer:
             f"因子 {target_factor_name}（{status_text}）经过预处理之后，进入 core_three_test 测试"
         )
 
-        ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.core_three_test(
+        ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
+            = self.core_three_test(
             factor_df, target_factor_name, open_df, returns_calculator, close_df,
             final_neutral_dfs, circ_mv_df, style_factor_dfs, do_ic_test,
             do_turnover_test,
@@ -931,7 +932,8 @@ class FactorAnalyzer:
                 do_style_correlation_test=False
             )
             log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
-            proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict = self.comprehensive_test(
+            proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
+                = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,
                 returns_calculator=func,

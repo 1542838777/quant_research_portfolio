@@ -125,8 +125,8 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =东北证券_CSI1000_more_filter_mode
-is_debug = True
+trans_pram =massive_test_mode
+is_debug = False
 
 
 

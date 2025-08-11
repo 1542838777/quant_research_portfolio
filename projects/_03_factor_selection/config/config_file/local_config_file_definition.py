@@ -60,7 +60,30 @@ class FullQuantConfig:
             "target_factors_for_evaluation": self.target_factors_for_evaluation
         }
 
+style_factor_list =  [
+      # 1. 规模 (Size)
+      'small_cap',              # 基于流通市值的对数，最核心的规模因子
 
+      # 2. 价值 (Value)
+      'bm_ratio',               # 账面市值比(B/P)，Fama-French三因子模型经典成员
+
+      # 3. 质量 (Quality)
+      'roe_ttm',                # 净资产收益率(TTM)，最核心的盈利质量指标
+
+      # 4. 成长 (Growth)
+      'net_profit_growth_ttm',  # TTM净利润同比增长，相比单季度YoY更平滑，代表稳定成长性
+
+      # 5. 动量 (Momentum)
+      'momentum_120d',          # 中期动量（约半年），代表价格趋势
+      'reversal_21d',           # 短期反转，A股市场非常显著的独立效应
+
+      # 6. 风险 (Risk / Volatility)
+      'volatility_90d',         # 90日年化波动率，代表特质风险（低波异象）
+      'beta',                   # Beta系数，代表市场系统性风险
+
+      # 7. 流动性 (Liquidity)
+      'ln_turnover_value_90d'   # 90日日均成交额对数，最核心的流动性/容量指标
+  ]
 # ==============================================================================
 # 【新增】预设因子评价配置模板 (Evaluation Presets)
 # ==============================================================================
@@ -82,11 +105,7 @@ EVAL_SETTING_STANDARD = {
     "n_groups": 5,
     "forward_periods": [5, 21, 60], # 短、中、长
     "returns_calculator": ['c2c', 'o2c'], # 对比两种方式
-    "style_factor_list": [
-        'ln_circ_mv', 'bp_ratio', 'sp_ttm', 'ep_ttm', 'net_profit_growth_ttm',
-        'revenue_growth_ttm', 'roe_ttm', 'gross_margin_ttm', 'volatility_90d',
-        'beta_120d', 'reversal_21d', 'ln_turnover_value_90d'
-    ]
+    "style_factor_list":style_factor_list
 }
 
 # 模板3: 全面批量测试设置 (Massive Test Setting)
@@ -96,11 +115,8 @@ EVAL_SETTING_FULL = {
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [1, 5, 10, 21, 40, 60, 120],
     "returns_calculator": ['c2c', 'o2c'],
-    "style_factor_list": [
-        'ln_circ_mv', 'bp_ratio', 'sp_ttm', 'ep_ttm', 'net_profit_growth_ttm',
-        'revenue_growth_ttm', 'roe_ttm', 'gross_margin_ttm', 'volatility_90d',
-        'beta_120d', 'reversal_21d', 'ln_turnover_value_90d'
-    ]
+    "style_factor_list": style_factor_list
+
 }
 # 东
 dongbei_SETTING = {
