@@ -326,7 +326,8 @@ class FactorAnalyzer:
                 auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
-                pit_map=pit_map
+                pit_map=pit_map,
+                need_standardize = False
             )
 
         # 数据准备

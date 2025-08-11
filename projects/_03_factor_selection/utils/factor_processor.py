@@ -128,7 +128,7 @@ class FactorProcessor:
                        auxiliary_dfs,
                        neutral_dfs,
                        style_category: str,
-                       neutralize_after_standardize: bool = False, #默认是最后标准化
+                       need_standardize: bool = True, #标准化
                        pit_map:PointInTimeIndustryMap = None
                        ):
         """
@@ -150,26 +150,18 @@ class FactorProcessor:
         # 步骤1：去极值
         # print("2. 去极值处理...")
         processed_target_factor_df = self.winsorize_robust(processed_target_factor_df,pit_map)
-
-        if not neutralize_after_standardize:
-            # 步骤2：中性化
-            if self.preprocessing_config.get('neutralization', {}).get('enable', False):
-                processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,
-                                                              neutral_dfs, style_category)
-            else:
-                logger.info("2. 跳过中性化处理...")
+        # 步骤2：中性化
+        if self.preprocessing_config.get('neutralization', {}).get('enable', False):
+            processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,
+                                                          neutral_dfs, style_category)
+        else:
+            logger.info("2. 跳过中性化处理...")
+        if  need_standardize:
             # 步骤3：标准化
             processed_target_factor_df = self._standardize_robust(processed_target_factor_df,pit_map)
         else:
-            # 步骤2：标准化
-            processed_target_factor_df = self._standardize_robust(processed_target_factor_df,pit_map)
-            # 步骤3：中性化
-            if self.preprocessing_config.get('neutralization', {}).get('enable', False):
-                # print("3. 中性化处理...")
-                processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name, auxiliary_dfs,
-                                                              neutral_dfs, style_category)
-            else:
-                logger.info("3. 跳过中性化处理...")
+            logger.info("2. 跳过标准化处理...")
+
         # 统计处理结果
         self._print_processing_stats(target_factor_df, processed_target_factor_df)
 
@@ -681,7 +673,7 @@ class FactorProcessor:
 
         # --- 路径二：分行业标准化 ---
         else:
-            print(
+            logger.info(
                 f"  执行分行业标准化 (主行业: {industry_config['primary_level']}, 回溯至: {industry_config['fallback_level']})...")
 
             # Rank法通常在全市场进行才有意义，分行业Rank后不同行业的序无法直接比较。

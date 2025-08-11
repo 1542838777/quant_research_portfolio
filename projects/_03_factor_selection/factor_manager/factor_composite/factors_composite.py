@@ -51,7 +51,7 @@ class FactorSynthesizer:
             target_factor_name=factor_name,
             auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
             neutral_dfs=final_neutral_dfs,
-            style_category=style_category, neutralize_after_standardize=False)
+            style_category=style_category, need_standardize=True)
         return processed_df
 
     def synthesize_composite_factor(self,
