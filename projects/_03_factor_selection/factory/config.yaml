@@ -5,6 +5,12 @@ target_factors_for_evaluation:
 #    # === 规模 (Size) ===
 #    - 'market_cap_log'
     - 'total_revenue_growth_yoy'
+#    - momentum_120d
+#    - reversal_21d
+#    - volatility_90d
+#    - rate_90d_mean
+#    - ln_turnover_value_90d
+#    - amihud_liquidity
 #
 #    # === 价值 (Value) ===
 #    - 'bm_ratio'
@@ -32,6 +38,7 @@ target_factors_for_evaluation:
 #    # === 流动性 (Liquidity) ===
 #    - 'turnover_rate_monthly_mean'
 #    - 'liquidity_amihud'
+
 
 # 回测时间范围
 backtest:
@@ -288,6 +295,20 @@ factor_definition:
     cal_require_base_fields_from_daily: False
 
   # === 成长 (Growth) ===
+  - name: 'net_profit_growth_ttm'
+    style_category: 'growth'
+    description: '滚动12个月的归母净利润同比增长率。相比单季度YoY增长率，TTM增长率更平滑，能有效滤除季节性波动和单季度的短期“异动”，更好地反映公司的稳定增长趋势。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'net_profit_ttm' ] # 依赖于已计算好的TTM因子
+    cal_require_base_fields_from_daily: False
+
+  - name: 'revenue_growth_ttm'
+    style_category: 'growth'
+    description: '滚动12个月的营业总收入同比增长率。衡量公司主营业务规模的扩张速度，相比净利润增长，更难被非经营性损益操纵。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'total_revenue_ttm' ] # 依赖于已计算好的TTM因子
+    cal_require_base_fields_from_daily: False
+
   - name: 'net_profit_growth_yoy'
     style_category: 'growth'
     description: '净利润同比增长率(YoY)，最直接的成长性指标。'

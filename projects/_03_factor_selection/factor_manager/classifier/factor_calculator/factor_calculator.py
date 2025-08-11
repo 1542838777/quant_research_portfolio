@@ -229,39 +229,31 @@ class FactorCalculator:
 
         print("--- 最终因子: debt_to_assets 计算完成 ---")
         return debt_to_assets_df
-
-    def _calculate_gross_margin_ttm(self) -> pd.DataFrame:
-        """
-        计算滚动12个月的销售毛利率。
-
-        金融逻辑:
-        毛利率反映了公司产品的定价能力和成本控制能力，是公司“护城河”的体现。
-        持续的高毛利率通常意味着强大的品牌或技术优势。
-        """
-        print("    > 正在计算因子: gross_margin_ttm...")
-        # 同样，这是一个需要从财报数据计算的复杂因子。
-        # 依赖的原始字段: revenue (营业收入), op_cost (营业成本)
-        print("      > [警告] _calculate_gross_margin_ttm 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('small_cap')
-        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
-
-    def _calculate_debt_to_assets(self) -> pd.DataFrame:
-        """
-        计算资产负债率。
-
-        金融逻辑:
-        衡量公司的财务杠杆水平。适度的杠杆可以提高股东回报，但过高的杠杆
-        则意味着巨大的财务风险。这是一个衡量公司稳健性的重要指标。
-        """
-        print("    > 正在计算因子: debt_to_assets...")
-        # 这是一个可以直接从最新财报获取的“时点”指标，不需要计算TTM。
-        # 但同样需要处理财报发布延迟。
-        # 依赖的原始字段: total_debt (总负债), total_assets (总资产)
-        print("      > [警告] _calculate_debt_to_assets 使用的是占位符实现！")
-        total_mv_df = self.factor_manager.get_factor('small_cap')
-        return pd.DataFrame(np.random.randn(*total_mv_df.shape), index=total_mv_df.index, columns=total_mv_df.columns)
-
     # === 成长 (Growth) ===
+    def _calculate_net_profit_growth_ttm(self) -> pd.DataFrame:
+        """
+        计算滚动12个月归母净利润的同比增长率(TTM YoY Growth)。
+        """
+        logger.info("    > 正在计算因子: net_profit_growth_ttm...")
+
+        # 直接调用通用的TTM增长率计算引擎
+        return self._calculate_financial_ttm_growth_factor(
+            factor_name='net_profit_growth_ttm',
+            ttm_factor_name='net_profit_ttm'  # 指定依赖的TTM因子名
+        )
+
+    def _calculate_revenue_growth_ttm(self) -> pd.DataFrame:
+        """
+        计算滚动12个月营业总收入的同比增长率(TTM YoY Growth)。
+        """
+        logger.info("    > 正在计算因子: revenue_growth_ttm...")
+
+        # 同样调用通用的TTM增长率计算引擎
+        return self._calculate_financial_ttm_growth_factor(
+            factor_name='revenue_growth_ttm',
+            ttm_factor_name='total_revenue_ttm'  # 指定依赖的TTM因子名
+        )
+
     #ok
     def _calculate_net_profit_growth_yoy(self) -> pd.DataFrame:
         """
@@ -304,7 +296,7 @@ class FactorCalculator:
         )
 
         trading_dates = self.factor_manager.data_manager.trading_dates
-        yoy_daily = self._broadcast_ann_date_to_daily(yoy_wide, trading_dates)
+        yoy_daily = _broadcast_ann_date_to_daily(yoy_wide, trading_dates)
 
         print("--- 最终因子: net_profit_growth_yoy 计算完成 ---")
         return yoy_daily
@@ -357,12 +349,52 @@ class FactorCalculator:
 
         # ---步骤四：调用通用广播引擎 ---
         trading_dates = self.factor_manager.data_manager.trading_dates
-        yoy_daily = self._broadcast_ann_date_to_daily(yoy_wide, trading_dates)
+        yoy_daily = _broadcast_ann_date_to_daily(yoy_wide, trading_dates)
 
         print("--- 最终因子: total_revenue_growth_yoy 计算完成 ---")
         return yoy_daily
  
-    # === 动量 (Momentum) ===
+    # === 动量与反转 (Momentum & Reversal) ===
+    def _calculate_momentum_120d(self) -> pd.DataFrame:
+        """
+        计算120日（约半年）动量/累计收益率。
+
+        金融逻辑:
+        捕捉市场中期的价格惯性，即所谓的“强者恒强，弱者恒弱”的趋势。
+        这是构建趋势跟踪策略的基础。
+        """
+        logger.info("    > 正在计算因子: momentum_120d...")
+        # 1. 获取基础数据：后复权收盘价
+        close_df = self.factor_manager.get_factor('close').copy()
+
+        # 2. 计算120个交易日前的价格到今天的收益率
+        #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
+        momentum_df = close_df.pct_change(periods=120)
+
+        logger.info("    > momentum_120d 计算完成。")
+        return momentum_df
+
+    def _calculate_reversal_21d(self) -> pd.DataFrame:
+        """
+        计算21日（约1个月）反转因子。
+
+        金融逻辑:
+        A股市场存在显著的短期均值回归现象。即过去一个月涨幅过高的股票，
+        在未来倾向于下跌；反之亦然。因此，我们将短期收益率取负，
+        得到的分数越高，代表其反转（上涨）的可能性越大。
+        """
+        logger.info("    > 正在计算因子: reversal_21d...")
+        # 1. 获取基础数据：后复权收盘价
+        close_df = self.factor_manager.get_factor('close').copy()
+
+        # 2. 计算21日收益率
+        return_21d = close_df.pct_change(periods=21)
+
+        # 3. 将收益率取负，即为反转因子
+        reversal_df = -return_21d
+
+        logger.info("    > reversal_21d 计算完成。")
+        return reversal_df
     def _calculate_momentum_12_1(self) -> pd.DataFrame:
         """
         计算过去12个月剔除最近1个月的累计收益率 (Momentum 12-1)。
@@ -396,6 +428,30 @@ class FactorCalculator:
         return momentum_df
 
     # === 风险 (Risk) ===
+    def _calculate_volatility_90d(self) -> pd.DataFrame:
+        """
+        计算90日年化波动率。
+
+        金融逻辑:
+        衡量个股自身在过去约一个季度内的价格波动风险，也称为特质风险。
+        经典的“低波动异象”(Low Volatility Anomaly)指出，长期来看，
+        低波动率的股票组合能提供优于高波动率股票的风险调整后收益。
+        """
+        logger.info("    > 正在计算因子: volatility_90d...")
+        # 1. 获取日收益率数据
+        pct_chg_df = self.factor_manager.get_factor('pct_chg').copy()
+
+        # 2. 计算90日滚动标准差
+        #    min_periods=60 表示在计算初期，即使窗口不满90天，只要有60天数据也开始计算
+        #    这是一个在保证数据质量和及时性之间的常见权衡。
+        rolling_std_df = pct_chg_df.rolling(window=90, min_periods=60).std()
+
+        # 3. 年化处理：标准差是时间的平方根的函数
+        #    一年约有252个交易日
+        annualized_vol_df = rolling_std_df * np.sqrt(252)
+
+        logger.info("    > volatility_90d 计算完成。")
+        return annualized_vol_df
     def _calculate_beta(self) -> pd.DataFrame:
         beta_df = calculate_rolling_beta(
             self.factor_manager.data_manager.config['backtest']['start_date'],
@@ -421,6 +477,78 @@ class FactorCalculator:
         return annualized_vol_df
 
     # === 流动性 (Liquidity) ===
+    def _calculate_turnover_rate_90d_mean(self) -> pd.DataFrame:
+        """
+        计算90日（约一季度）的平均换手率。
+
+        金融逻辑:
+        平滑后的换手率指标，比单日换手率更能反映一支股票在一段时间内的交易活跃度和
+        市场关注度。过高或过低的换手率都可能预示着不同的投资机会或风险。
+        """
+        logger.info("    > 正在计算因子: turnover_rate_90d_mean...")
+        # 1. 获取日换手率数据
+        turnover_df = self.factor_manager.get_factor('turnover_rate').copy()
+
+        # 2. 计算90日滚动平均
+        mean_turnover_df = turnover_df.rolling(window=90, min_periods=60).mean()
+
+        logger.info("    > turnover_rate_90d_mean 计算完成。")
+        return mean_turnover_df
+
+    def _calculate_ln_turnover_value_90d(self) -> pd.DataFrame:
+        """
+        计算90日日均成交额的对数。
+
+        金融逻辑:
+        日均成交额直接反映了资产的流动性容量。成交额越大的股票，能容纳的资金规模越大，
+        交易时的冲击成本也越低。取对数是为了使数据分布更接近正态，便于进行回归分析。
+        """
+        logger.info("    > 正在计算因子: ln_turnover_value_90d...")
+        # 1. 获取日成交额数据 (单位：元)
+        amount_df = self.factor_manager.get_factor('amount').copy()
+
+        # 2. 计算90日滚动平均成交额
+        mean_amount_df = amount_df.rolling(window=90, min_periods=60).mean()
+
+        # 3. 【核心风控】在取对数前，必须确保数值为正。
+        #    使用 .where() 方法，将所有小于等于0的值替换为NaN，避免log函数报错。
+        mean_amount_positive = mean_amount_df.where(mean_amount_df > 0)
+
+        # 4. 计算对数
+        ln_turnover_value_df = np.log(mean_amount_positive)
+
+        logger.info("    > ln_turnover_value_90d 计算完成。")
+        return ln_turnover_value_df
+
+    # 你提供的代码中已有名为 _calculate_liquidity_amihud 的函数，其实现非常健壮，
+    # 我在此处提供一个与YAML文件名完全匹配的版本，逻辑与你的版本一致，以确保可调用。
+    # 如果你的FactorManager调用逻辑是严格按'name'匹配的，则需要这个函数。
+    def _calculate_amihud_liquidity(self) -> pd.DataFrame:
+        """
+        计算Amihud非流动性指标。
+
+        金融逻辑:
+        衡量单位成交额能引起多大的价格波动，公式为 abs(日收益率) / 日成交额。
+        该值越大，说明股票的流动性越差，即用少量资金交易就可能引发剧烈的价格变动，
+        这通常意味着更高的交易冲击成本。
+        """
+        logger.info("    > 正在计算因子: amihud_liquidity...")
+        # 1. 获取依赖数据
+        pct_chg_df = self.factor_manager.get_factor('pct_chg').copy()
+        amount_df = self.factor_manager.get_factor('amount').copy()
+
+        # 2. 【核心风险控制】: 防止除以零。将成交额为0的替换为一个极小正数。
+        #    这种处理方式可以保留数据点（结果为一个很大的数），而不是直接丢弃(NaN)。
+        #    在某些场景下，这比直接替换为NaN能提供更多信息。
+        amount_df_safe = amount_df.where(amount_df > 0, 1e-9)
+
+        # 3. 计算Amihud指标的日度值
+        #    注意：Amihud通常在月度或年度上进行平均，这里我们先计算日度值，
+        #    可以在后续的因子处理中进行滚动平均以获得更稳定的信号。
+        amihud_df = pct_chg_df.abs() / amount_df_safe
+
+        logger.info("    > amihud_liquidity 计算完成。")
+        return amihud_df
     def _calculate_turnover_rate_monthly_mean(self) -> pd.DataFrame:
         """
         计算月平均换手率（21日滚动平均）。
@@ -518,6 +646,23 @@ class FactorCalculator:
             source_column='total_liab'  # Tushare资产负债表中的“负债合计”字段
         )
 
+    def _calculate_total_assets(self) -> pd.DataFrame:
+        """
+        【生产级】获取每日可用的最新总资产。
+        这是一个“时点”或“存量”指标，直接从最新的资产负债表中获取。
+
+        此方法将作为计算其他财务比率（如资产负债率）的分母。
+        """
+        logger.info("--- 调用Snapshot引擎计算: total_assets ---")
+
+        # 我们将直接调用通用的“时点”因子计算引擎，
+        # 只需要告诉它要加载哪个数据表、并使用其中的哪一列即可。
+        return self._calculate_financial_snapshot_factor(
+            factor_name='total_assets',
+            data_loader_func=load_balancesheet_df,  # 指定加载资产负债表
+            source_column='total_assets'              # 指定使用资产负债表中的“资产总计”字段
+        )
+
     def _calculate_net_profit_single_q_long(self) -> pd.DataFrame:
         """
         【内部函数】计算单季度归母净利润的长表。
@@ -531,33 +676,50 @@ class FactorCalculator:
         )
 ######################
     ##以下是模板
-
-    def _broadcast_ann_date_to_daily(self,
-                                     sparse_wide_df: pd.DataFrame,
-                                     trading_dates: pd.DatetimeIndex) -> pd.DataFrame:
+    # --- 私有的、可复用的计算引擎 ---
+    def _calculate_financial_ttm_growth_factor(self,
+                                               factor_name: str,
+                                               ttm_factor_name: str,
+                                               lookback_days: int = 252) -> pd.DataFrame:
         """
-        【核心通用工具】将一个基于稀疏公告日(ann_date)的宽表，
-        安全地广播并填充到一个密集的交易日历上。
-
-        这是解决所有财报类因子“期初NaN”问题的最终解决方案。
+        【通用TTM增长率计算引擎】
+        根据指定的TTM因子，计算其同比增长率。
+        公式: (Current TTM / Last Year's TTM) - 1
 
         Args:
-            sparse_wide_df (pd.DataFrame): 以ann_date为索引的稀疏宽表。
-            trading_dates (pd.DatetimeIndex): 目标交易日历。
+            factor_name (str): 最终生成的因子名称（用于日志记录）。
+            ttm_factor_name (str): 依赖的TTM因子的名称。
+            lookback_days (int): 回溯周期，默认为252个交易日（约一年）。
 
         Returns:
-            pd.DataFrame: 以交易日为索引的、被正确填充的稠密宽表。
+            pd.DataFrame: 计算出的TTM同比增长率因子矩阵。
         """
-        # 1. 将稀疏的“公告日”索引与密集的“交易日”索引合并
-        combined_index = sparse_wide_df.index.union(trading_dates)
+        logger.info(f"      > [引擎] 正在为 {ttm_factor_name} 计算TTM同比增长率...")
 
-        # 2. 扩展到“超级索引”上，然后进行决定性的前向填充
-        filled_df = sparse_wide_df.reindex(combined_index).ffill()
+        # --- 步骤一：获取当期的TTM因子数据 ---
+        ttm_df = self.factor_manager.get_factor(ttm_factor_name)
 
-        # 3. 最后，只裁剪出我们需要的交易日，并返回
-        daily_df = filled_df.loc[trading_dates]
+        # --- 步骤二：获取一年前（回溯期）的TTM因子数据 ---
+        ttm_last_year = ttm_df.shift(lookback_days)
 
-        return daily_df
+        # --- 步骤三：【核心风险控制】---
+        # 金融逻辑：增长率的计算只有在分子(当期)和分母(去年同期)都为正时才有意义。
+        # 这确保我们只比较“从盈利到盈利”的情况，避免了由盈转亏等情况带来的噪音。
+        logger.info("        > 正在进行风险控制，确保分子和分母均为正数...")
+        ttm_df_safe = ttm_df.where(ttm_df > 0)
+        ttm_last_year_safe = ttm_last_year.where(ttm_last_year > 0)
+
+        # --- 步骤四：计算同比增长率 ---
+        growth_df = (ttm_df_safe / ttm_last_year_safe) - 1
+
+        # --- 步骤五：后处理 ---
+        # 防御性编程：清除计算过程中可能意外产生的无穷大值。
+        # 采用重新赋值，避免使用 inplace=True。
+        growth_df = growth_df.replace([np.inf, -np.inf], np.nan)
+
+        logger.info(f"--- [引擎] 因子: {factor_name} 计算完成 ---")
+        return growth_df
+
         ###A股市场早期，或一些公司在特定时期，只会披露年报和半年报，而缺少一季报和三季报的累计值。这会导致在我们的完美季度时间标尺上出现NaN。
         ### 所以这就是解决方案：实现了填充 跳跃的季度区间，新增填充的列：filled_col ，计算就在filled_col上面做diff。然后在平滑diff上做rolling。done
         ## 季度性数据ttm通用计算， 模板计算函数 ok
@@ -609,7 +771,7 @@ class FactorCalculator:
         # ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill() 解决：避免阶段，提前全局弄
         # 1. 获取交易日历
         trading_dates = self.factor_manager.data_manager.trading_dates
-        ret = self._broadcast_ann_date_to_daily(ttm_wide, trading_dates)
+        ret = _broadcast_ann_date_to_daily(ttm_wide, trading_dates)
 
         print(f"--- [引擎] 因子: {factor_name} 计算完成 ---")
 
@@ -726,8 +888,6 @@ class FactorCalculator:
 
 
 
-
-
 def calculate_rolling_beta(
         start_date: str,
         end_date: str,
@@ -742,7 +902,6 @@ def calculate_rolling_beta(
     Args:
         start_date (str): 回测开始日期, 格式 'YYYYMMDD'
         end_date (str): 回测结束日期, 格式 'YYYYMMDD'
-        stock_returns (pd.DataFrame): 股票收益率宽表, index为datetime, values已处理为小数。
         window (int): 滚动窗口大小（天数）。
         min_periods (int): 窗口内计算所需的最小观测数。
 
@@ -820,6 +979,33 @@ def calculate_rolling_beta(
     logger.info(f"滚动Beta计算完成，最终矩阵形状: {final_beta_df.shape}")
 
     return final_beta_df
+
+def _broadcast_ann_date_to_daily(
+                                 sparse_wide_df: pd.DataFrame,
+                                 trading_dates: pd.DatetimeIndex) -> pd.DataFrame:
+    """
+    【核心通用工具】将一个基于稀疏公告日(ann_date)的宽表，
+    安全地广播并填充到一个密集的交易日历上。
+
+    这是解决所有财报类因子“期初NaN”问题的最终解决方案。
+
+    Args:
+        sparse_wide_df (pd.DataFrame): 以ann_date为索引的稀疏宽表。
+        trading_dates (pd.DatetimeIndex): 目标交易日历。
+
+    Returns:
+        pd.DataFrame: 以交易日为索引的、被正确填充的稠密宽表。
+    """
+    # 1. 将稀疏的“公告日”索引与密集的“交易日”索引合并
+    combined_index = sparse_wide_df.index.union(trading_dates)
+
+    # 2. 扩展到“超级索引”上，然后进行决定性的前向填充
+    filled_df = sparse_wide_df.reindex(combined_index).ffill()
+
+    # 3. 最后，只裁剪出我们需要的交易日，并返回
+    daily_df = filled_df.loc[trading_dates]
+
+    return daily_df
 # --- 如何在你的主流程中使用 (用法完全不变！) ---
 # from data_manager import DataManager
 

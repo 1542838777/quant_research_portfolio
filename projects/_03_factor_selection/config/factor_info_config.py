@@ -87,7 +87,18 @@ FACTOR_FILL_CONFIG = {
     'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
     'net_profit_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
     'total_revenue_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
-    'pct_chg_beta': FILL_STRATEGY_NONE,#todo
+    'pct_chg_beta': FILL_STRATEGY_NONE,
+    'momentum_120d': FILL_STRATEGY_NONE,
+    'reversal_21d': FILL_STRATEGY_NONE,
+    'volatility_90d': FILL_STRATEGY_NONE,
+    'turnover_rate_90d_mean': FILL_STRATEGY_CONDITIONAL_ZERO,
+    'ln_turnover_value_90d': FILL_STRATEGY_CONDITIONAL_ZERO,
+    'amihud_liquidity': FILL_STRATEGY_NONE,
+    'net_profit_growth_ttm':FILL_STRATEGY_FFILL_LIMIT_65,
+    'revenue_growth_ttm':FILL_STRATEGY_FFILL_LIMIT_65,
+
+
+
 
     # === 动量(Momentum), 风险(Risk), 流动性(Liquidity) ===
     # 【保持正确】维持我们之前的结论，这类短半衰期因子，不应填充。

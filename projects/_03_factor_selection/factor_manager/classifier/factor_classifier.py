@@ -308,27 +308,81 @@ class FactorClassifier:
        根据因子名称的通用模式和特定关键字，判断其所属的风险类别。
        """
 
-    @staticmethod
-    def is_size_factor(factor_name: str) -> bool:
-        """判断是否为市值类因子"""
-        exact_matches = ['market_cap_log', 'total_mv','small_cap', 'circ_mv', 'size']
-        if factor_name in exact_matches:
-            return True
-        keyword_matches = ['market_cap', '_mv']
-        if any(keyword in factor_name for keyword in keyword_matches):
-            return True
-        return False
+    """
+       一个用于根据名称对因子进行分类的工具类。
+       """
 
     @staticmethod
-    def is_industry_factor(factor_name: str) -> bool:
-        """判断是否为行业类因子"""
-        if factor_name == 'industry' or factor_name.startswith('industry_'):
+    def _match(name: str,
+               exact: list[str] | None = None,
+               prefixes: list[str] | None = None,
+               suffixes: list[str] | None = None,
+               keywords: list[str] | None = None,
+               patterns: list[str] | None = None) -> bool:
+        """
+        【通用匹配引擎】根据多种规则判断因子名称是否匹配。
+
+        Args:
+            name (str): 待检查的因子名称。
+            exact (list): 精确匹配列表。
+            prefixes (list): 前缀匹配列表。
+            suffixes (list): 后缀匹配列表。
+            keywords (list): 包含的关键字列表。
+            patterns (list): 正则表达式模式列表。
+
+        Returns:
+            bool: 如果匹配任何规则，则返回True。
+        """
+        # 使用空列表作为默认值，避免处理None的情况
+        exact = exact or []
+        prefixes = prefixes or []
+        suffixes = suffixes or []
+        keywords = keywords or []
+        patterns = patterns or []
+
+        # 1. 精确匹配
+        if name in exact:
             return True
+        # 2. 前缀/后缀匹配
+        if any(name.startswith(p) for p in prefixes) or \
+                any(name.endswith(s) for s in suffixes):
+            return True
+        # 3. 关键字匹配
+        if any(k in name for k in keywords):
+            return True
+        # 4. 正则表达式匹配 (最强大、最精确)
+        #    使用 \bbeta\b 匹配独立的单词 "beta"
+        if any(re.search(pat, name) for pat in patterns):
+            return True
+
         return False
 
-    @staticmethod
-    def is_beta_factor(factor_name: str) -> bool:
-        """判断是否为Beta类因子"""
-        if 'beta' in factor_name:
-            return True
-        return False
+    @classmethod
+    def is_size_factor(cls, factor_name: str) -> bool:
+        """判断是否为市值类因子 (更安全)"""
+        return cls._match(
+            name=factor_name,
+            exact=['size', 'small_cap'],
+            keywords=['market_cap'],
+            suffixes=['_mv', '_log_mv']  # 使用后缀匹配替代关键字'_mv'，更安全
+        )
+
+    @classmethod
+    def is_industry_factor(cls, factor_name: str) -> bool:
+        """判断是否为行业类因子 (逻辑不变，统一模式)"""
+        return cls._match(
+            name=factor_name,
+            exact=['industry'],
+            prefixes=['industry_']
+        )
+
+    @classmethod
+    def is_beta_factor(cls, factor_name: str) -> bool:
+        """判断是否为Beta类因子 (使用正则，更精确)"""
+        # \b 是单词边界，确保只匹配独立的 "beta" 单词
+        # 例如：匹配 'beta', 'equity_beta', 'beta_60d'
+        # 不会匹配：'alphabet'
+        return cls._match(
+            name=factor_name,
+            patterns=[r'\bbeta\b']
+        )

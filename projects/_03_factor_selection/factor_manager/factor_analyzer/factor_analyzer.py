@@ -1160,7 +1160,26 @@ class FactorAnalyzer:
         # 波动率 (Volatility): 股价波动性。如过去N天的年化波动率。
         #
         # 真实数据案例： 假设你发明了一个“分析师上调评级次数”因子，回测发现效果很好。但如果你计算它和规模因子的相关性，发现高达0.6。这说明分析师更倾向于覆盖和评级大市值的公司。那么你的因子收益，很大一部分其实只是搭了“大盘股效应”的便车，并非真正独特的Alpha。当市场风格从大盘切换到小盘时，你的因子可能会突然失效。#
-        for factor_name in ['small_cap', 'pb', 'ps_ttm']:  # todo 最后期增加别的剩余的风格因子
+        style_factor_list = [
+            # 规模因子 (必须对数化)
+            'small_cap',
+            # 价值因子 (建议用倒数)
+            'bm_ratio', 'sp_ratio', 'ep_ratio',
+            # 成长因子
+            'net_profit_growth_ttm',
+            'revenue_growth_ttm',
+            # 质量因子
+            'roe_ttm',
+            'gross_margin_ttm',
+            # 风险/波动因子
+            'volatility_90d',
+            'beta',
+            # 动量/反转因子
+            'reversal_21d',  # A股常用短期反转
+            # 流动性因子
+            'ln_turnover_value_90d'
+        ]
+        for factor_name in style_factor_list:
             #   build_df_dict... 函数可以获取因子数据并应用T-1原则
             df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
                 factor_name=factor_name,

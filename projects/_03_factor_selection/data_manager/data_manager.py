@@ -222,7 +222,7 @@ class DataManager:
             'list_date',  # 上市日期,
             'delist_date',  # 退市日期,用于构建标准动态股票池
 
-            'open', 'high', 'low', 'pre_close',  # 为了计算次日是否一字马涨停
+            'open', 'high', 'low', 'pre_close','amount',  # 为了计算次日是否一字马涨停
             'pe_ttm', 'ps_ttm',  # 懒得写calcu 直接在这里生成就好
         ])
         # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
