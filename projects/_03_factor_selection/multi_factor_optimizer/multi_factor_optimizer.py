@@ -285,7 +285,7 @@ class CrossCategoryOptimizer:
         if result.success:
             weights = result.x
         else:
-            logger.warning("优化失败，使用等权重")
+            log_warning("优化失败，使用等权重")
             weights = equal_weights
         
         # 转换为字典
@@ -340,7 +340,7 @@ class CrossCategoryOptimizer:
         if result.success:
             weights = result.x
         else:
-            logger.warning("风险平价优化失败，使用等权重")
+            log_warning("风险平价优化失败，使用等权重")
             weights = equal_weights
         
         # 转换为字典

@@ -151,7 +151,7 @@ class FactorSelector:
 
             # 3. 如果任何一个配置的结果缺失，则跳过这个因子，保证数据的完整性
             if not stats_c2c or not stats_o2c:
-                logger.warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，已跳过。")
+                log_warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，已跳过。")
                 continue
 
             # 4. 从加载的字典中，提取指定周期的核心指标
@@ -220,7 +220,7 @@ class FactorSelector:
         candidate_df = leaderboard_df[leaderboard_df['score'] >= quality_score_threshold]
         candidate_factors_list = candidate_df['factor_name'].tolist()
         if not candidate_factors_list:
-            logger.warning(f"没有因子的综合得分超过 {quality_score_threshold}。")
+            log_warning(f"没有因子的综合得分超过 {quality_score_threshold}。")
             return pd.DataFrame()
         logger.info(f"通过专业打分，筛选出 {len(candidate_factors_list)} 个高质量候选因子。")
 

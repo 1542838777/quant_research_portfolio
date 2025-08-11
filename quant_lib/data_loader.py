@@ -178,7 +178,7 @@ class DataLoader:
                 columns_can_read = list(set(columns_to_need_load + base_fields) & set(available_columns))
 
                 if not columns_can_read:
-                    logger.warning(f"文件 {logical_name} 中没有找到任何需要的字段")
+                    log_warning(f"文件 {logical_name} 中没有找到任何需要的字段")
                     continue
 
                 # 加载数据

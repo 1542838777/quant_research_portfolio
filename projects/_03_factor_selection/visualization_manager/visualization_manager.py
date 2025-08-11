@@ -140,7 +140,7 @@ class VisualizationManager:
                 plt.style.use(style)
         except OSError:
             # 如果样式不存在，使用默认样式
-            logger.warning(f"样式 '{style}' 不可用，使用默认样式")
+            log_warning(f"样式 '{style}' 不可用，使用默认样式")
             plt.style.use('default')
 
     def plot_single_factor_results(self,
@@ -569,7 +569,7 @@ class VisualizationManager:
         try:
             best_period = self._find_best_period_by_rank(ic_stats_o2c, q_stats_o2c, fm_stats_o2c)
         except Exception as e:
-            logger.warning(f"因子 {factor_name} 的O2C结果无法确定最佳周期: {e}")
+            log_warning(f"因子 {factor_name} 的O2C结果无法确定最佳周期: {e}")
             return ""
 
         # --- 2. 创建 2x2 图表布局 ---

@@ -83,7 +83,7 @@ def call_pro_tushare_api(func_name: str, max_retries=3, **kwargs):
                     logger.error("Token刷新失败，终止此API调用。")
                     break
             if i < max_retries - 1:
-                logger.warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
+                log_warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
                 time.sleep(60)
 
     logger.error(f"call_pro_tushare_api调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")
@@ -119,7 +119,7 @@ def call_ts_tushare_api(func_name: str, max_retries=3, **kwargs):
                     logger.error("Token刷新失败，终止此API调用。")
                     break
             if i < max_retries - 1:
-                logger.warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
+                log_warning(f"非token导致的报错！！正在进行第 {i + 1}/{max_retries} 次重试...")
                 time.sleep(60)
 
     logger.error(f"call_ts_tushare_api调用'{func_name}'在 {max_retries} 次尝试后彻底失败。")

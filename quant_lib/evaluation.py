@@ -318,7 +318,7 @@ def calculate_quantile_returns(
         merged_df = pd.concat([factor_long, returns_long], axis=1).dropna()
 
         if merged_df.empty:
-            logger.warning(
+            log_warning(
                 f"  > 在周期 {period}，因子和收益数据没有重叠，无法计算。")  # 考虑 要不要直接报错 不能，因为forward_returns有nan很正常
             # 创建一个空的DataFrame以保持输出结构一致性
             empty_cols = [f'Q{i + 1}' for i in range(n_quantiles)] + ['TopMinusBottom']
@@ -636,7 +636,7 @@ def fama_macbeth_regression(
         # logger.info(f"已使用Newey-West(lags={max_lags})修正t检验。")
 
     except Exception as e:
-        logger.warning(f"Newey-West t检验计算失败: {e}。回退到标准t检验。")
+        log_warning(f"Newey-West t检验计算失败: {e}。回退到标准t检验。")
         try:
             series_clean = fm_returns_series.dropna()
             t_stat, p_value = ttest_1samp(series_clean, 0)

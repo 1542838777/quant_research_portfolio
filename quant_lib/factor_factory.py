@@ -338,7 +338,7 @@ class FactorCombiner:
         # 检查权重是否合法
         total_weight = sum(weights.values())
         if abs(total_weight - 1.0) > 1e-6:
-            logger.warning(f"权重和不为1: {total_weight}，将进行归一化处理")
+            log_warning(f"权重和不为1: {total_weight}，将进行归一化处理")
             for factor_name in weights:
                 self.weights[factor_name] /= total_weight
     

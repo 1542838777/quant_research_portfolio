@@ -94,7 +94,7 @@ class FeatureProcessor:
         """
         # 检查特征名称是否一致
         if not all(col in X.columns for col in self.feature_names):
-            logger.warning("输入特征与训练特征不一致")
+            log_warning("输入特征与训练特征不一致")
             X = X[self.feature_names]
         
         # 转换特征
@@ -119,7 +119,7 @@ class FeatureProcessor:
                 elif method == 'zero':
                     X_filled[col] = X_filled[col].fillna(0)
                 else:
-                    logger.warning(f"不支持的填充方法: {method}，使用均值填充")
+                    log_warning(f"不支持的填充方法: {method}，使用均值填充")
                     X_filled[col] = X_filled[col].fillna(X_filled[col].mean())
         
         return X_filled
@@ -150,7 +150,7 @@ class FeatureProcessor:
             elif method == 'minmax':
                 scaler = MinMaxScaler()
             else:
-                logger.warning(f"不支持的缩放方法: {method}，使用标准化缩放")
+                log_warning(f"不支持的缩放方法: {method}，使用标准化缩放")
                 scaler = StandardScaler()
             
             X_scaled[col] = scaler.fit_transform(X_scaled[[col]])
@@ -342,7 +342,7 @@ class ModelTrainer:
             elif self.model_type == 'svm':
                 return SVR()
             else:
-                logger.warning(f"不支持的模型类型: {self.model_type}，使用LightGBM")
+                log_warning(f"不支持的模型类型: {self.model_type}，使用LightGBM")
                 return lgb.LGBMRegressor(random_state=self.random_state)
         else:  # classification
             if self.model_type == 'lightgbm':
@@ -356,7 +356,7 @@ class ModelTrainer:
             elif self.model_type == 'svm':
                 return SVC(probability=True, random_state=self.random_state)
             else:
-                logger.warning(f"不支持的模型类型: {self.model_type}，使用LightGBM")
+                log_warning(f"不支持的模型类型: {self.model_type}，使用LightGBM")
                 return lgb.LGBMClassifier(random_state=self.random_state)
     
     def _tune_hyperparameters(self, 
@@ -457,7 +457,7 @@ class ModelTrainer:
         elif hasattr(self.model, 'coef_'):
             return np.abs(self.model.coef_)
         else:
-            logger.warning(f"{self.model_type}模型不支持特征重要性")
+            log_warning(f"{self.model_type}模型不支持特征重要性")
             return np.zeros(len(feature_names))
 
 
