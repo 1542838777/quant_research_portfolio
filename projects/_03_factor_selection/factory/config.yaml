@@ -188,6 +188,10 @@ factor_definition:
     style_category: 'return'
     action: null
     description: '每日收益率（后复权）。'
+  - name: 'amount'
+    style_category: 'liquidity'
+    action: null
+    description: '每日成交额，用于计算流动性指标。'
   - name: 'total_mv'
     style_category: 'size'
     action: null
@@ -195,7 +199,7 @@ factor_definition:
   - name: 'circ_mv'
     style_category: 'size'
     action: null
-    description: '每日流通市值。'
+    description: '每日流通市值，在A股比总市值更能反映真实交易规模。'
   - name: 'turnover_rate'
     style_category: 'liquidity'
     action: null
@@ -212,10 +216,10 @@ factor_definition:
     style_category: 'value'
     action: null
     description: '滚动市销率(TTM)，基础价值指标。'
-  - name: 'industry'
+  - name: 'industry_sw'
     style_category: 'sector'
     action: null
-    description: '申万一级行业分类。'
+    description: '申万一级行业分类，A股最重要的风格因子之一。'
 
   # ----------------------------------------------------------------------------
   #  二、衍生因子层 (Derived Factors) - action: technical_calcu / composite
@@ -223,11 +227,12 @@ factor_definition:
   # ----------------------------------------------------------------------------
 
   # === 规模 (Size) ===
-  - name: 'market_cap_log'
+  - name: 'small_cap'
+    # 【修正与增强】 使用流通市值并明确命名为对数形式，这是进行回归和中性化的标准做法。
     style_category: 'size'
-    description: '对数总市值，最经典的规模因子，用于降低市值的极端分布影响。'
+    description: '流通市值的对数。必须取对数以缓解数据右偏，是进行回归和中性化时最标准的规模因子。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['total_mv']
+    cal_require_base_fields: ['circ_mv']
     cal_require_base_fields_from_daily: True
 
   # === 价值 (Value) ===
@@ -262,7 +267,7 @@ factor_definition:
     cal_require_base_fields: ['bm_ratio', 'sp_ratio', 'ep_ratio']
     cal_require_base_fields_from_daily: False # 依赖于计算后的因子
 
-  # === 质量 (Quality) === - 【新增核心类别】
+  # === 质量 (Quality) ===
   - name: 'roe_ttm'
     style_category: 'quality'
     description: '净资产收益率(Return on Equity)，衡量公司为股东创造利润的能力，巴菲特最看重的指标之一。'
@@ -282,7 +287,7 @@ factor_definition:
     cal_require_base_fields: ['total_debt', 'total_assets'] # 依赖财报数据
     cal_require_base_fields_from_daily: False
 
-  # === 成长 (Growth) === - 【新增核心类别】
+  # === 成长 (Growth) ===
   - name: 'net_profit_growth_yoy'
     style_category: 'growth'
     description: '净利润同比增长率(YoY)，最直接的成长性指标。'
@@ -296,21 +301,35 @@ factor_definition:
     cal_require_base_fields: ['total_revenue_single_q'] # 依赖单季度财报数据
     cal_require_base_fields_from_daily: False
 
-  # === 动量 (Momentum) ===
+  # === 动量与反转 (Momentum & Reversal) ===
   - name: 'momentum_12_1'
     style_category: 'momentum'
     description: '过去12个月剔除最近1个月的累计收益率，最经典的截面动量因子，捕捉中期价格惯性。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['close']
+    cal_require_base_fields: [ 'close' ]
     cal_require_base_fields_from_daily: True
   - name: 'momentum_20d'
     style_category: 'momentum'
     description: '20日动量/收益率，捕捉短期趋势，常用于高频一些的策略。'
     action: 'technical_calcu'
+    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields_from_daily: True
+  - name: 'momentum_120d'
+    # 【新增】 补充一个中长期动量因子
+    style_category: 'momentum'
+    description: '120日（约半年）累计收益率，捕捉中期价格惯性。'
+    action: 'technical_calcu'
+    cal_require_base_fields: ['close']
+    cal_require_base_fields_from_daily: True
+  - name: 'reversal_21d'
+    # 【新增】 A股市场效应非常显著的短期反转因子
+    style_category: 'momentum' # 类别上仍属动量大类
+    description: '21日（约1个月）收益率的负向。A股短期反转效应显著，即前期涨多的股票后期倾向于跌。'
+    action: 'technical_calcu'
     cal_require_base_fields: ['close']
     cal_require_base_fields_from_daily: True
 
-  # === 风险 (Risk / Volatility) === - 【新增核心类别】
+  # === 风险 (Risk / Volatility) ===
   - name: 'beta'
     style_category: 'risk'
     description: '贝塔系数，衡量个股相对于市场基准的系统性风险。（你到底是跟着别人屁股后面转，还是凭自己的真本事 （用到协同'
@@ -323,19 +342,47 @@ factor_definition:
     action: 'technical_calcu'
     cal_require_base_fields: ['pct_chg']
     cal_require_base_fields_from_daily: True
+  - name: 'volatility_90d'
+    # 【新增】 与Beta互补，衡量自身风险
+    style_category: 'risk'
+    description: '90日年化波动率，衡量个股自身的价格波动风险（特质风险）。低波动股票有时反而有超额收益。'
+    action: 'technical_calcu'
+    cal_require_base_fields: ['pct_chg']
+    cal_require_base_fields_from_daily: True
 
   # === 流动性 (Liquidity) ===
+
   - name: 'turnover_rate_monthly_mean'
     style_category: 'liquidity'
     description: '月平均换手率，衡量股票在一段时间内的交易活跃度。'
     action: 'technical_calcu'
-    cal_require_base_fields: ['turnover_rate']
+    cal_require_base_fields: [ 'turnover_rate' ]
     cal_require_base_fields_from_daily: True
   - name: 'liquidity_amihud'
     style_category: 'liquidity'
     description: 'Amihud非流动性指标，衡量单位成交额能引起多大的价格波动，是冲击成本的优秀代理变量。'
     action: 'technical_calcu'
+    cal_require_base_fields: [ 'pct_chg', 'amount' ] # 依赖日收益率和成交额
+    cal_require_base_fields_from_daily: True
+  - name: 'turnover_rate_90d_mean'
+    # 【新增】 90日平均换手率
+    style_category: 'liquidity'
+    description: '90日（约一季度）平均换手率，比单日或月度指标更能平滑地衡量股票的交易活跃度。'
+    action: 'technical_calcu'
+    cal_require_base_fields: ['turnover_rate']
+    cal_require_base_fields_from_daily: True
+  - name: 'ln_turnover_value_90d'
+    # 【新增】 90日日均成交额的对数
+    style_category: 'liquidity'
+    description: '90日日均成交额的对数。反映了资产的绝对流动性水平，是冲击成本的重要代理变量。建议取对数。'
+    action: 'technical_calcu'
+    cal_require_base_fields: ['amount']
+    cal_require_base_fields_from_daily: True
+  - name: 'amihud_liquidity'
+    # 【修正与增强】 修正命名，更清晰
+    style_category: 'liquidity'
+    description: 'Amihud非流动性指标，衡量单位成交额能引起多大的价格波动，是冲击成本的优秀代理变量。'
+    action: 'technical_calcu'
     cal_require_base_fields: ['pct_chg', 'amount'] # 依赖日收益率和成交额
     cal_require_base_fields_from_daily: True
-
 #todo  、 大单、...

@@ -1034,7 +1034,8 @@ class FactorAnalyzer:
                 results.append( {factor_name:(self.test_factor_entity_service(
                     factor_name=factor_name,
                     factor_df=factor_data,
-                    need_process_factor=True
+                    need_process_factor=True,
+                    is_composite_factor=False,
                 ))})
             except Exception as e:
                 raise ValueError(f"✗ 因子{factor_name}测试失败: {e}") from e
