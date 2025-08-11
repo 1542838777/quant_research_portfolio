@@ -893,12 +893,12 @@ class FactorAnalyzer:
                 'total_mv'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
 
-    def test_factor_entity_service(self,  # todo 如果是合成因子，那么不需要双轨吧 确实
+    def test_factor_entity_service(self,
                                    factor_name: str,
                                    factor_df: pd.DataFrame,
                                    preprocess_method: str = "standard",
                                    need_process_factor: bool = True,
-                                   is_composite_factor: bool = False
+                                   is_composite_factor: bool = True
                                    ) -> Dict[str, Any]:
         """
         测试单个因子

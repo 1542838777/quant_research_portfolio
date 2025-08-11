@@ -318,8 +318,8 @@ class FactorCalculator:
             aggfunc='last'
         )
 
-        # 3. 重索引并填充 (Reindex & ffill)
-        yoy_daily = yoy_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+        trading_dates = self.factor_manager.data_manager.trading_dates
+        yoy_daily = self._broadcast_ann_date_to_daily(yoy_wide, trading_dates)
 
         print("--- 最终因子: net_profit_growth_yoy 计算完成 ---")
         return yoy_daily
@@ -370,8 +370,9 @@ class FactorCalculator:
             aggfunc='last'
         )
 
-        # 3. 重索引并填充 (Reindex & ffill)
-        yoy_daily = yoy_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+        # ---步骤四：调用通用广播引擎 ---
+        trading_dates = self.factor_manager.data_manager.trading_dates
+        yoy_daily = self._broadcast_ann_date_to_daily(yoy_wide, trading_dates)
 
         print("--- 最终因子: total_revenue_growth_yoy 计算完成 ---")
         return yoy_daily
@@ -545,9 +546,36 @@ class FactorCalculator:
         )
 ######################
     ##以下是模板
+
+    def _broadcast_ann_date_to_daily(self,
+                                     sparse_wide_df: pd.DataFrame,
+                                     trading_dates: pd.DatetimeIndex) -> pd.DataFrame:
+        """
+        【核心通用工具】将一个基于稀疏公告日(ann_date)的宽表，
+        安全地广播并填充到一个密集的交易日历上。
+
+        这是解决所有财报类因子“期初NaN”问题的最终解决方案。
+
+        Args:
+            sparse_wide_df (pd.DataFrame): 以ann_date为索引的稀疏宽表。
+            trading_dates (pd.DatetimeIndex): 目标交易日历。
+
+        Returns:
+            pd.DataFrame: 以交易日为索引的、被正确填充的稠密宽表。
+        """
+        # 1. 将稀疏的“公告日”索引与密集的“交易日”索引合并
+        combined_index = sparse_wide_df.index.union(trading_dates)
+
+        # 2. 扩展到“超级索引”上，然后进行决定性的前向填充
+        filled_df = sparse_wide_df.reindex(combined_index).ffill()
+
+        # 3. 最后，只裁剪出我们需要的交易日，并返回
+        daily_df = filled_df.loc[trading_dates]
+
+        return daily_df
         ###A股市场早期，或一些公司在特定时期，只会披露年报和半年报，而缺少一季报和三季报的累计值。这会导致在我们的完美季度时间标尺上出现NaN。
         ### 所以这就是解决方案：实现了填充 跳跃的季度区间，新增填充的列：filled_col ，计算就在filled_col上面做diff。然后在平滑diff上做rolling。done
-        ## 季度性数据ttm通用计算， 模板计算函数
+        ## 季度性数据ttm通用计算， 模板计算函数 ok
     def _calculate_financial_ttm_factor(self,
                                         factor_name: str,
                                         data_loader_func: Callable[[], pd.DataFrame],
@@ -585,14 +613,24 @@ class FactorCalculator:
         )#执行完之后的ttm_Wide 可能到处都是nan，原因：（以ann_date 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只）
         # ttm_daily = (ttm_wide.reindex(self.factor_manager.data_manager.trading_dates) #注意 满目苍翼的ttmwide然后还被对齐索引（截断，）从trading开始日开始截，万一刚好这一天 股票值为nan，那么后面ffill也是nan，直到下一个有效ann_date
         #              .ffill())
-        filled_wide = ttm_wide.ffill() #基于上面的注意，这里单独做处理！
-
-        ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+        # filled_wide = ttm_wide.ffill() #基于上面的注意，这里单独做处理！
+        ##
+        # 很隐蔽的bug
+        # 基于ann_date作为index
+        # 也就意味着，比如整个7月没有任何股票进行发报告，即 ann_date不会出现在整个8月
+        # 尽管有填充：filled_wide = ttm_wide.ffill() #基于上面的注意，这里单独做处理！ 可能是下一个月ann_date才有值 比如0905是下一个ann_date，上一个ann_date是0730
+        # 如果我们传入的ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill() 交易日，是0804
+        # 开始的，那么无法找到filled_wide的index是这一天的 那么默认就算是nan，然后经过fiil，到下一个ann_date(0905） 全是nan！！！#
+        # ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill() 解决：避免阶段，提前全局弄
+        # 1. 获取交易日历
+        trading_dates = self.factor_manager.data_manager.trading_dates
+        ret = self._broadcast_ann_date_to_daily(ttm_wide, trading_dates)
 
         print(f"--- [引擎] 因子: {factor_name} 计算完成 ---")
-        return ttm_daily
 
-    # 加载财报中的“时点”数据，并将其正确地映射到每日的时间序列上。
+        return ret
+
+    # 加载财报中的“时点”数据，并将其正确地映射到每日的时间序列上。 ok
     def _calculate_financial_snapshot_factor(self,
                                              factor_name: str,
                                              data_loader_func: Callable[[], pd.DataFrame],
@@ -631,9 +669,18 @@ class FactorCalculator:
             values=source_column,
             aggfunc='last'
         )
+        # --- 步骤三：【核心修正】使用合并索引的方法，进行稳健的重索引和填充 ---
+        # 1. 获取交易日历
+        trading_dates = self.factor_manager.data_manager.trading_dates
 
-        # 步骤三：重索引并填充
-        snapshot_daily = snapshot_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill()
+        # 2. 将稀疏的“公告日”索引与密集的“交易日”索引合并，并排序
+        combined_index = snapshot_wide.index.union(trading_dates)
+
+        # 3. 将 snapshot_wide 扩展到这个超级索引上，然后进行前向填充
+        snapshot_filled_on_super_index = snapshot_wide.reindex(combined_index).ffill()
+
+        # 4. 最后，从这个填充好的、完整的DataFrame中，只选取我们需要的交易日
+        snapshot_daily = snapshot_filled_on_super_index.loc[trading_dates]
 
         print(f"--- [通用引擎] 因子: {factor_name} 计算完成 ---")
         return snapshot_daily

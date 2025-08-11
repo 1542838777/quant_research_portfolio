@@ -56,6 +56,7 @@ def load_balancesheet_df():
     df = df.sort_values(by=['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False]).drop_duplicates(
         subset=['ts_code', 'end_date'], keep='first')
 
+    # df =  df[df['ts_code'].isin(['000001.SZ','000002.SZ','000003.SZ'])]
     df = df[['ann_date', 'ts_code', 'end_date', 'total_hldr_eqy_exc_min_int','total_assets','total_liab']]
     return df
 
