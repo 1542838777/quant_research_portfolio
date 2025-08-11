@@ -490,10 +490,16 @@ class VisualizationManager:
 
         # --- E. 风格暴露分析 ---
         ax_e = fig.add_subplot(gs[2, 0])
-        pd.Series(style_corr).sort_values(ascending=True).plot(kind='barh', ax=ax_e)
+
+        if style_corr:
+            pd.Series(style_corr).sort_values(ascending=True).plot(kind='barh', ax=ax_e)
+            ax_e.axvline(0, color='black', linestyle='--', lw=1)
+            ax_e.grid(True, axis='x')
+        else:
+            ax_e.text(0.5, 0.5, "无数据", ha='center', va='center', fontsize=14, fontproperties=cn_font)
+            ax_e.set_xlim(0, 1)  # 避免坐标轴范围为0导致显示异常
+
         ax_e.set_title('E. 风格暴露分析 (独特性)', fontproperties=cn_font, fontsize=18)
-        ax_e.axvline(0, color='black', linestyle='--', lw=1);
-        ax_e.grid(True, axis='x')
 
         # --- F. 核心指标汇总表 ---
         ax_f = fig.add_subplot(gs[2, 1])
