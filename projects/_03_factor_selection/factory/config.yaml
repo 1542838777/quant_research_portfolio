@@ -2,21 +2,23 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-    #     - 'turnover_rate_90d_mean'
-    - 'cfp_ratio'
-    # === 规模 (Size) ===
-    - 'momentum_120d'
-    - 'reversal_21d'
-    - 'volatility_90d'
+#
+#    # === 规模 (Size) ===
+#    - 'momentum_120d'
+#    - 'reversal_21d'
+#    - 'volatility_90d'
+#    - 'turnover_rate_90d_mean'
+#    - 'ln_turnover_value_90d'
+#    - 'amihud_liquidity'
+#
+#    # === 价值 (Value) ===
+#    - 'bm_ratio'
+#    - 'ep_ratio'
+#    - 'sp_ratio'
+#    - 'cfp_ratio'
     - 'turnover_rate_90d_mean'
     - 'ln_turnover_value_90d'
     - 'amihud_liquidity'
-
-    # === 价值 (Value) ===
-    - 'bm_ratio'
-    - 'ep_ratio'
-    - 'sp_ratio'
-    - 'cfp_ratio'
 
     # === 质量 (Quality) ===
     - 'roe_ttm'
@@ -38,6 +40,9 @@ target_factors_for_evaluation:
     # === 流动性 (Liquidity) ===
     - 'turnover_rate_monthly_mean'
     - 'liquidity_amihud'
+#    加入
+    - 'log_total_mv'
+
 
 
 # 回测时间范围
@@ -242,6 +247,13 @@ factor_definition:
     description: '流通市值的对数。必须取对数以缓解数据右偏，是进行回归和中性化时最标准的规模因子。'
     action: 'technical_calcu'
     cal_require_base_fields: [ 'circ_mv' ]
+    cal_require_base_fields_from_daily: True
+
+  - name: 'log_total_mv'
+    style_category: 'size'
+    description: '总市值的对数。必须取对数以缓解数据右偏，是进行回归和中性化时最标准的规模因子。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'total_mv' ]
     cal_require_base_fields_from_daily: True
 
   # === 价值 (Value) ===

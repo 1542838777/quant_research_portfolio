@@ -628,11 +628,11 @@ class DataManager:
 
         # 3. 【生成掩码】将原始市值与每日阈值进行比较
         # .lt() 是“小于”操作，axis=0 确保了 thresholds 这个Series能按行正确地广播
-        small_cap_mask = mv_df.lt(thresholds, axis=0)
+        mv_mask = mv_df.lt(thresholds, axis=0)
 
         # 4. 【应用过滤】将所有市值小于当日阈值的股票，在股票池中标记为False
         # 这是一个跨越整个DataFrame的布尔运算，极其高效
-        stock_pool_df[small_cap_mask] = False
+        stock_pool_df[mv_mask] = False
         self.show_stock_nums_for_per_day(f'by_剔除市值低的_filter', stock_pool_df)
 
         return stock_pool_df

@@ -363,7 +363,7 @@ class FactorClassifier:
         """判断是否为市值类因子 (更安全)"""
         return cls._match(
             name=factor_name,
-            exact=['size', 'small_cap'],
+            exact=['size', 'small_cap','log_circ_mv','log_market_cap','log_total_mv'],
             keywords=['market_cap'],
             suffixes=['_mv', '_log_mv']  # 使用后缀匹配替代关键字'_mv'，更安全
         )

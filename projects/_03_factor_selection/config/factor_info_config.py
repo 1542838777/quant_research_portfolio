@@ -83,6 +83,7 @@ FACTOR_FILL_CONFIG = {
     'cfp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
     'roe_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
     'small_cap': FILL_STRATEGY_FFILL_LIMIT_65,
+    'log_total_mv': FILL_STRATEGY_FFILL_LIMIT_65,
     'gross_margin_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
     'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
     'net_profit_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
