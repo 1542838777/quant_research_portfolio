@@ -14,7 +14,7 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20190328','20190612')
-tem_p = ('20190328','20190612')
+tem_p = ('20241108','20250624')
 # fast_periods = ('20190328','20190612')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
@@ -57,7 +57,7 @@ fast_mode_2 = {
     'pools': {
         **CSI300_none_FFF_most_basic_profile
     },
-    'period':fast_periods_2,
+    'period':tem_p,
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
 
@@ -67,7 +67,7 @@ fast_mode_two_pools = {
         **CSI300_none_FFF_most_basic_profile,
         **CSI500_none_FFF_most_basic_profile
     },
-    'period':fast_periods,
+    'period':tem_p,
     'desc': 'fast_mode_two_pools ，没有任何过滤 fast'
 }
 

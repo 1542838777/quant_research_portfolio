@@ -481,8 +481,8 @@ class FactorProcessor:
 
             if is_sample_insufficient:
                 log_warning(
-                    f"  警告: 日期 {date.date()} 清理后样本数不足 "
-                    f"({len(combined_df)}), 未满足 N > {MIN_SAMPLES_ABSOLUTE} 且 N > {MIN_SAMPLES_RELATIVE_FACTOR}*K 的条件，"
+                    f"  警告: 日期 {date.date()} 清理后样本数为: "
+                    f"({len(combined_df)}), 未满足 样本数 >绝对最小样本数:( {MIN_SAMPLES_ABSOLUTE}) 或未满足-- 样本数 > 相对最小样本倍数:({MIN_SAMPLES_RELATIVE_FACTOR})*自变量个数:({num_predictors}) 的条件，"
                     f"跳过中性化。"
                 )
                 # 【重要决策】当样本不足时，是保留原始因子值，还是设为空值？

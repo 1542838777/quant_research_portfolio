@@ -919,7 +919,7 @@ class FactorAnalyzer:
            return  self.test_factor_entity_service_for_composite_factor(factor_name,factor_df,test_configurations,start_date,end_date,stock_index)
         for calculator_name, func in test_configurations.items():
             # 执行测试
-            log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
+            # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
             raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw,q_st_raw, _, _, _, _, _ = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_df=factor_df,
@@ -931,7 +931,7 @@ class FactorAnalyzer:
                 do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
                 do_style_correlation_test=False
             )
-            log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
+            # log_flow_start(f"因子{factor_name}处理状态 进入comprehensive_test测试 ")
             proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
                 = self.comprehensive_test(
                 target_factor_name=factor_name,

@@ -22,7 +22,6 @@ class FactorSelector:
     # ==============================================================================
     def run_factor_analysis(self, TARGET_STOCK_POOL: str = '000300.SH', TARGET_PERIOD: str = '21d'):
         # --- 0. 初始化 ---
-        # (这里省略了你的初始化代码，假设 factor_analyzer 已经准备好)
         # --- 1. 定义分析目标 ---
         RESULTS_PATH = 'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
 
@@ -67,22 +66,6 @@ class FactorSelector:
                 factor_name=factor_name,
                 results_path=RESULTS_PATH
             )
-            #
-            # # 4.1 调用新的IC报告函数
-            # self.visualizationManager.plot_ic_report(
-            #     backtest_base_on_index=TARGET_STOCK_POOL,
-            #     factor_name=factor_name,
-            #     results_path=RESULTS_PATH,
-            #     default_config='c2c',  # 或 'c2c'
-            # )
-            #
-            # # 4.2 调用新的分层净值报告函数
-            # self.visualizationManager.plot_quantile_report(
-            #     backtest_base_on_index=TARGET_STOCK_POOL,
-            #     factor_name=factor_name,
-            #     results_path=RESULTS_PATH,
-            #     default_config='c2c',  # 或 'c2c'
-            #     target_period='21d')  # 指定要展示哪个周期的分层结果
             # 4.2 调用新的分层净值报告函数
             self.visualizationManager.plot_ic_quantile_panel(
                 backtest_base_on_index=TARGET_STOCK_POOL,
@@ -105,100 +88,85 @@ class FactorSelector:
                           run_version: str = 'latest'
                           ) -> pd.DataFrame:
         """
-        【V2.0-版本化】从硬盘扫描所有因子的测试结果，并构建对比排行榜。
-        能够自动定位最新的回测版本，或加载指定版本。
+        【V3.0-修正版】从硬盘扫描所有因子的测试结果，并构建对比排行榜。
+        此版本会提取 Raw 和 Processed 的所有关键指标，为最终打分提供完整数据。
         """
         logger.info(f"正在为股票池 [{stock_pool}] 周期 [{target_period}] 构建排行榜 (版本: {run_version})...")
         leaderboard_data = []
         base_path = Path(results_path) / stock_pool
 
-        # --- 内部辅助函数，用于安全地查找和加载指定版本的stats文件 ---
+        # ... 内部辅助函数 _find_and_load_stats 保持不变 ...
         def _find_and_load_stats(factor_dir: Path, config_name: str, version: str) -> Dict[str, Any] | None:
+            # (此函数无需修改，原样复制即可)
             config_path = factor_dir / config_name
-            if not config_path.is_dir():
-                return None
-
+            if not config_path.is_dir(): return None
             version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
-            if not version_dirs:
-                return None
-
+            if not version_dirs: return None
             target_version_path = None
             if version == 'latest':
-                target_version_path = sorted(version_dirs)[-1]  # 按字母顺序排序，最新的日期版本会在最后
+                target_version_path = sorted(version_dirs)[-1]
             else:
                 path_to_find = config_path / version
-                if path_to_find in version_dirs:
-                    target_version_path = path_to_find
-
-            if not target_version_path:
-                return None
-
+                if path_to_find in version_dirs: target_version_path = path_to_find
+            if not target_version_path: return None
             summary_file = target_version_path / 'summary_stats.json'
             if summary_file.exists():
-                return load_json_with_numpy(summary_file)
+                # 假设 load_json_with_numpy 是一个可以处理numpy类型的加载函数
+                with open(summary_file, 'r') as f: return json.load(f)
             return None
-
-        # --- 辅助函数结束 ---
 
         # 1. 扫描所有因子目录
         for factor_dir in base_path.iterdir():
-            if not factor_dir.is_dir():
-                continue
+            if not factor_dir.is_dir(): continue
             factor_name = factor_dir.name
 
-            # 2. 【核心改造】使用辅助函数，查找并加载C2C和O2C的统计结果
+            # 2. 加载C2C和O2C的完整统计结果
             stats_c2c = _find_and_load_stats(factor_dir, 'c2c', run_version)
             stats_o2c = _find_and_load_stats(factor_dir, 'o2c', run_version)
 
-            # 3. 如果任何一个配置的结果缺失，则跳过这个因子，保证数据的完整性
-            if (not stats_c2c) and (not stats_o2c): #测试模式 为了快速验证代码，可以让过
-                log_warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，已跳过。")
+            if not stats_c2c or not stats_o2c:
+                logger.warning(f"因子 {factor_name} 的结果不完整 (缺少C2C或O2C的 '{run_version}' 版本)，已跳过。")
                 continue
 
-            # 4. 从加载的字典中，提取指定周期的核心指标
-            # 使用 .get(key, {}) 来安全地处理 period 可能不存在的情况
-            c2c_q =  (stats_c2c or {}).get('quantile_backtest_processed', {}).get(target_period, {})
-            o2c_q =  (stats_o2c or {}).get('quantile_backtest_processed', {}).get(target_period, {})
+            # 3. 【核心修正】构建一个扁平化的指标字典，提取所有需要的“原料”
+            row = {'factor_name': factor_name, 'period': target_period, 'stock_pool': stock_pool}
 
-            c2c_ic =  (stats_c2c or {}).get('ic_analysis_processed', {}).get(target_period, {})
-            o2c_ic = (stats_o2c or {}).get('ic_analysis_processed', {}).get(target_period, {})
+            # 遍历 c2c/o2c 和 raw/processed 两个维度
+            for r_type, stats_data in [('c2c', stats_c2c), ('o2c', stats_o2c)]:
+                for d_type in ['raw', 'processed']:
+                    # 安全地获取各模块的周期性数据
+                    ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(target_period, {})
+                    q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(target_period, {})
 
-            c2c_fm =  (stats_c2c or {}).get('fama_macbeth', {}).get(target_period, {})
-            o2c_fm = (stats_o2c or {}).get('fama_macbeth', {}).get(target_period, {})
-            if (len(o2c_fm) ==0) and (len(c2c_ic) ==0) and (len(c2c_q) ==0) :
-                continue
-            # 5. 合并为一行宽表数据
-            row = {
-                'factor_name': factor_name,
-                'period': target_period,
-                'stock_pool': stock_pool,
-                # 从字典中安全地 .get() 每个指标
-                'tmb_sharpe_c2c': c2c_q.get('tmb_sharpe'),
-                'tmb_sharpe_o2c': o2c_q.get('tmb_sharpe'),
-                'tmb_max_drawdown_o2c': o2c_q.get('tmb_max_drawdown'),
-                'monotonicity_spearman_o2c': o2c_q.get('monotonicity_spearman'),
+                    # 提取IC指标
+                    row[f'ic_mean_{d_type}_{r_type}'] = ic_stats.get('ic_mean')
+                    row[f'ic_ir_{d_type}_{r_type}'] = ic_stats.get('ic_ir')
 
-                'ic_mean_c2c': c2c_ic.get('ic_mean'),
-                'ic_mean_o2c': o2c_ic.get('ic_mean'),
-                'ic_ir_c2c': c2c_ic.get('ic_ir'),
-                'ic_ir_o2c': o2c_ic.get('ic_ir'),
+                    # 提取分位数回测指标
+                    tmb = q_stats.get('top_minus_bottom', {})
+                    mono = q_stats.get('monotonicity', {})
+                    row[f'tmb_sharpe_{d_type}_{r_type}'] = tmb.get('sharpe')
+                    row[f'tmb_max_drawdown_{d_type}_{r_type}'] = tmb.get('max_drawdown')
+                    row[f'monotonicity_spearman_{d_type}_{r_type}'] = mono.get('spearman')
 
-                'fm_t_statistic_c2c': c2c_fm.get('t_statistic'),
-                'fm_t_statistic_o2c': o2c_fm.get('t_statistic'),
-            }
+                # 提取Fama-MacBeth T值 (假设它只在processed上计算)
+                fm_stats = stats_data.get('fama_macbeth', {}).get(target_period, {})
+                row[f'fm_t_statistic_processed_{r_type}'] = fm_stats.get('t_stat')
+
             leaderboard_data.append(row)
 
         if not leaderboard_data:
-            raise ValueError(
-                f"在路径 {base_path} 下，针对周期 {target_period} 和版本 '{run_version}'，没有找到任何完整的因子测试结果。")
+            raise ValueError(f"在路径 {base_path} 下，未找到任何完整的因子测试结果。")
 
         leaderboard_df = pd.DataFrame(leaderboard_data).set_index('factor_name', drop=False)
 
-        # 6. 应用V5评分函数
-        leaderboard_df['score'] = leaderboard_df.apply(calculate_factor_score_ultimate, axis=1)
+        # 6. 【应用升级版打分】应用新的诊断友好型评分函数
+        scores_df = leaderboard_df.apply(calculate_factor_score_ultimate, axis=1)
 
-        return leaderboard_df.sort_values(by='score', ascending=False)
+        # 将分数合并回主表
+        final_leaderboard = leaderboard_df.join(scores_df)
 
+        return final_leaderboard.sort_values(by='Final_Score', ascending=False)
     ##
     # 第一阶段：质量打分 - 使用我提供的“专业级因子评分体系”对每个因子进行绝对打分。
     #
@@ -218,7 +186,7 @@ class FactorSelector:
         logger.info(f"--- 开始筛选周期为 {period} 的顶级因子 ---")
 
         # --- 1. 质量筛选 ---
-        candidate_df = leaderboard_df[leaderboard_df['score'] >= quality_score_threshold]
+        candidate_df = leaderboard_df[leaderboard_df['Final_Score'] >= quality_score_threshold]
         candidate_factors_list = candidate_df['factor_name'].tolist()
         if not candidate_factors_list:
             log_warning(f"没有因子的综合得分超过 {quality_score_threshold}。")
@@ -267,136 +235,42 @@ class FactorSelector:
 # 例如，发现在动量类里，排名前5的因子相关性都高达0.8，那么你只保留其中综合排名最高的那一个。然后你再去价值类、质量类里做同样的操作。
 #
 # 这个混合策略，保证没有错过任何一个在全市场范围内表现优异的因子（质量），又通过后续的步骤保证了最终入选因子的多样性。稳健多因子模型。#
-
-
-#
-# def calculate_factor_score(purify_summary: Union[pd.Series, dict]) -> float:
-#     """
-#     【V3版】根据“专业级因子评分体系”为单个因子计算总分。
-#     此版本能自动判断因子方向（正向或反向），并应用相应的评分逻辑。
-#
-#     输入: 一个 Series，包含了单个因子的所有指标。
-#     输出: 该因子的总得分。
-#     """
-#     score = 0
-#
-#     # --- 指标提取 ---
-#     ic_mean = purify_summary.get('ic_mean', 0)
-#     ic_ir = purify_summary.get('ic_ir', 0)
-#     fm_t_stat = purify_summary.get('fm_t_statistic', 0)
-#     tmb_sharpe = purify_summary.get('tmb_sharpe', 0)
-#     tmb_max_drawdown = purify_summary.get('tmb_max_drawdown', 0)
-#     monotonicity_spearman = purify_summary.get('monotonicity_spearman')
-#
-#     # --- 关键升级：自动判断因子方向 ---
-#     # 优先使用IC均值的符号判断。如果IC均值接近0，则使用t统计量的符号辅助判断。
-#     factor_direction = 1
-#     if ic_mean < -1e-4:  # 使用一个小的负数阈值避免噪音
-#         factor_direction = -1
-#     elif abs(ic_mean) <= 1e-4 and fm_t_stat < 0:
-#         factor_direction = -1
-#
-#     # --- 评分开始 ---
-#     # 1. 预测能力分 (满分20) - 根据因子方向调整
-#     adj_ic_mean = ic_mean * factor_direction
-#     if adj_ic_mean > 0.05:
-#         score += 20
-#     elif 0.03 < adj_ic_mean <= 0.05:
-#         score += 15
-#     elif 0.01 < adj_ic_mean <= 0.03:
-#         score += 10
-#     elif 0 < adj_ic_mean <= 0.01:
-#         score += 5
-#
-#     # 2. 稳定性分 (满分20) - ICIR通常看绝对值或调整后方向，这里以调整后为正评分
-#     adj_ic_ir = ic_ir * factor_direction
-#     if adj_ic_ir > 0.5:
-#         score += 20
-#     elif 0.3 < adj_ic_ir <= 0.5:
-#         score += 15
-#     elif 0.1 < adj_ic_ir <= 0.3:
-#         score += 10
-#     elif 0 < adj_ic_ir <= 0.1:
-#         score += 5
-#
-#     # 3. 统计显著性分 (满分30) - t值看绝对值，不受方向影响
-#     t_abs = abs(fm_t_stat)
-#     if t_abs > 3.0:
-#         score += 30
-#     elif 2.0 < t_abs <= 3.0:
-#         score += 25
-#     elif 1.5 < t_abs <= 2.0:
-#         score += 15
-#
-#     # 4. 策略表现分 (满分20) - 根据因子方向调整
-#     adj_tmb_sharpe = tmb_sharpe * factor_direction
-#     perf_score = 0
-#     if adj_tmb_sharpe > 1.0:
-#         perf_score = 20
-#     elif 0.5 < adj_tmb_sharpe <= 1.0:
-#         perf_score = 15
-#     elif 0.2 < adj_tmb_sharpe <= 0.5:
-#         perf_score = 10
-#     elif 0 < adj_tmb_sharpe <= 0.2:
-#         perf_score = 5
-#
-#     # 风控扣分项 - 回撤总是负的，直接比较
-#     if tmb_max_drawdown < -0.5:
-#         perf_score -= 5
-#
-#     score += max(0, perf_score)
-#
-#     # 5. 单调性分 (满分10) - 根据Spearman相关系数进行分级评分
-#     if monotonicity_spearman is not None and pd.notna(monotonicity_spearman):
-#         # 我们关心的是单调性的强度，所以取绝对值
-#         mono_abs = abs(monotonicity_spearman)
-#
-#         # 只有当单调性达到中等强度(0.5)以上时，才开始加分
-#         if mono_abs >= 0.5:
-#             # 直接将Spearman相关系数乘以总分10，得到一个连续的分数
-#             # 这样 mono_abs=0.5 得5分, mono_abs=1.0 得10分
-#             # 这是一个简单、直观且精细的评分方式
-#             score += mono_abs * 10
-#         # 低于0.5，我们认为单调性不显著，不额外加分
-#
-#     return score
-
-def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> float:
+def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.Series:
     """
-    【基础分 (Base Score): 完全基于Processed + O2C这两个最严格、最纯净的维度进行计算。它衡量的是一个因子在“理想状态”下的绝对实力。
-
-稳健性惩罚 (Robustness Penalty): 检验这个“理想实力”能否经受住真实交易成本的考验。如果一个因子对隔夜跳空收益过于敏感，它会在这里被扣分。
-
-Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。如果一个因子的亮眼表现，仅仅是因为它搭了市值、行业风格的便车，它会在这里被“打回原形”，受到重罚。
+    【V2-诊断友好版】
+    此版本逻辑与原版完全一致，但返回一个pd.Series，包含所有打分的中间过程和最终结果。
+    它现在可以正确接收 build_leaderboard 准备的所有指标。
     """
-    # --- 1. 指标提取 (安全地获取所有可能用到的指标) ---
-    # 纯净因子(Processed)的表现
-    ic_ir_proc_c2c = summary_row.get('ic_ir_processed_c2c', 0.0)
-    ic_ir_proc_o2c = summary_row.get('ic_ir_processed_o2c', 0.0)
-    ic_mean_proc_o2c = summary_row.get('ic_mean_processed_o2c', 0.0)
-    tmb_sharpe_proc_c2c = summary_row.get('tmb_sharpe_processed_c2c', 0.0)
-    tmb_sharpe_proc_o2c = summary_row.get('tmb_sharpe_processed_o2c', 0.0)
-    fm_t_stat_proc_o2c = summary_row.get('fm_t_statistic_processed_o2c', 0.0)
-    tmb_max_drawdown_proc_o2c = summary_row.get('tmb_max_drawdown_processed_o2c', 0.0)
-    monotonicity_spearman_proc_o2c = summary_row.get('monotonicity_spearman_processed_o2c')
 
-    # 原始因子(Raw)的表现 (仅用于计算纯度惩罚)
-    tmb_sharpe_raw_c2c = summary_row.get('tmb_sharpe_raw_c2c', 0.0)
-    tmb_sharpe_raw_o2c = summary_row.get('tmb_sharpe_raw_o2c', 0.0)
+    # --- 1. 指标提取 (安全地获取所有可能用到的指标, 对缺失值使用0.0) ---
+    def get_metric(key: str, default=0.0):
+        val = summary_row.get(key)
+        return default if pd.isna(val) else val
 
-    # --- 2. 自动判断因子方向 (基于最纯净、最稳健的 O2C + Processed 指标) ---
+    # Processed + O2C 指标 (用于基础分)
+    ic_ir_processed_o2c = get_metric('ic_ir_processed_o2c')
+    ic_mean_processed_o2c = get_metric('ic_mean_processed_o2c')
+    tmb_sharpe_proc_o2c = get_metric('tmb_sharpe_processed_o2c')
+    fm_t_stat_proc_o2c = get_metric('fm_t_statistic_processed_o2c')
+    tmb_max_drawdown_proc_o2c = get_metric('tmb_max_drawdown_processed_o2c')
+    monotonicity_spearman_proc_o2c = get_metric('monotonicity_spearman_processed_o2c', None)
+
+    # Processed + C2C 指标 (用于稳健性惩罚)
+    tmb_sharpe_proc_c2c = get_metric('tmb_sharpe_processed_c2c')
+
+    # Raw + O2C 指标 (用于纯度惩罚)
+    tmb_sharpe_raw_o2c = get_metric('tmb_sharpe_raw_o2c')
+
+    # --- 2. 自动判断因子方向 ---
     factor_direction = 1
-    if ic_mean_proc_o2c < -1e-4:
+    if ic_mean_processed_o2c < -1e-4:
         factor_direction = -1
-    elif abs(ic_mean_proc_o2c) <= 1e-4 and fm_t_stat_proc_o2c < 0:
+    elif abs(ic_mean_processed_o2c) <= 1e-4 and fm_t_stat_proc_o2c < 0:
         factor_direction = -1
 
     # --- 3. 计算基础分 (完全基于 Processed + O2C 指标) ---
     base_score = 0
-    # (此处的评分标准完整继承自你最初的V3版，确保了评价的延续性)
-
-    # 3.1 预测能力分 (满分20)
-    adj_ic_mean = ic_mean_proc_o2c * factor_direction
+    adj_ic_mean = ic_mean_processed_o2c * factor_direction
     if adj_ic_mean > 0.05:
         base_score += 20
     elif adj_ic_mean > 0.03:
@@ -404,8 +278,7 @@ Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。�
     elif adj_ic_mean > 0.01:
         base_score += 10
 
-    # 3.2 稳定性分 (满分20)
-    adj_ic_ir = ic_ir_proc_o2c * factor_direction
+    adj_ic_ir = ic_ir_processed_o2c * factor_direction
     if adj_ic_ir > 0.5:
         base_score += 20
     elif adj_ic_ir > 0.3:
@@ -413,7 +286,6 @@ Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。�
     elif adj_ic_ir > 0.1:
         base_score += 10
 
-    # 3.3 统计显著性分 (满分30)
     t_abs = abs(fm_t_stat_proc_o2c)
     if t_abs > 3.0:
         base_score += 30
@@ -422,7 +294,6 @@ Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。�
     elif t_abs > 1.5:
         base_score += 15
 
-    # 3.4 策略表现分 (满分20)
     adj_tmb_sharpe = tmb_sharpe_proc_o2c * factor_direction
     perf_score = 0
     if adj_tmb_sharpe > 1.0:
@@ -431,17 +302,13 @@ Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。�
         perf_score = 15
     elif adj_tmb_sharpe > 0.2:
         perf_score = 10
-
-    # 风控扣分项
     if tmb_max_drawdown_proc_o2c < -0.5: perf_score -= 5
     base_score += max(0, perf_score)
 
-    # 3.5 单调性分 (满分10)
     if pd.notna(monotonicity_spearman_proc_o2c) and abs(monotonicity_spearman_proc_o2c) >= 0.5:
         base_score += abs(monotonicity_spearman_proc_o2c) * 10
 
     # --- 4. 计算惩罚分 ---
-    # 4.1 【稳健性惩罚】C2C vs O2C (Alpha质量)
     robustness_penalty = 0
     if tmb_sharpe_proc_c2c * factor_direction > 0.3:
         denominator = max(abs(tmb_sharpe_proc_c2c), 1e-6)
@@ -449,23 +316,22 @@ Alpha纯度惩罚 (Purity Penalty): 检验这个“理想实力”的来源。�
         if decay_ratio > 0.3: robustness_penalty += 10
         if decay_ratio > 0.5: robustness_penalty += 15
 
-    # 4.2 【Alpha纯度惩罚】Raw vs Processed (Alpha来源)
     purity_penalty = 0
-    # 我们用更严格的O2C结果来对比Raw和Processed
     if tmb_sharpe_raw_o2c * factor_direction > 0.3:
         denominator = max(abs(tmb_sharpe_raw_o2c), 1e-6)
         decay_ratio = (tmb_sharpe_raw_o2c - tmb_sharpe_proc_o2c) / denominator
-        if decay_ratio > 0.5:  # 如果纯净化的过程让夏普衰减了50%以上
-            purity_penalty += 15  # 重罚，说明因子一半以上的收益来自风格暴露
-        if decay_ratio > 0.8:  # 如果衰减超过80%
-            purity_penalty += 25  # 极刑，这基本是个伪因子
+        if decay_ratio > 0.5: purity_penalty += 15
+        if decay_ratio > 0.8: purity_penalty += 25
 
     # --- 5. 计算最终得分 ---
     final_score = base_score - robustness_penalty - purity_penalty
 
-    # logger.info(f"因子 {summary_row.get('factor_name', '')}: Base({base_score:.1f}) - Robustness({robustness_penalty:.1f}) - Purity({purity_penalty:.1f}) = Final({max(0, final_score):.1f})")
-
-    return  final_score
+    return pd.Series({
+        'Base_Score': base_score,
+        'Robustness_Penalty': robustness_penalty,
+        'Purity_Penalty': purity_penalty,
+        'Final_Score': max(0, final_score)
+    })
 
 def load_fm_returns_matrix(
         leaderboard_df: pd.DataFrame,
@@ -525,5 +391,5 @@ def load_fm_returns_matrix(
 if __name__ == '__main__':
     fase = FactorSelector()
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000300.SH', TARGET_PERIOD='21d')
-    fase.run_factor_analysis(TARGET_STOCK_POOL='000906.SH', TARGET_PERIOD='21d')
+    fase.run_factor_analysis(TARGET_STOCK_POOL='000906.SH', TARGET_PERIOD='5d')
     # fase.run_factor_analysis(TARGET_STOCK_POOL='000852.SH', TARGET_PERIOD='21d')

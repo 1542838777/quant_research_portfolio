@@ -541,37 +541,48 @@ class FactorCalculator:
         logger.info("    > ln_turnover_value_90d 计算完成。")
         return ln_turnover_value_df
 
-    # 你提供的代码中已有名为 _calculate_liquidity_amihud 的函数，其实现非常健壮，
-    # 我在此处提供一个与YAML文件名完全匹配的版本，逻辑与你的版本一致，以确保可调用。
+
     # 如果你的FactorManager调用逻辑是严格按'name'匹配的，则需要这个函数。
     def _calculate_amihud_liquidity(self) -> pd.DataFrame:
         """
-        计算Amihud非流动性指标。
+       计算Amihud非流动性指标 - 修正版。
 
-        金融逻辑:
-        衡量单位成交额能引起多大的价格波动，公式为 abs(日收益率) / 日成交额。
-        该值越大，说明股票的流动性越差，即用少量资金交易就可能引发剧烈的价格变动，
-        这通常意味着更高的交易冲击成本。
-        """
-        logger.info("    > 正在计算因子: amihud_liquidity...")
-        # 1. 获取依赖数据
+       处理流程:
+       1. 计算原始日度Amihud指标。
+       2. 对原始指标进行对数变换 (log(1+x)) 来处理其高度右偏的分布。
+       3. 对变换后的指标进行滚动平均，以获得更平滑、更稳健的流动性衡量。
+
+       最终得到的因子值越高，代表近期流动性越差。
+       """
+
+        logger.info("    > 正在计算因子: amihud_liquidity (非流动性) - 修正版...")
+
+        # 1. 获取依赖数据并计算原始日度Amihud (与你原版逻辑一致)
         pct_chg_df = self.factor_manager.get_factor('pct_chg').copy()
         amount_df = self.factor_manager.get_factor('amount').copy()
-        # 【核心修正】统一单位
-        pct_chg_decimal = pct_chg_df / 100.0  # 转为小数
-        amount_in_yuan = amount_df * 1000.0  # 转为元
-        # 2. 【核心风险控制】: 防止除以零。将成交额为0的替换为一个极小正数。
-        #    这种处理方式可以保留数据点（结果为一个很大的数），而不是直接丢弃(NaN)。
-        #    在某些场景下，这比直接替换为NaN能提供更多信息。
-        amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0, 1e-9)
 
-        # 3. 计算Amihud指标的日度值
-        #    注意：Amihud通常在月度或年度上进行平均，这里我们先计算日度值，
-        #    可以在后续的因子处理中进行滚动平均以获得更稳定的信号。
-        amihud_df = pct_chg_decimal.abs() / amount_in_yuan_safe
+        pct_chg_decimal = pct_chg_df / 100.0
+        amount_in_yuan = amount_df * 1000.0
 
-        logger.info("    > amihud_liquidity 计算完成。")
-        return amihud_df
+        # 防止除以零，但这里我们直接设为NaN，因为后续log(1+NaN)依然是NaN，不影响
+        amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0)
+
+        daily_amihud_df = pct_chg_decimal.abs() / amount_in_yuan_safe
+
+        # 2. 【核心修正 I】: 对数变换
+        # 使用 np.log1p()，它计算的是 log(1 + x)，可以完美处理x接近0的情况。
+        # 这是处理这类因子的标准做法。
+        log_amihud_df = np.log1p(daily_amihud_df)
+
+        # 3. 【核心修正 II】: 滚动平滑
+        # 使用过去一个月（约20个交易日）的平均值来代表当天的流动性水平
+        # 这会使因子信号更稳定，减少日常噪声。
+        smoothed_log_amihud_df = log_amihud_df.rolling(window=20, min_periods=12).mean()
+
+        logger.info("    > amihud_liquidity (修正版) 计算完成。")
+
+        # 返回的因子是一个经过对数变换和平滑处理的、行为良好的因子
+        return smoothed_log_amihud_df
 
     ##财务basic数据
 
@@ -709,31 +720,47 @@ class FactorCalculator:
 
     def _calculate_earnings_stability(self) -> pd.DataFrame:
         """
-        计算盈利稳定性 (Earnings Stability)。
-        逻辑: 过去5年（20个季度）的单季归母净利润的标准差的倒数。
-        标准差越小，盈利越稳定，因子值越高。
+        计算盈利稳定性 (Earnings Stability) - 修正版。
+        使用变异系数的倒数，衡量盈利的相对稳定性，剔除规模效应。
+        公式: abs(滚动平均净利润) / 滚动净利润标准差
+        这是一个正向指标，值越高，盈利相对越稳定。
         """
-        logger.info("    > 正在计算因子: earnings_stability (盈利稳定性)...")
+        logger.info("    > 正在计算因子: earnings_stability (盈利稳定性) - 修正版...")
 
-        # 1. 获取单季度净利润长表数据 (完美复用你已有的引擎)
+        # 1. 获取单季度净利润长表数据 (此部分不变)
         net_profit_q_long = self._get_single_q_long_df(
             data_loader_func=load_income_df,
             source_column='n_income_attr_p',  # 归母净利润
             single_q_col_name='net_profit_single_q'
         )
 
-        # 2. 计算滚动标准差
+        # 2. 计算滚动的平均值和标准差 (核心改动)
         # window=20 -> 5年 * 4季度/年
+        # 使用 groupby + rolling 的标准模式
+        grouped = net_profit_q_long.groupby('ts_code')['net_profit_single_q']
+        rolling_stats = grouped.rolling(window=20, min_periods=12)
+
+        mean_col = 'earnings_mean'
         std_col = 'earnings_std'
-        net_profit_q_long[std_col] = net_profit_q_long.groupby('ts_code')['net_profit_single_q'] \
-            .rolling(window=20, min_periods=12).std().reset_index(level=0, drop=True)
+        net_profit_q_long[mean_col] = rolling_stats.mean().reset_index(level=0, drop=True)
+        net_profit_q_long[std_col] = rolling_stats.std().reset_index(level=0, drop=True)
 
-        # 3. 计算稳定性（标准差的倒数），并处理0的情况
+        # 3. 计算稳定性（信噪比），并进行风险控制
         stability_col = 'earnings_stability'
-        # 为防止除以0，将极小的标准差替换为一个小数下限
-        net_profit_q_long[stability_col] = 1 / net_profit_q_long[std_col].where(net_profit_q_long[std_col] > 1e-6)
 
-        # 4. 将结果广播到每日的宽表 (完美复用你已有的引擎)
+        # 风控1: 标准差极小（接近0），意味着盈利极其稳定。给一个封顶的大值，防止无穷大。
+        # 风控2: 平均利润的绝对值也极小，此时信噪比无意义，设为0或NaN。
+        # 这里我们创建一个条件，当标准差大于1e-6且平均利润绝对值也大于一个小数（如1000元）时才计算
+
+        # 盈利标准差，处理极小值，避免除零
+        std_safe = net_profit_q_long[std_col].clip(lower=1e-6)  # 将小于1e-6的值替换为1e-6
+
+        # 盈利均值，处理绝对值过小的情况
+        mean_safe = net_profit_q_long[mean_col].where(abs(net_profit_q_long[mean_col]) > 1000, 0)
+
+        net_profit_q_long[stability_col] = abs(mean_safe) / std_safe
+
+        # 4. 将结果广播到每日的宽表 (此部分不变)
         stability_long_df = net_profit_q_long[['ts_code', 'ann_date', 'end_date', stability_col]].dropna()
         stability_wide = stability_long_df.pivot_table(
             index='ann_date', columns='ts_code', values=stability_col, aggfunc='last'

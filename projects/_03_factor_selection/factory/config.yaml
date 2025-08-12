@@ -2,15 +2,16 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-    - 'operating_accruals'
-    - 'earnings_stability'
+##    - 'operating_accruals'
+#    - 'earnings_stability'
+#    - 'rsi'
+#    - 'cci'
+#    - 'pead'
+#    - 'quality_momentum'
+##    - #重新
+#    - 'turnover_rate_90d_mean'
+#    - 'ln_turnover_value_90d'
     - 'rsi'
-    - 'cci'
-    - 'pead'
-    - 'quality_momentum'
-#    - #重新
-    - 'turnover_rate_90d_mean'
-    - 'ln_turnover_value_90d'
     - 'amihud_liquidity'
 
 #    # === 规模 (Size) ===
