@@ -2,7 +2,16 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-     - 'beta'
+    - 'operating_accruals'
+    - 'earnings_stability'
+    - 'rsi'
+    - 'cci'
+    - 'pead'
+    - 'quality_momentum'
+#    - #重新
+    - 'turnover_rate_90d_mean'
+    - 'ln_turnover_value_90d'
+    - 'amihud_liquidity'
 
 #    # === 规模 (Size) ===
 #    - 'log_total_mv'
@@ -415,4 +424,53 @@ factor_definition:
     action: 'technical_calcu'
     cal_require_base_fields: [ 'pct_chg', 'amount' ] # 依赖日收益率和成交额
     cal_require_base_fields_from_daily: True
+  # === 质量类深化 (Advanced Quality) ===
+  - name: 'operating_accruals'
+    style_category: 'quality'
+    description: '经营性应计利润。(净利润TTM - 经营现金流TTM) / 总资产。衡量利润中的“纸面富贵”成分，值越高代表利润质量越差，是一个反向指标。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'net_profit_ttm', 'cashflow_ttm', 'total_assets' ]
+    cal_require_base_fields_from_daily: False
+
+  - name: 'earnings_stability'
+    style_category: 'quality'
+    description: '盈利稳定性。计算过去5年(20个季度)单季归母净利润的标准差的倒数。标准差越小，盈利越稳定，因子值越高。'
+    action: 'technical_calcu'
+    # 此因子直接依赖于最底层的单季度财报数据
+    cal_require_base_fields: [ 'n_income_attr_p' ] # 依赖于利润表中的归母净利润
+    cal_require_base_fields_from_daily: False
+
+  # === 成长类升级与事件驱动 (Advanced Growth & Event) ===
+  - name: 'pead'
+    style_category: 'event' # 这是一个事件驱动型因子
+    description: '盈余公告后漂移(Post-Earnings Announcement Drift)。SUE因子的有效代理，计算财报公告日后N个交易日的累计收益率，捕捉市场对盈利“惊喜”的持续反应。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'pct_chg', 'ann_date' ] # 依赖日度收益和财报中的公告日
+    cal_require_base_fields_from_daily: False # 信息的源头是季度财报，而非每日行情
+
+  # === 情绪类因子 (Sentiment) ===
+  - name: 'rsi'
+    style_category: 'sentiment'
+    description: '相对强弱指数(Relative Strength Index)。衡量股价在一段时间内的超买超卖状态，是经典的技术分析反转指标。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields_from_daily: True
+
+  - name: 'cci'
+    style_category: 'sentiment'
+    description: '顺势指标(Commodity Channel Index)。衡量股价是否偏离其均价的统计范围，常用于判断趋势的开启、持续或反转。'
+    action: 'technical_calcu'
+    cal_require_base_fields: [ 'high', 'low', 'close' ]
+    cal_require_base_fields_from_daily: True
+
+  # === 复合类因子 (Composite) ===
+  - name: 'quality_momentum'
+    style_category: 'momentum' # 这是一个复合因子
+    description: '高质量动量。风险调整后的动量因子(120日动量 / 90日波动率)，作为“分析师评级上调”的代理，旨在寻找稳步上涨的股票。'
+    action: 'technical_calcu' # 行为上是计算，逻辑上是复合
+    cal_require_base_fields: [ 'momentum_120d', 'volatility_90d' ]
+    cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
+
+
+
 #todo  、 大单、...

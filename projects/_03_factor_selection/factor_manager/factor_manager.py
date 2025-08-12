@@ -620,9 +620,9 @@ class FactorManager:
 
     def get_stock_pool_name_by_factor_school(self, factor_school):
         if factor_school in ['fundamentals', 'trend']:
-            return 'institutional_stock_pool'
+            return 'institutional_stock_pool'#中证800股票池
         if factor_school in ['microstructure']:
-            return 'microstructure_stock_pool'
+            return 'microstructure_stock_pool' #全大A 股票池
         raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
 
     @staticmethod
@@ -650,6 +650,8 @@ class FactorManager:
             'growth': 'fundamentals',
             'size': 'fundamentals',
             'sector': 'fundamentals',
+            'event': 'fundamentals',
+
 
             # === 趋势派 (trend) ===
             # 反映了价格在历史序列中的行为模式和风险特征。
@@ -660,7 +662,9 @@ class FactorManager:
             # 直接来源于市场的实际交易行为（价格、成交量、换手率）。
             'liquidity': 'microstructure',
             'price': 'microstructure',
-            'return': 'microstructure'
+            'return': 'microstructure',
+            'sentiment': 'microstructure'
+
         }
         school = SCHOOL_MAP.get(style_category)
 

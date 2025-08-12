@@ -45,7 +45,7 @@ def load_income_df():
     df['end_date'] = pd.to_datetime(df['end_date'])
     df = df.sort_values(by=['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False]).drop_duplicates(
         subset=['ts_code', 'end_date'], keep='first')
-
+    #                                              确认过:单位:元         元
     df = df[['ann_date', 'ts_code', 'end_date', 'n_income_attr_p','total_revenue','oper_cost']]
     return df
 

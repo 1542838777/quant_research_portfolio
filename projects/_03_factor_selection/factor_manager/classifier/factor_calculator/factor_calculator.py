@@ -1,4 +1,7 @@
 from typing import Callable  # 引入Callable来指定函数类型的参数
+from pandas.tseries.offsets import BDay # BDay代表Business Day
+import pandas_ta as ta
+
 
 import numpy as np
 import pandas as pd
@@ -6,8 +9,10 @@ import pandas as pd
 from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df, load_income_df, \
     load_balancesheet_df
 from quant_lib import logger
-
-
+## 数据统一 tushare 有时候给元 千元 万元!  现在需要达成:统一算元!
+#remind:pct_chg turnover_rate  都要除以100
+# total_mv, circ_mv *10000
+# amount  *1000
 class FactorCalculator:
     """
     【新增】因子计算器 (Factor Calculator)
@@ -117,7 +122,8 @@ class FactorCalculator:
         # --- 步骤三：风险控制与预处理 (核心) ---
         # 1. 过滤小市值公司：这是不可逾越的纪律 （市值小，表示分母小，更容易被操控，比如现金突然多了10w，但是市值为1，那不是猛增10w倍率
         #    在实盘中，这个阈值甚至可能是20亿(2e9)或30亿(3e9) total_mv单位 万
-        mv_aligned[mv_aligned < 2e5] = np.nan
+        mv_in_yuan = mv_aligned * 10000# 市值筛选建议在“元”单位上做
+        mv_in_yuan[mv_in_yuan < 2e9] = np.nan
 
         # 2. 过滤掉退市或长期停牌等市值为0或负的异常情况 ！
         mv_aligned[mv_aligned <= 0] = np.nan
@@ -482,23 +488,32 @@ class FactorCalculator:
         return annualized_vol_df
 
     # === 流动性 (Liquidity) ===
-    def _calculate_turnover_rate_90d_mean(self) -> pd.DataFrame:
-        """
-        计算90日（约一季度）的平均换手率。
+    def _calculate_rolling_mean_turnover_rate(self, window: int, min_periods: int) -> pd.DataFrame:
+        """【私有引擎】计算滚动平均换手率（以小数形式）。"""
 
-        金融逻辑:
-        平滑后的换手率指标，比单日换手率更能反映一支股票在一段时间内的交易活跃度和
-        市场关注度。过高或过低的换手率都可能预示着不同的投资机会或风险。
-        """
-        logger.info("    > 正在计算因子: turnover_rate_90d_mean...")
-        # 1. 获取日换手率数据
+        # 1. 获取并转换为小数
         turnover_df = self.factor_manager.get_factor('turnover_rate').copy()
+        turnover_df_decimal = turnover_df / 100.0
 
-        # 2. 计算90日滚动平均
-        mean_turnover_df = turnover_df.rolling(window=90, min_periods=60).mean()
+        # 2. 计算滚动平均
+        mean_turnover_df = turnover_df_decimal.rolling(window=window, min_periods=min_periods).mean()
 
-        logger.info("    > turnover_rate_90d_mean 计算完成。")
         return mean_turnover_df
+
+    # --- 现在，原来的两个函数可以简化为下面这样 ---
+
+    def _calculate_turnover_rate_90d_mean(self) -> pd.DataFrame:
+        """计算90日滚动平均换手率。"""
+        logger.info("    > 正在计算因子: turnover_rate_90d_mean...")
+        # 直接调用通用引擎
+        return self._calculate_rolling_mean_turnover_rate(window=90, min_periods=60)
+
+    def _calculate_turnover_rate_monthly_mean(self) -> pd.DataFrame:
+        """计算月度（21日）滚动平均换手率。"""
+        logger.info("    > 正在计算因子: turnover_rate_monthly_mean...")
+        # 直接调用通用引擎
+        return self._calculate_rolling_mean_turnover_rate(window=21, min_periods=15)
+
 
     def _calculate_ln_turnover_value_90d(self) -> pd.DataFrame:
         """
@@ -511,6 +526,7 @@ class FactorCalculator:
         logger.info("    > 正在计算因子: ln_turnover_value_90d...")
         # 1. 获取日成交额数据 (单位：元)
         amount_df = self.factor_manager.get_factor('amount').copy()
+        amount_df = amount_df * 1000.0
 
         # 2. 计算90日滚动平均成交额
         mean_amount_df = amount_df.rolling(window=90, min_periods=60).mean()
@@ -541,33 +557,21 @@ class FactorCalculator:
         # 1. 获取依赖数据
         pct_chg_df = self.factor_manager.get_factor('pct_chg').copy()
         amount_df = self.factor_manager.get_factor('amount').copy()
-
+        # 【核心修正】统一单位
+        pct_chg_decimal = pct_chg_df / 100.0  # 转为小数
+        amount_in_yuan = amount_df * 1000.0  # 转为元
         # 2. 【核心风险控制】: 防止除以零。将成交额为0的替换为一个极小正数。
         #    这种处理方式可以保留数据点（结果为一个很大的数），而不是直接丢弃(NaN)。
         #    在某些场景下，这比直接替换为NaN能提供更多信息。
-        amount_df_safe = amount_df.where(amount_df > 0, 1e-9)
+        amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0, 1e-9)
 
         # 3. 计算Amihud指标的日度值
         #    注意：Amihud通常在月度或年度上进行平均，这里我们先计算日度值，
         #    可以在后续的因子处理中进行滚动平均以获得更稳定的信号。
-        amihud_df = pct_chg_df.abs() / amount_df_safe
+        amihud_df = pct_chg_decimal.abs() / amount_in_yuan_safe
 
         logger.info("    > amihud_liquidity 计算完成。")
         return amihud_df
-    def _calculate_turnover_rate_monthly_mean(self) -> pd.DataFrame:
-        """
-        计算月平均换手率（21日滚动平均）。
-
-        金融逻辑:
-        衡量股票在近一个月的平均交易活跃度。过高或过低的换手率都可能包含特定信息。
-        """
-        print("    > 正在计算因子: turnover_rate_monthly_mean...")
-        turnover_df = self.factor_manager.get_factor('turnover_rate').copy(deep=True)
-        # turnover_df.fillna(0, inplace=True)
-
-        # 使用21个交易日近似一个月
-        monthly_mean_turnover_df = turnover_df.rolling(window=21, min_periods=15).mean()
-        return monthly_mean_turnover_df
 
     ##财务basic数据
 
@@ -658,7 +662,221 @@ class FactorCalculator:
             data_loader_func=load_income_df,
             source_column='n_income_attr_p'  # 确认使用归母净利润
         )
-######################
+
+        #  三、新增进阶因子 (Advanced Factors)
+        # =========================================================================
+
+        # === 质量类深化 (Advanced Quality) ===
+
+
+    def _calculate_operating_accruals(self) -> pd.DataFrame:
+        """
+        计算经营性应计利润 (Operating Accruals)。
+        公式: (净利润TTM - 经营活动现金流TTM) / 总资产
+        这是一个反向指标，值越高，利润质量越差，未来反转（下跌）风险越高。
+        """
+        logger.info("    > 正在计算因子: operating_accruals (经营性应计利润)...")
+
+        # 1. 获取所需的基础因子
+        net_profit_ttm = self.factor_manager.get_factor('net_profit_ttm')
+        cashflow_ttm = self.factor_manager.get_factor('cashflow_ttm')
+        total_assets = self.factor_manager.get_factor('total_assets')
+
+        # 2. 对齐数据 (核心修正部分)
+        # 使用 reindex 的方式对齐多个DataFrame，这是更稳健和清晰的做法
+
+        # 2.1 找到所有数据源索引的交集，这等价于 'inner' join
+        common_index = net_profit_ttm.index.intersection(cashflow_ttm.index)
+        common_index = common_index.intersection(total_assets.index)
+
+        # 2.2 使用共同索引来对齐所有DataFrame
+        profit_aligned = net_profit_ttm.reindex(common_index)
+        cash_aligned = cashflow_ttm.reindex(common_index)
+        assets_aligned = total_assets.reindex(common_index)
+
+        # 3. 风险控制：总资产必须为正，防止除以0或负数
+        # 使用 .where 方法，不满足条件的项会被设置为NaN，这很安全
+        assets_aligned_safe = assets_aligned.where(assets_aligned > 0)
+
+        # 4. 计算应计利润
+        # 对齐后，可以直接进行元素级(element-wise)计算
+        accruals = (profit_aligned - cash_aligned) / assets_aligned_safe
+
+        # 5. 清理计算过程中可能产生的无穷大值
+        accruals = accruals.replace([np.inf, -np.inf], np.nan)
+
+        return accruals
+
+    def _calculate_earnings_stability(self) -> pd.DataFrame:
+        """
+        计算盈利稳定性 (Earnings Stability)。
+        逻辑: 过去5年（20个季度）的单季归母净利润的标准差的倒数。
+        标准差越小，盈利越稳定，因子值越高。
+        """
+        logger.info("    > 正在计算因子: earnings_stability (盈利稳定性)...")
+
+        # 1. 获取单季度净利润长表数据 (完美复用你已有的引擎)
+        net_profit_q_long = self._get_single_q_long_df(
+            data_loader_func=load_income_df,
+            source_column='n_income_attr_p',  # 归母净利润
+            single_q_col_name='net_profit_single_q'
+        )
+
+        # 2. 计算滚动标准差
+        # window=20 -> 5年 * 4季度/年
+        std_col = 'earnings_std'
+        net_profit_q_long[std_col] = net_profit_q_long.groupby('ts_code')['net_profit_single_q'] \
+            .rolling(window=20, min_periods=12).std().reset_index(level=0, drop=True)
+
+        # 3. 计算稳定性（标准差的倒数），并处理0的情况
+        stability_col = 'earnings_stability'
+        # 为防止除以0，将极小的标准差替换为一个小数下限
+        net_profit_q_long[stability_col] = 1 / net_profit_q_long[std_col].where(net_profit_q_long[std_col] > 1e-6)
+
+        # 4. 将结果广播到每日的宽表 (完美复用你已有的引擎)
+        stability_long_df = net_profit_q_long[['ts_code', 'ann_date', 'end_date', stability_col]].dropna()
+        stability_wide = stability_long_df.pivot_table(
+            index='ann_date', columns='ts_code', values=stability_col, aggfunc='last'
+        )
+        trading_dates = self.factor_manager.data_manager.trading_dates
+        stability_daily_df = _broadcast_ann_date_to_daily(stability_wide, trading_dates)
+
+        return stability_daily_df
+
+        # === 新增情绪类因子 (Sentiment) ===
+    def _calculate_rsi(self, window: int = 14) -> pd.DataFrame:
+        """
+        计算RSI (相对强弱指数)。
+        衡量股价的超买超卖状态，是经典的反转信号。
+        """
+        logger.info(f"    > 正在计算因子: RSI (window={window})...")
+        close_df = self.factor_manager.get_factor('close')
+
+        # 使用 pandas_ta 库，通过 .apply 在每一列（每只股票）上独立计算
+        rsi_df = close_df.apply(lambda x: ta.rsi(x, length=window), axis=0)
+
+        return rsi_df
+
+    def _calculate_cci(self, window: int = 20) -> pd.DataFrame:
+        """
+        计算CCI (顺势指标)。
+        衡量股价是否超出其正常波动范围，可用于捕捉趋势的开启或反转。
+        """
+        logger.info(f"    > 正在计算因子: CCI (window={window})...")
+        high_df = self.factor_manager.get_factor('high')
+        low_df = self.factor_manager.get_factor('low')
+        close_df = self.factor_manager.get_factor('close')
+
+        # CCI需要三列数据，我们按股票逐一计算
+        cci_results = {}
+        for stock_code in close_df.columns:
+            # 确保该股票在所有价格数据中都存在
+            if stock_code in high_df.columns and stock_code in low_df.columns:
+                cci_series = ta.cci(
+                    high=high_df[stock_code],
+                    low=low_df[stock_code],
+                    close=close_df[stock_code],
+                    length=window
+                )
+                cci_results[stock_code] = cci_series
+
+        cci_df = pd.DataFrame(cci_results)
+        return cci_df
+
+    ###惊喜
+    # (确保在文件顶部导入):
+    # from pandas.tseries.offsets import BDay # BDay代表Business Day
+    ##
+    # 核心逻辑：SUE衡量的是盈利的“惊喜”程度。
+    #
+    # 市场如何反映“惊喜”：一家公司发布了超预期的财报，市场最直接的反应是什么？股价会跳空高开，并在接下来几天持续上涨。这种现象被称为“盈余公告后漂移”(Post-Earnings Announcement Drift, PEAD)，是金融学里最著名、最稳健的异象之一。
+    #
+    # 计算财报发布日后几天的累计收益率(财报后漂移。
+    # pead Post-Earnings Announcement Drift) #
+    def _calculate_pead(self, lookforward_days: int = 3) -> pd.DataFrame:
+        """
+        计算PEAD因子 (盈余公告后漂移)。
+        逻辑: 计算每个财报公告日之后N个交易日的累计收益率，
+               并将其作为未来一个季度的因子值。
+        """
+        logger.info(f"    > 正在计算代理因子: PEAD (window={lookforward_days})...")
+
+        # 1. 获取所有财报的公告日 (ann_date) 和股票代码
+        # 我们需要一个包含所有公司历史公告日的长表
+        income_df_long = load_income_df()  # 假设这个函数加载原始财报长表
+        ann_dates_long = income_df_long[['ts_code', 'ann_date']].drop_duplicates().dropna()
+        ann_dates_long['ann_date'] = pd.to_datetime(ann_dates_long['ann_date'])
+
+        # 2. 获取日度收益率数据
+        pct_chg = self.factor_manager.get_factor('pct_chg') #todo 除以100
+
+        # 3. 计算每个公告日之后的短期累计收益
+        event_returns = {}
+        for _, row in ann_dates_long.iterrows():
+            code = row['ts_code']
+            ann_date = row['ann_date']
+
+            # 确保股票代码和日期都在我们的收益率矩阵中
+            if code in pct_chg.columns and ann_date in pct_chg.index:
+                # 定义计算区间：从公告日后第一个交易日开始
+                start_loc = pct_chg.index.get_loc(ann_date) + 1
+                end_loc = start_loc + lookforward_days
+
+                # 确保不越界
+                if end_loc <= len(pct_chg.index):
+                    # 计算区间内的累计收益 (1+r1)*(1+r2)*... - 1
+                    cumulative_return = (1 + pct_chg[code].iloc[start_loc:end_loc]).prod() - 1
+
+                    # 存储这个“事件回报”，键是(公告日, 股票代码)
+                    event_returns[(ann_date, code)] = cumulative_return
+
+        if not event_returns:
+            logger.warning("未能计算任何有效的PEAD事件回报。")
+            return self.factor_manager.get_factor('close') * np.nan
+
+        # 4. 将稀疏的“事件回报”广播成每日因子值
+        # 将字典转为Series，便于处理
+        pead_series = pd.Series(event_returns).rename('pead')
+        pead_series.index.names = ['trade_date', 'ts_code']
+
+        # 转为宽表，索引是事件发生的日期
+        pead_wide_sparse = pead_series.unstack()
+
+        # 使用前向填充，将事件的“余威”持续到下一个季度
+        trading_dates = self.factor_manager.data_manager.trading_dates
+        pead_daily_df = _broadcast_ann_date_to_daily(pead_wide_sparse, trading_dates)
+
+        return pead_daily_df
+    ##
+    # 核心逻辑：分析师评级调整反映的是“聪明钱”对公司基本面预期的持续改善。
+    #
+    # 市场如何反映“持续改善”：一家基本面持续向好的公司，它的股价走势通常不是暴涨暴跌，而是稳步、持续地上涨。这种上涨通常伴随着较低的波动。这被称为“高质量的动量”。
+    #
+    # 风险调整后动量 /计算风险调整后的动量。#
+    def _calculate_quality_momentum(self) -> pd.DataFrame:
+        """
+        计算风险调整后的动量因子 (Quality Momentum)。
+        逻辑: 120日动量 / 90日波动率。
+        作为“分析师评级上调”的代理，寻找那些稳步上涨的股票。
+        """
+        logger.info("    > 正在计算代理因子: Quality Momentum...")
+
+        # 1. 获取动量和波动率因子
+        momentum_120d = self.factor_manager.get_factor('momentum_120d')
+        volatility_90d = self.factor_manager.get_factor('volatility_90d')
+
+        # 2. 对齐数据
+        mom_aligned, vol_aligned = momentum_120d.align(volatility_90d, join='inner', axis=None)
+
+        # 3. 风险控制：波动率必须为正
+        vol_aligned_safe = vol_aligned.where(vol_aligned > 0)
+
+        # 4. 计算风险调整后的动量
+        quality_momentum_df = mom_aligned / vol_aligned_safe
+
+        quality_momentum_df = quality_momentum_df.replace([np.inf, -np.inf], np.nan)
+        return quality_momentum_df
+    ######################
     ##以下是模板
     # --- 私有的、可复用的计算引擎 ---
     def _calculate_financial_ttm_growth_factor(self,

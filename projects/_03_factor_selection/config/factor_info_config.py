@@ -115,4 +115,17 @@ FACTOR_FILL_CONFIG = {
     # === 合成类因子 ===
     # 【保持正确】合成因子不应有自己的填充逻辑。
     'value_composite': FILL_STRATEGY_NONE,
+    # =================================================================
+    #  三、进阶因子层 (Advanced Factors)
+    # =================================================================
+    # 财报深化/事件驱动类因子，信息按季度更新，使用有限前向填充
+    'operating_accruals': FILL_STRATEGY_FFILL_LIMIT_65,
+    'earnings_stability': FILL_STRATEGY_FFILL_LIMIT_65,
+    'pead': FILL_STRATEGY_FFILL_LIMIT_65,
+
+    # 高频情绪/复合类因子，每日动态变化，不应填充
+    'rsi': FILL_STRATEGY_NONE,
+    'cci': FILL_STRATEGY_NONE,
+    'quality_momentum': FILL_STRATEGY_NONE,
+
 }
