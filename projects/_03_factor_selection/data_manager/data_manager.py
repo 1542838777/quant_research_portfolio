@@ -19,7 +19,7 @@ from pandas import DatetimeIndex
 from data.local_data_load import load_index_daily, load_suspend_d_df
 from data.namechange_date_manager import fill_end_date_field
 from projects._03_factor_selection.config.base_config import INDEX_CODES
-from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config
+from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional, _load_file
 from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL_UNLIMITED, \
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
 
@@ -100,7 +100,7 @@ class DataManager:
     4. 数据对齐和预处理
     """
 
-    def __init__(self, config_path: str, need_data_deal: bool = True):
+    def __init__(self, config_path: str, experiments_config_path: str, need_data_deal: bool = True):
         """
         初始化数据管理器
         
@@ -109,7 +109,8 @@ class DataManager:
         """
         self.st_matrix = None  # 注意 后续用此字段，需要注意前视偏差
         self._tradeable_matrix_by_suspend_resume = None
-        self.config = _load_local_config(config_path)
+        self.config = _load_local_config_functional(config_path)
+        self.experiments_config = _load_file(experiments_config_path)
         self.backtest_start_date = self.config['backtest']['start_date']
         self.backtest_end_date = self.config['backtest']['end_date']
         # 计算真正需要开始加载数据的日期
@@ -130,21 +131,20 @@ class DataManager:
             处理后的数据字典
         """
 
-
-
         # 确定所有需要的字段（一次性确定）
         all_required_fields = self._get_required_fields()
 
         # === 一次性加载所有raw数据(互相对齐) ===
         self.raw_dfs = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
-                                                                      start_date=self.buffer_start_date, end_date=self.backtest_end_date)
+                                                                      start_date=self.buffer_start_date,
+                                                                      end_date=self.backtest_end_date)
 
         check_field_level_completeness(self.raw_dfs)
         logger.info(f"raw_dfs加载完成，共加载 {len(self.raw_dfs)} 个字段")
 
         # === 第一阶段：基于已加载数据构建权威股票池 ===
         logger.info("第一阶段：构建两个权威股票池（各种过滤！）")
-        self._build_stock_pools_from_loaded_data(self.backtest_start_date,self. backtest_end_date)
+        self._build_stock_pools_from_loaded_data(self.backtest_start_date, self.backtest_end_date)
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被stock_pool_df 动了手脚了（低市值的会被置为nan，
 
     # ok
@@ -162,7 +162,7 @@ class DataManager:
         # print("1. 验证股票池构建所需数据...")
 
         # 验证必需字段是否已加载
-        required_fields_for_universe = ['close', 'circ_mv', 'turnover_rate',  'list_date']
+        required_fields_for_universe = ['close', 'circ_mv', 'turnover_rate', 'list_date']
         missing_fields = [field for field in required_fields_for_universe if field not in self.raw_dfs]
 
         if missing_fields:
@@ -173,7 +173,10 @@ class DataManager:
     def build_diff_stock_pools(self):
         stock_pool_df_dict = {}
         stock_pool_profiles = self.config['stock_pool_profiles']
-        for pool_name, pool_config in stock_pool_profiles.items():
+        #按需生成动态股票池
+        experiments_pool_names = self.get_experiments_pool_names()
+        for pool_name in experiments_pool_names:
+            pool_config = stock_pool_profiles[pool_name]
             product_universe = self.create_stock_pool(pool_config, pool_name)
             stock_pool_df_dict[pool_name] = product_universe
         self.stock_pools_dict = stock_pool_df_dict
@@ -223,15 +226,16 @@ class DataManager:
             'list_date',  # 上市日期,
             'delist_date',  # 退市日期,用于构建标准动态股票池
 
-            'open', 'high', 'low', 'pre_close','amount',  # 为了计算次日是否一字马涨停
+            'open', 'high', 'low', 'pre_close', 'amount',  # 为了计算次日是否一字马涨停
             'pe_ttm', 'ps_ttm',  # 懒得写calcu 直接在这里生成就好
         ])
         # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
         # 解决办法：
         # 我决定 这不需要了，自行在factor_calculator里面 自定义_calcu—函数 更清晰！
         # 最新解决办法 加一个cal_require_base_fields_from_daily标识就可以了
-        target_factors_for_evaluation = self.config['target_factors_for_evaluation']
-        required_fields.update(self.get_cal_base_factors(target_factors_for_evaluation['fields']))
+        experiments_factor_names = self.get_experiments_factor_names()
+        factors = self.get_base_require_factors(experiments_factor_names)
+        required_fields.update(factors)
 
         # 中性化需要的字段
         neutralization = self.config['preprocessing']['neutralization']
@@ -891,18 +895,27 @@ class DataManager:
         logger.info(f"      最多每日股票数: {daily_count.max():.0f}")
 
     # 输入学术因子，返回计算所必须的base 因子
-    def get_cal_base_factors(self, target_factors: list[str]) -> set:
+    def get_base_require_factors(self, target_factors_name: list[str]) -> set:
         factor_definition_df = pd.DataFrame(self.config['factor_definition'])  # 将 list[dict] 转为 DataFrame
         result = set()
 
-        for target_factors_for_evaluation in target_factors:
-            factor_definition = factor_definition_df[factor_definition_df['name'] == target_factors_for_evaluation]
-            if not factor_definition.empty and factor_definition['cal_require_base_fields_from_daily'].iloc[0]:
-                base_fields = factor_definition.iloc[0]['cal_require_base_fields']
+        for name in target_factors_name:
+            factor_config = self.get_factor_definition(name)
+            if factor_config['cal_require_base_fields_from_daily'].iloc[0]:
+                base_fields = factor_config['cal_require_base_fields'].iloc[0]
                 result.update(base_fields)  # 用 update 合并列表到 set
 
         return result
-
+    def get_cal_require_base_fields(self,name):
+        factor_config = self.get_factor_definition(name)
+        if factor_config['cal_require_base_fields_from_daily'].iloc[0]  :
+            base_fields = factor_config['cal_require_base_fields'].iloc[0]
+            return base_fields
+    def get_cal_require_base_fields_for_composite(self,name):
+        factor_config = self.get_factor_definition(name)
+        if  factor_config['action'].iloc[0] =='composite'  :
+            base_fields = factor_config['cal_require_base_fields'].iloc[0]
+            return base_fields
     # ok #ok
     def create_stock_pool(self, stock_pool_config_profile, pool_name):
         """
@@ -915,7 +928,7 @@ class DataManager:
         if 'close' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
-        #定基准！
+        # 定基准！
         final_stock_pool_df = self.raw_dfs['close'].notna()  # close 有值的地方 ：true
         final_stock_pool_df = final_stock_pool_df.reindex(self.trading_dates)
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
@@ -972,17 +985,56 @@ class DataManager:
     def get_factor_definition_df(self):
         return pd.DataFrame(self.config['factor_definition'])
 
+    def is_composite_factor(self, factor_name):
+        return self.get_factor_definition(factor_name).get('action').iloc[0] == 'composite'
+
+    def get_pool_profiles(self):
+        return self.config['stock_pool_profiles']
+
+    def get_pool_profile_by_pool_name(self, pool_name):
+        return self.get_pool_profiles()[pool_name]
+
+    def get_stock_pool_index_code_by_name(self, name):
+        return self.get_pool_profile_by_pool_name(name)['index_filter']['index_code']
+
     def get_factor_definition(self, factor_name):
         all_df = self.get_factor_definition_df()
         return all_df[all_df['name'] == factor_name]
 
+    def get_target_factors_for_evaluation(self):
+        namelists = list(self.experiments_config.keys())
+        return namelists
 
-def fill_self(factor_name, df,_existence_matrix):
+    def get_target_evaluation_factor_base_require_factors_name(self):
+        ret = []
+        target_factors_for_evaluation = self.get_target_factors_for_evaluation()
+        for target_factor_name in target_factors_for_evaluation:
+            factors = self.get_base_require_factors(['fields'])
+            ret.extend(factors)
+        return ret
+
+    def get_experiments_factor_names(self):
+        return list(pd.DataFrame(self.get_experiments_df())['factor_name'].unique())
+
+    def get_experiments_pool_names(self):
+        return list(pd.DataFrame(self.get_experiments_df())['stock_pool_name'].unique())
+
+
+    def get_experiments_df(self):
+        df = pd.DataFrame(self.experiments_config)
+        df.drop_duplicates(inplace=True)
+        return df
+
+    def get_need_product_pool_name(self):
+        self.get_experiments_factor_names()
+        pass
+
+
+def fill_self(factor_name, df, _existence_matrix):
     # 步骤2: 根据配置字典，应用填充策略
     # =================================================================
     strategy = FACTOR_FILL_CONFIG.get(factor_name)
     df = df.copy(deep=True)
-
 
     if strategy is None:
         raise KeyError(f"因子 '{factor_name}' 的填充策略未在 FACTOR_FILL_CONFIG 中定义！请添加。")
@@ -998,7 +1050,8 @@ def fill_self(factor_name, df,_existence_matrix):
         # 不交易的日子，这些指标的真实值就是0
         if _existence_matrix is not None:
             existence_mask_shifted = _existence_matrix.shift(1, fill_value=False)
-            return df.where(_existence_matrix, 0)  # _existence_matrix为false（意味着无法交易（可能是停牌停牌导致的 将原值以及nan统统写为0 /无容置疑：但凡非交易的，这类数据（交易行为类 (换手率, 成交量, 振幅)） 缺失可以直接填0
+            return df.where(_existence_matrix,
+                            0)  # _existence_matrix为false（意味着无法交易（可能是停牌停牌导致的 将原值以及nan统统写为0 /无容置疑：但凡非交易的，这类数据（交易行为类 (换手率, 成交量, 振幅)） 缺失可以直接填0
         return df  # 不填充~
     elif strategy == FILL_STRATEGY_FFILL_LIMIT_5:
         return df.ffill(limit=5)
@@ -1010,18 +1063,18 @@ def fill_self(factor_name, df,_existence_matrix):
         # 如果因子因为数据不足而无法计算，就不应凭空创造它的值
         return df
 
-
     raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
 
-#跟stock——pool对齐，这是铁的防线！，因为市场环境：1000只股票。可能就50能交易的，。我们不跟可交易股票池进行对齐，那么后面的ic、分组，用上无相关的950的股票池做计算，那有什么用，所以一定要对齐过滤！！
+
+# 跟stock——pool对齐，这是铁的防线！，因为市场环境：1000只股票。可能就50能交易的，。我们不跟可交易股票池进行对齐，那么后面的ic、分组，用上无相关的950的股票池做计算，那有什么用，所以一定要对齐过滤！！
 def fill_and_align_by_stock_pool(factor_name=None, df=None,
                                  stock_pool_df: pd.DataFrame = None,
-                                 _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据的决策判断
+                                 _existence_matrix: pd.DataFrame = None):  # 这个只是用于填充pct_chg这类数据的决策判断
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
 
-    df = fill_self(factor_name,df,_existence_matrix)
+    df = fill_self(factor_name, df, _existence_matrix)
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
     aligned_df = df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
     aligned_df = aligned_df.sort_index()

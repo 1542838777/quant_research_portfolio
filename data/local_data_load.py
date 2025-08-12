@@ -23,6 +23,10 @@ def load_daily_hfq(start_date, end_date, cur_stock_codes):
         return df[df['ts_code'].isin(cur_stock_codes)]
     return df
 
+def load_all_stock_codes():
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
+    return list(df['ts_code'].unique())
+
 
 def load_cashflow_df():
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'cashflow.parquet')

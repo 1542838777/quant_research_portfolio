@@ -1,20 +1,15 @@
 ##
 # 为什么合成时必须“先中性化，再标准化”？我们再次回顾这个核心问题，因为它至关重要。目标: 等权合并。我们希望每个细分因子（如
 # bm_ratio, ep_ratio）在最终的复合价值因子中贡献相等的影响力。问题: 不同的因子在经过中性化后，其残差的波动率（标准差）是不相等的。一个与风险因子相关性高的因子，其中性化后的残差波动会很小。解决方案: 必须在合并之前，对每一个中性化后的残差进行标准化，强行将它们的波动率都统一到1。只有这样，后续的“等权相加”才是真正意义上的“等权”#
-import pandas as pd
-from typing import List, Dict
+from typing import List
+
 import pandas as pd
 
-from projects._03_factor_selection.data_manager.data_manager import DataManager
-from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer, \
-    prepare_industry_dummies
-from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
-from projects._03_factor_selection.utils.factor_processor import FactorProcessor, PointInTimeIndustryMap
-from quant_lib import logger
+from projects._03_factor_selection.utils.factor_processor import FactorProcessor
 
 
 class FactorSynthesizer:
-    def __init__(self, factor_manager, factor_analyzer):
+    def __init__(self, factor_manager, factor_analyzer,factor_processor):
         """
         初始化因子合成器。
         Args:
@@ -23,14 +18,16 @@ class FactorSynthesizer:
         """
         self.factor_manager = factor_manager
         self.factor_analyzer = factor_analyzer
-        self.processor = FactorProcessor(factor_manager.data_manager.config)
+        self.processor = factor_processor
+        if factor_processor is None:
+            self.processor = FactorProcessor(factor_manager.data_manager.config)
         self.sub_factors = {
             'ep_ratio',
             'bm_ratio',
             'sp_ratio',
         }
 
-    def process_sub_factor(self, factor_name: str) -> pd.DataFrame:
+    def process_sub_factor(self, factor_name: str,stock_pool_index_name:str) -> pd.DataFrame:
         """
         【核心】对单个细分因子，
         从raw 拿到
@@ -41,10 +38,10 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
-        factor_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name, True)
+        factor_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
 
         (final_neutral_dfs, style_category, pit_map
-         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, factor_df)
+         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, factor_df,stock_pool_index_name)
 
         processed_df = self.processor.process_factor(
             target_factor_df=factor_df,
@@ -55,6 +52,7 @@ class FactorSynthesizer:
 
     def synthesize_composite_factor(self,
                                     composite_factor_name: str,
+                                    stock_pool_index_name: str,
                                     sub_factor_names: List[str]) -> pd.DataFrame:
         """
         将一组细分因子合成为一个复合因子。
@@ -74,7 +72,7 @@ class FactorSynthesizer:
         processed_factors = []
         for factor_name in sub_factor_names:
             # 对每个子因子，都走一遍“去极值->中性化->标准化”的流程
-            processed_df = self.process_sub_factor(factor_name)
+            processed_df = self.process_sub_factor(factor_name,stock_pool_index_name)
 
             processed_factors.append(processed_df)
 
@@ -99,48 +97,74 @@ class FactorSynthesizer:
         return composite_factor_df
 
 
-from pathlib import Path
+    def do_composite(self,factor_name,stock_pool_index_name):
+        # 3. 定义你要合成的因子列表
 
-if __name__ == '__main__':
-    # --- 如何在你的主流程中使用 ---
-    # 1. 实例化你的因子处理器 (假设它叫 'fp')
+        sub_factor_names =  self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name) # 改成 从config 里面读取
+        # 4. 调用合成方法
+        value_composite_df = self.synthesize_composite_factor(factor_name, stock_pool_index_name,sub_factor_names)
+        return value_composite_df
+        # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
+        # # 准备数据
+        #
+        # stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
+        # close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+        #                                                                                         need_shift=False)[
+        #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
+        # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
+        #     stock_pool_name]
+        #
+        # ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
+        #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
+        #                                    , target_factor_df= value_composite_df,
+        #                                    need_process_factor = False)
+        # todo 读取实验
+        # factor_analyzer.test_factor_entity_service(factor_name, value_composite_df, need_process_factor=False,
+        #                                            is_composite_factor=True)
 
-    # 2. 实例化因子合成器
 
-    logger.info("1. 加载底层原始因子raw_dict数据...")
-    config_path = Path(__file__).parent.parent.parent / 'factory' / 'config.yaml'
 
-    data_manager = DataManager(config_path)
-    data_manager.prepare_basic_data()
-
-    factor_manager = FactorManager(data_manager)
-    factor_analyzer = FactorAnalyzer(factor_manager=factor_manager)
-
-    synthesizer = FactorSynthesizer(factor_manager, factor_analyzer)
-
-    # 3. 定义你要合成的因子列表
-    sub_factors = list(synthesizer.sub_factors)  # 改成 从config 里面读取
-
-    config_path = "factory/config.yaml",
-
-    # 4. 调用合成方法
-    factor_name = factor_manager.data_manager.config['target_factors_for_evaluation']['fields'][0]
-    value_composite_df = synthesizer.synthesize_composite_factor(factor_name, sub_factors)
-    # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
-    # # 准备数据
-    #
-    #
-    # stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
-    # close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-    #                                                                                         need_shift=False)[
-    #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-    # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-    # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
-    #     stock_pool_name]
-    #
-    # ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
-    #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
-    #                                    , target_factor_df= value_composite_df,
-    #                                    need_process_factor = False)
-    factor_analyzer.test_factor_entity_service(factor_name, value_composite_df, need_process_factor=False,
-                                               is_composite_factor=True)
+# if __name__ == '__main__':
+#     # --- 如何在你的主流程中使用 ---
+#     # 1. 实例化你的因子处理器 (假设它叫 'fp')
+#
+#     # 2. 实例化因子合成器
+#
+#     logger.info("1. 加载底层原始因子raw_dict数据...")
+#     config_path = Path(__file__).parent.parent.parent / 'factory' / 'config.yaml'
+#
+#     data_manager = DataManager(config_path)
+#     data_manager.prepare_basic_data()
+#
+#     factor_manager = FactorManager(data_manager)
+#     factor_analyzer = FactorAnalyzer(factor_manager=factor_manager)
+#
+#     synthesizer = FactorSynthesizer(factor_manager, factor_analyzer)
+#
+#     # 3. 定义你要合成的因子列表
+#     sub_factors = list(synthesizer.sub_factors)  # 改成 从config 里面读取
+#
+#     config_path = "factory/config.yaml",
+#
+#     # 4. 调用合成方法
+#     factor_name = factor_manager.data_manager.config['target_factors_for_evaluation']['fields'][0]
+#     value_composite_df = synthesizer.synthesize_composite_factor(factor_name, sub_factors)
+#     # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
+#     # # 准备数据
+#     #
+#     #
+#     # stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
+#     # close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
+#     #                                                                                         need_shift=False)[
+#     #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+#     # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
+#     # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
+#     #     stock_pool_name]
+#     #
+#     # ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
+#     #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
+#     #                                    , target_factor_df= value_composite_df,
+#     #                                    need_process_factor = False)
+#     factor_analyzer.test_factor_entity_service(factor_name, value_composite_df, need_process_factor=False,
+#                                                is_composite_factor=True)

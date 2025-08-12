@@ -48,7 +48,6 @@ class FullQuantConfig:
     """最终生成的完整配置对象"""
     backtest: BacktestConfig
     stock_pool_profiles: Dict[str, StockPoolProfile]
-    target_factors_for_evaluation: Dict[str, List[str]]  # {"fields": target_factors}
 
     # 提供一个方法，方便地将自身转换为字典，以便系统其他部分使用
     def to_dict(self) -> Dict[str, Any]:
@@ -56,8 +55,7 @@ class FullQuantConfig:
             "backtest": self.backtest.to_dict(),
             "stock_pool_profiles": {
                 name: profile.to_dict() for name, profile in self.stock_pool_profiles.items()
-            },
-            "target_factors_for_evaluation": self.target_factors_for_evaluation
+            }
         }
 
 style_factor_list =  [
@@ -154,7 +152,7 @@ def make_pool_profile(pool_name, Index_filter, index_code,remove_st,remove_new_s
 
 CSI300_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',True,True,True, 0, 0)
 CSI300_more_filter_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',True,True,True, 0.1, 0.05)
-CSI1000_more_filter_profile = make_pool_profile('institutional_stock_pool', True, INDEX_CODES['ZZ1000'],True,True,True, 0.1, 0.05)
+CSI1000_more_filter_profile = make_pool_profile('dongbei_1000', True, INDEX_CODES['ZZ1000'],True,True,True, 0.1, 0.05)
 CSI300_none_TFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',True,False,False, 0, 0)
 CSI300_none_FTF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,True,False, 0, 0)
 CSI300_none_FFT_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,False,True, 0, 0)
@@ -169,7 +167,6 @@ pool_for_massive_test_MICROSTRUCTURE_profile = make_pool_profile('microstructure
 def generate_dynamic_config(
         start_date: str,
         end_date: str,
-        target_factors: List[str],
         pool_profiles
 ) -> Dict[str, Any]:
     """
@@ -186,7 +183,6 @@ def generate_dynamic_config(
     """
     print(f"🚀 正在动态生成配置...")
     print(f"   - 时间范围: {start_date} -> {end_date}")
-    print(f"   - 目标因子: {target_factors}")
     print(f"   - 股票池模板: {pool_profiles.keys()}")
 
     # 1. 检查预设是否存在
@@ -194,8 +190,6 @@ def generate_dynamic_config(
     # 2. 构建回测时间配置
     backtest_conf = BacktestConfig(start_date=start_date, end_date=end_date)
 
-    # 3. 构建因子配置
-    factors_conf = {"fields": target_factors}
 
     # 4. 构建股票池配置 (使用深拷贝以防修改原始模板)
     #    这里只生成一个股票池，因为动态配置通常是针对单次实验的
@@ -203,8 +197,7 @@ def generate_dynamic_config(
     # 5. 组装成最终的完整配置对象
     full_config = FullQuantConfig(
         backtest=backtest_conf,
-        stock_pool_profiles=pool_profiles,
-        target_factors_for_evaluation=factors_conf
+        stock_pool_profiles=pool_profiles
     )
 
     # 6. 返回字典格式

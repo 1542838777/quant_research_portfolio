@@ -582,34 +582,34 @@ class FactorManager:
             print(f"❌ 保存因子收益矩阵时发生错误: {e}")
             raise e
 
-    def get_backtest_ready_factor_entity(self):
+    # def get_backtest_ready_factor_entity(self):
+    #
+    #     technical_df_dict = {}
+    #     technical_category_dict = {}
+    #     technical_school_dict = {}
+    #
+    #     # 找出所有目标target 因子。
+    #     # 通过config的标识 找出需要学术计算的因子
+    #     # 自生的门派，重新align Require的因子，参与计算，返回学术_df
+    #     target_factors_for_evaluation = self.data_manager.config['target_factors_for_evaluation']['fields']
+    #
+    #     for target_factor_name in target_factors_for_evaluation:
+    #         logger.info(f"get_backtest_ready_factor_entity加载{target_factor_name}")
+    #         # category
+    #         category = self.get_style_category(target_factor_name)
+    #         school = self.get_school_code_by_factor_name(target_factor_name)
+    #         target_data_df = self.get_prepare_aligned_factor_for_analysis(target_factor_name,True)
+    #         technical_df_dict.update({target_factor_name: target_data_df})
+    #         technical_category_dict.update({target_factor_name: category})
+    #         technical_school_dict.update({target_factor_name: school})
+    #
+    #     return technical_df_dict, technical_category_dict, technical_school_dict
 
-        technical_df_dict = {}
-        technical_category_dict = {}
-        technical_school_dict = {}
-
-        # 找出所有目标target 因子。
-        # 通过config的标识 找出需要学术计算的因子
-        # 自生的门派，重新align Require的因子，参与计算，返回学术_df
-        target_factors_for_evaluation = self.data_manager.config['target_factors_for_evaluation']['fields']
-
-        for target_factor_name in target_factors_for_evaluation:
-            logger.info(f"get_backtest_ready_factor_entity加载{target_factor_name}")
-            # category
-            category = self.get_style_category(target_factor_name)
-            school = self.get_school_code_by_factor_name(target_factor_name)
-            target_data_df = self.get_prepare_aligned_factor_for_analysis(target_factor_name,True)
-            technical_df_dict.update({target_factor_name: target_data_df})
-            technical_category_dict.update({target_factor_name: category})
-            technical_school_dict.update({target_factor_name: school})
-
-        return technical_df_dict, technical_category_dict, technical_school_dict
-
-    def get_prepare_aligned_factor_for_analysis(self, factor_name, for_test):
+    def get_prepare_aligned_factor_for_analysis(self, factor_name,stock_pool_index_name, for_test):
         if not for_test:
             raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
         df = self.get_factor(factor_name)  ## 这是纯净的、T日的因子
-        pool = self.get_stock_pool_by_factor_name(factor_name)  # 拿到之前基于t-1信息 构建的动态股票池
+        pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
         # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1  方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
         # df=df.shift(1)
         return fill_and_align_by_stock_pool(factor_name=factor_name,
@@ -619,17 +619,14 @@ class FactorManager:
     def get_school_code_by_factor_name(self, factor_name):
         return self.get_school_by_style_category(self.get_style_category(factor_name))
 
-    def get_stock_pool_by_factor_name(self, factor_name):
-        school_code = self.get_school_code_by_factor_name(factor_name)
-        pool_name = self.get_stock_pool_name_by_factor_school(school_code)
-        return self.data_manager.stock_pools_dict[pool_name]
-
-    def get_stock_pool_name_by_factor_school(self, factor_school):
-        if factor_school in ['fundamentals', 'trend']:
-            return 'institutional_stock_pool'#中证800股票池
-        if factor_school in ['microstructure']:
-            return 'microstructure_stock_pool' #全大A 股票池
-        raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
+    #
+    #
+    # def get_stock_pool_name_by_factor_school(self, factor_school):
+    #     if factor_school in ['fundamentals', 'trend']:
+    #         return 'institutional_stock_pool'#中证800股票池
+    #     if factor_school in ['microstructure']:
+    #         return 'microstructure_stock_pool' #全大A 股票池
+    #     raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
 
     @staticmethod
     def get_school_by_style_category(style_category: str) -> str:
@@ -679,27 +676,18 @@ class FactorManager:
                 f"无法识别的因子风格 '{style_category}'，请在 get_school_by_style_category 函数中定义其门派。")
         return school
 
-    def get_stock_pool_index_by_factor_name(self, factor_name):
-        # 拿到对应pool_name
-        pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
+    # def get_stock_pool_index_by_factor_name(self, factor_name):
+    #     # 拿到对应pool_name
+    #     pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
+    #
+    #     index_filter_config = self.data_manager.config['stock_pool_profiles'][pool_name]['index_filter']
+    #     if not index_filter_config['enable']:
+    #         return INDEX_CODES['ALL_A']
+    #     return index_filter_config['index_code']
 
-        index_filter_config = self.data_manager.config['stock_pool_profiles'][pool_name]['index_filter']
-        if not index_filter_config['enable']:
-            return INDEX_CODES['ALL_A']
-        return index_filter_config['index_code']
-
-    def get_stock_pool_name_by_factor_name(self, factor_name):
-        school_code = self.get_school_code_by_factor_name(factor_name)
-        return self.get_stock_pool_name_by_factor_school(school_code)
-
-    # 获取 因子所对应股票池 股票池所有的stock_codes
-    def get_pool_of_factor_name_of_stock_codes(self, target_factor_name):
-        pool = self.get_stock_pool_by_factor_name(factor_name=target_factor_name)
-        return list(pool.columns)
 
     def get_style_category(self, factor_name):
-        factor_definition = pd.DataFrame(self.data_manager.config['factor_definition'])
-        return factor_definition[factor_definition['name'] == factor_name]['style_category'].iloc[0]
+        return self.data_manager.get_factor_definition(factor_name)['style_category'].iloc[0]
     #
     #
     # def generate_structuer_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
@@ -834,34 +822,34 @@ class FactorManager:
     #         dict[pool_name] = beta_df
     #     return dict
 
-    def get_pct_chg_beta_data_for_pool(self, pool_name):
-        pool_stocks = self.data_manager.stock_pools_dict[pool_name].columns
-
-        # 直接从主Beta矩阵中按需选取，无需重新计算
-        beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]  # todo后面考虑设计一下，取自get_Factor()
-
-        return beta_for_this_pool
-
-    def prepare_master_pct_chg_beta_dataframe(self):
-        """
-        用于生成一份统一的、覆盖所有股票的Beta矩阵。
-        """
-        logger.info("开始准备主Beta矩阵...")
-
-        # 1. 整合所有股票池的股票代码，形成一个总的股票列表
-        all_unique_stocks = set()
-        for stock_pool in self.data_manager.stock_pools_dict.values():
-            all_unique_stocks.update(stock_pool.columns)
-
-        master_stock_list = sorted(list(all_unique_stocks))
-
-        # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
-        logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
-        return calculate_rolling_beta(
-            self.data_manager.config['backtest']['start_date'],
-            self.data_manager.config['backtest']['end_date'],
-            master_stock_list
-        )
+    # def get_pct_chg_beta_data_for_pool(self, pool_name):
+    #     pool_stocks = self.data_manager.stock_pools_dict[pool_name].columns
+    #
+    #     # 直接从主Beta矩阵中按需选取，无需重新计算
+    #     beta_for_this_pool = self.prepare_master_pct_chg_beta_dataframe()[pool_stocks]  # todo后面考虑设计一下，取自get_Factor()
+    #
+    #     return beta_for_this_pool
+    #
+    # def prepare_master_pct_chg_beta_dataframe(self):
+    #     """
+    #     用于生成一份统一的、覆盖所有股票的Beta矩阵。
+    #     """
+    #     logger.info("开始准备主Beta矩阵...")
+    #
+    #     # 1. 整合所有股票池的股票代码，形成一个总的股票列表
+    #     all_unique_stocks = set()
+    #     for stock_pool in self.data_manager.stock_pools_dict.values():
+    #         all_unique_stocks.update(stock_pool.columns)
+    #
+    #     master_stock_list = sorted(list(all_unique_stocks))
+    #
+    #     # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
+    #     logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
+    #     return calculate_rolling_beta(
+    #         self.data_manager.config['backtest']['start_date'],
+    #         self.data_manager.config['backtest']['end_date'],
+    #         master_stock_list
+    #     )
 
 
 if __name__ == '__main__':

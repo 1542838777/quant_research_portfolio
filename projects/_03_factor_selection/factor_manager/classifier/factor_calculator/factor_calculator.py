@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df, load_income_df, \
-    load_balancesheet_df
+    load_balancesheet_df, load_all_stock_codes
 from quant_lib import logger
 ## 数据统一 tushare 有时候给元 千元 万元!  现在需要达成:统一算元!
 #remind:pct_chg turnover_rate  都要除以100
@@ -466,8 +466,7 @@ class FactorCalculator:
     def _calculate_beta(self) -> pd.DataFrame:
         beta_df = calculate_rolling_beta(
             self.factor_manager.data_manager.config['backtest']['start_date'],
-            self.factor_manager.data_manager.config['backtest']['end_date'],
-            self.factor_manager.get_pool_of_factor_name_of_stock_codes('beta')
+            self.factor_manager.data_manager.config['backtest']['end_date']
         )
         return beta_df
 
@@ -1120,9 +1119,9 @@ class FactorCalculator:
 
 
 def calculate_rolling_beta(
-        start_date: str,
-        end_date: str,
-        cur_stock_codes: list,
+        start_date: str = None,
+        end_date: str= None,
+        cur_stock_codes: list= None,
         window: int = 60,
         min_periods: int = 20
 ) -> pd.DataFrame:
@@ -1140,6 +1139,8 @@ def calculate_rolling_beta(
         pd.DataFrame: 滚动Beta矩阵 (index=date, columns=stock)。
     """
     logger.info(f"开始计算滚动Beta (窗口: {window}天)...")
+    if not cur_stock_codes :
+        cur_stock_codes = load_all_stock_codes()
 
     # --- 1. 数据获取与准备 ---
     #  指数提前。但是入参传入的股票是死的，建议重新手动加载。但是考虑是否与股票池对应！ 答案：还是别跟动态股票池进行where了，疑问

@@ -14,7 +14,7 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20190328','20190612')
-tem_p = ('20241108','20250624')
+tem_p = ('20250415','20250624')
 # fast_periods = ('20190328','20190612')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
@@ -129,12 +129,10 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =massive_test_mode
+trans_pram =东北证券_CSI1000_more_filter_mode
 is_debug = False
 
-
-
-def _load_local_config(config_path: str) -> Dict[str, Any]:
+def _load_file(config_path: str) -> Dict[str, Any]:
     # confirm_production_mode(massive_test_mode)
     """加载配置文件"""
     config_file = Path(config_path)
@@ -144,17 +142,21 @@ def _load_local_config(config_path: str) -> Dict[str, Any]:
         print(f"配置文件加载成功: {config_path}")
     else:
         raise RuntimeError("未找到config文件")
+    return config
+
+def _load_local_config_functional(config_path: str) -> Dict[str, Any]:
+    # confirm_production_mode(massive_test_mode)
+    """加载配置文件"""
+    config  = _load_file(config_path)
 
     # 根据debug模式 修改内容
     # 在这里，根据总开关来决定你的过滤器配置
     log_warning(f"【信息】当前处于 {trans_pram['mode']} 模式，desp: {trans_pram['desc']}。")
 
-    target_factors_for_evaluation_fields = config['target_factors_for_evaluation']['fields']
     start, end = trans_pram['period']
 
     dynamic_config = generate_dynamic_config(
         start_date=  start,end_date=end,
-        target_factors = target_factors_for_evaluation_fields,
         pool_profiles =  trans_pram['pools']  # 直接取用 dict
     )
     config['backtest']['start_date'] = start
@@ -202,4 +204,4 @@ def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子�
             exit()  # 直接退出程序
         print("继续执行调试模式任务...")
 if __name__ == '__main__':
-    config = _load_local_config('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\factory\\config.yaml')
+    config = _load_local_config_functional('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\factory\\config.yaml')

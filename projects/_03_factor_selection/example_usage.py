@@ -38,25 +38,40 @@ def main():
 
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
-    data_manager  = DataManager(config_path='factory/config.yaml')
+    data_manager  = DataManager(config_path='factory/config.yaml',experiments_config_path='factory/experiments.yaml')
     data_manager.prepare_basic_data()
 
     factor_manager  = FactorManager(data_manager)
     # 3. 创建示例因子
     logger.info("3. 创建目标学术因子...")
-
-    target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factor_manager.get_backtest_ready_factor_entity()
-    factor_analyzer = FactorAnalyzer(factor_manager=factor_manager,
-
-                                     target_factors_dict = target_factors_dict,
-                                     target_factors_category_dict = target_factors_category_dict,
-                                     target_factor_school_type_dict= target_factors_school_dict)
+    factor_analyzer = FactorAnalyzer(factor_manager=factor_manager )
+    # target_factors_dict,target_factors_category_dict,target_factors_school_dict  = factor_manager.get_backtest_ready_factor_entity()
+    # factor_analyzer = FactorAnalyzer(factor_manager=factor_manager,
+    #
+    #                                  target_factors_dict = target_factors_dict,
+    #                                  target_factors_category_dict = target_factors_category_dict,
+    #                                  target_factor_school_type_dict= target_factors_school_dict)
 
     # 6. 批量测试因子
     logger.info("5. 批量测试因子...")
-    batch_results = factor_analyzer.batch_test_factors(
-        target_factors_dict=target_factors_dict
-    )
+    #读取 实验文件，获取需要做的实验
+    experiments = data_manager.get_experiments_df()
+    # 批量测试
+    results = []
+    for index, config in experiments.iterrows():
+        try:
+            # 执行测试
+            results.append({index: (factor_analyzer.test_factor_entity_service(
+                factor_name=config[0],
+                stock_pool_index_name=config[1],
+            ))})
+        except Exception as e:
+            raise ValueError(f"✗ 因子{index}测试失败: {e}") from e
+
+    return results
+    # batch_results = factor_analyzer.batch_test_factors(
+    #     target_factors_dict=target_factors_dict
+    # )
     log_success(f"✓ 批量测试完成，成功测试 {len(batch_results)} 个因子")
 
     #
