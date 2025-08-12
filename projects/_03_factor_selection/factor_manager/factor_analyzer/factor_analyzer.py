@@ -1273,7 +1273,7 @@ class FactorAnalyzer:
             # 市值因子是必须的，
             'small_cap': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='small_cap')[
                 stock_pool_name]['small_cap'],
-            'pct_chg_beta': self.factor_manager.get_factor('beta'),  # 去beta中性化需要用到
+            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis('beta',True),  # 去beta中性化需要用到
             # 使用字典解包，将动态生成的行业哑变量添加进来
             **industry_dummies_dict
         }

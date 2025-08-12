@@ -1016,7 +1016,7 @@ def fill_self(factor_name, df,_existence_matrix):
 #跟stock——pool对齐，这是铁的防线！，因为市场环境：1000只股票。可能就50能交易的，。我们不跟可交易股票池进行对齐，那么后面的ic、分组，用上无相关的950的股票池做计算，那有什么用，所以一定要对齐过滤！！
 def fill_and_align_by_stock_pool(factor_name=None, df=None,
                                  stock_pool_df: pd.DataFrame = None,
-                                 _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据
+                                 _existence_matrix: pd.DataFrame = None):#这个只是用于填充pct_chg这类数据的决策判断
     if stock_pool_df is None or stock_pool_df.empty:
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略

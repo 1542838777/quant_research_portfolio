@@ -41,7 +41,7 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
-        factor_df = self.factor_manager.get_prepare_factor_for_analysis_aligned(factor_name, True)
+        factor_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name, True)
 
         (final_neutral_dfs, style_category, pit_map
          ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, factor_df)

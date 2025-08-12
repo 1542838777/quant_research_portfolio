@@ -592,14 +592,14 @@ class FactorManager:
             # category
             category = self.get_style_category(target_factor_name)
             school = self.get_school_code_by_factor_name(target_factor_name)
-            target_data_df = self.get_prepare_factor_for_analysis_aligned(target_factor_name,True)
+            target_data_df = self.get_prepare_aligned_factor_for_analysis(target_factor_name,True)
             technical_df_dict.update({target_factor_name: target_data_df})
             technical_category_dict.update({target_factor_name: category})
             technical_school_dict.update({target_factor_name: school})
 
         return technical_df_dict, technical_category_dict, technical_school_dict
 
-    def get_prepare_factor_for_analysis_aligned(self, factor_name,for_test):
+    def get_prepare_aligned_factor_for_analysis(self, factor_name, for_test):
         if not for_test:
             raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
         df = self.get_factor(factor_name)  ## 这是纯净的、T日的因子
@@ -690,40 +690,27 @@ class FactorManager:
     def get_style_category(self, factor_name):
         factor_definition = pd.DataFrame(self.data_manager.config['factor_definition'])
         return factor_definition[factor_definition['name'] == factor_name]['style_category'].iloc[0]
-
-    # ok
-    def build_diff_stock_pools_dict_auxiliary_dfs(self):
-        _structuer_df_base_on_diff = self.generate_structure_dict_base_on_diff_pool_name('small_cap')
-        # 下面只是进行对齐
-        dfs_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=_structuer_df_base_on_diff, factor_name='small_cap', need_shift=False)
-        pct_chg_beta_dict = self.build_df_dict_base_on_diff_pool_can_set_shift(
-            base_dict=self.get_pct_chg_beta_dict(), factor_name='pct_chg_beta', need_shift=False)
-
-        for stock_poll_name, df in pct_chg_beta_dict.items():
-            # 补充beta
-            dfs_dict[stock_poll_name].update({'pct_chg_beta': df})
-        return dfs_dict
-
-    def generate_structuer_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
-        if isinstance(factor_name_data, str):
-            return self.generate_structure_dict_base_on_diff_pool_name(factor_name_data)
-        if isinstance(factor_name_data, list):
-            dicts = []
-            for factor_name in factor_name_data:
-                pool_df_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
-                dicts.append((factor_name, pool_df_dict))  # 保存因子名和对应的dict
-
-            merged = {}
-            for factor_name, pool_df_dict in dicts:
-                for pool, df in pool_df_dict.items():
-                    if pool not in merged:
-                        merged[pool] = {}
-                    merged[pool][factor_name] = df
-
-            return merged
-
-        raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
+    #
+    #
+    # def generate_structuer_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
+    #     if isinstance(factor_name_data, str):
+    #         return self.generate_structure_dict_base_on_diff_pool_name(factor_name_data)
+    #     if isinstance(factor_name_data, list):
+    #         dicts = []
+    #         for factor_name in factor_name_data:
+    #             pool_df_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
+    #             dicts.append((factor_name, pool_df_dict))  # 保存因子名和对应的dict
+    #
+    #         merged = {}
+    #         for factor_name, pool_df_dict in dicts:
+    #             for pool, df in pool_df_dict.items():
+    #                 if pool not in merged:
+    #                     merged[pool] = {}
+    #                 merged[pool][factor_name] = df
+    #
+    #         return merged
+    #
+    #     raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
 
     # 仅仅只是构造一个dict 不做任何处理!
     def generate_structure_dict_base_on_diff_pool_name(self, factor_name):
@@ -732,7 +719,7 @@ class FactorManager:
         for pool_name, stock_pool_df in self.data_manager.stock_pools_dict.items():
             df_dict_base_on_diff_pool[pool_name] = df
         return df_dict_base_on_diff_pool
-
+    #慎用,后面优化掉,感觉直接取 generate_structure_dict_base_on_diff_pool_name 此函数自带align
     def build_df_dict_base_on_diff_pool_can_set_shift(self, base_dict=None, factor_name=None, need_shift=False):
         if base_dict is None:
             base_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
@@ -829,13 +816,13 @@ class FactorManager:
                 f"但收到的是 {type(data_to_align).__name__}"
             )
 
-    # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
-    def get_pct_chg_beta_dict(self):
-        dict = {}
-        for pool_name, _ in self.data_manager.stock_pools_dict.items():
-            beta_df = self.get_pct_chg_beta_data_for_pool(pool_name)
-            dict[pool_name] = beta_df
-        return dict
+    # # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
+    # def get_pct_chg_beta_dict(self):
+    #     dict = {}
+    #     for pool_name, _ in self.data_manager.stock_pools_dict.items():
+    #         beta_df = self.get_pct_chg_beta_data_for_pool(pool_name)
+    #         dict[pool_name] = beta_df
+    #     return dict
 
     def get_pct_chg_beta_data_for_pool(self, pool_name):
         pool_stocks = self.data_manager.stock_pools_dict[pool_name].columns
