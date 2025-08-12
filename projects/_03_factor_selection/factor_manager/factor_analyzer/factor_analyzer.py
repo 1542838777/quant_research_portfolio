@@ -1307,7 +1307,7 @@ class FactorAnalyzer:
         start_date = self.factor_manager.data_manager.config['backtest']['start_date']
         end_date = self.factor_manager.data_manager.config['backtest']['end_date']
         # target_school = self.factor_manager.get_school_code_by_factor_name(factor_name)
-        stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name)#todo change
+        stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name)
         style_category = \
             self.factor_manager.data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,
                                                                                                  'style_category').iloc[
