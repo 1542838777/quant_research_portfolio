@@ -2,23 +2,17 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-#
-#    # === 规模 (Size) ===
-#    - 'momentum_120d'
-#    - 'reversal_21d'
-#    - 'volatility_90d'
-#    - 'turnover_rate_90d_mean'
-#    - 'ln_turnover_value_90d'
-#    - 'amihud_liquidity'
-#
-#    # === 价值 (Value) ===
-#    - 'bm_ratio'
-#    - 'ep_ratio'
-#    - 'sp_ratio'
-#    - 'cfp_ratio'
-    - 'turnover_rate_90d_mean'
-    - 'ln_turnover_value_90d'
-    - 'amihud_liquidity'
+
+    # === 规模 (Size) ===
+    - 'log_total_mv'
+    - 'small_cap'
+
+    # === 价值 (Value) ===
+    - 'bm_ratio'
+    - 'ep_ratio'
+    - 'sp_ratio'
+    - 'cfp_ratio'
+
 
     # === 质量 (Quality) ===
     - 'roe_ttm'
@@ -36,13 +30,13 @@ target_factors_for_evaluation:
     # === 风险 (Risk / Volatility) ===
     - 'beta'
     - 'volatility_120d'
+    - 'volatility_90d'
 
     # === 流动性 (Liquidity) ===
+    - 'turnover_rate_90d_mean'
+    - 'ln_turnover_value_90d'
     - 'turnover_rate_monthly_mean'
-    - 'liquidity_amihud'
-#    加入
-    - 'log_total_mv'
-
+    - 'amihud_liquidity'
 
 
 # 回测时间范围

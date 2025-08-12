@@ -569,27 +569,6 @@ class FactorCalculator:
         monthly_mean_turnover_df = turnover_df.rolling(window=21, min_periods=15).mean()
         return monthly_mean_turnover_df
 
-    def _calculate_liquidity_amihud(self) -> pd.DataFrame:
-        """
-        计算Amihud非流动性指标。
-
-        金融逻辑:
-        衡量单位成交额能引起多大的价格波动，公式为 abs(收益率) / 成交额。
-        该值越大，说明股票的流动性越差，交易的冲击成本越高。
-        """
-        print("    > 正在计算因子: liquidity_amihud...")
-        # 1. 获取依赖数据
-        pct_chg_df = self.factor_manager.get_factor('pct_chg')
-        # 假设你的DataManager可以提供以“元”为单位的日成交额'amount'
-        amount_df = self.factor_manager.get_factor('amount')
-
-        # 2. 【核心风险控制】: 将成交额为0的替换为一个极小值，防止除以0
-        amount_df_safe = amount_df.where(amount_df > 0, 1e-9)
-
-        # 3. 计算Amihud指标
-        amihud_df = pct_chg_df.abs() / amount_df_safe
-        return amihud_df
-
     ##财务basic数据
 
     def _calculate_cashflow_ttm(self) -> pd.DataFrame:
@@ -981,6 +960,7 @@ def calculate_rolling_beta(
     # b) 使用 reindex 将 beta 矩阵对齐到标准交易日历上
     # 缺失的日期（如初始窗口期）会自动用 NaN 填充
     final_beta_df = beta_df_in_range.reindex(trading_index)
+    final_beta_df = final_beta_df.reindex(columns=cur_stock_codes) #看看原始index todo
     logger.info(f"滚动Beta计算完成，最终矩阵形状: {final_beta_df.shape}")
 
     return final_beta_df

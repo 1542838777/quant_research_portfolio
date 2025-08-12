@@ -110,6 +110,7 @@ FACTOR_FILL_CONFIG = {
     'volatility_120d': FILL_STRATEGY_NONE,
     'turnover_rate_monthly_mean': FILL_STRATEGY_NONE,
     'liquidity_amihud': FILL_STRATEGY_NONE,
+    'amihud_liquidity': FILL_STRATEGY_NONE,
 
     # === 合成类因子 ===
     # 【保持正确】合成因子不应有自己的填充逻辑。
