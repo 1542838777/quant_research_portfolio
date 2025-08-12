@@ -542,47 +542,48 @@ class FactorCalculator:
         return ln_turnover_value_df
 
 
-    # 如果你的FactorManager调用逻辑是严格按'name'匹配的，则需要这个函数。
+
     def _calculate_amihud_liquidity(self) -> pd.DataFrame:
         """
-       计算Amihud非流动性指标 - 修正版。
+       计算Amihud非流动性指标 - 最终生产版。
 
        处理流程:
        1. 计算原始日度Amihud指标。
-       2. 对原始指标进行对数变换 (log(1+x)) 来处理其高度右偏的分布。
-       3. 对变换后的指标进行滚动平均，以获得更平滑、更稳健的流动性衡量。
-
-       最终得到的因子值越高，代表近期流动性越差。
+       2. 对数变换(log1p)处理分布形状。
+       3. 滚动平均以平滑信号。
+       4. 截面标准化(Z-Score)处理数据尺度，使其对回归模型友好。
        """
 
-        logger.info("    > 正在计算因子: amihud_liquidity (非流动性) - 修正版...")
+        logger.info("    > 正在计算因子: amihud_liquidity (非流动性) -...")
 
-        # 1. 获取依赖数据并计算原始日度Amihud (与你原版逻辑一致)
+        # 步骤 1: 计算原始日度Amihud
         pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
         amount_df = self.factor_manager.get_raw_factor('amount').copy()
-
         pct_chg_decimal = pct_chg_df / 100.0
         amount_in_yuan = amount_df * 1000.0
-
-        # 防止除以零，但这里我们直接设为NaN，因为后续log(1+NaN)依然是NaN，不影响
         amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0)
-
         daily_amihud_df = pct_chg_decimal.abs() / amount_in_yuan_safe
 
-        # 2. 【核心修正 I】: 对数变换
+        # 2. 对数变换
         # 使用 np.log1p()，它计算的是 log(1 + x)，可以完美处理x接近0的情况。
         # 这是处理这类因子的标准做法。
         log_amihud_df = np.log1p(daily_amihud_df)
 
-        # 3. 【核心修正 II】: 滚动平滑
+        # 3. 【】: 滚动平滑
         # 使用过去一个月（约20个交易日）的平均值来代表当天的流动性水平
         # 这会使因子信号更稳定，减少日常噪声。
         smoothed_log_amihud_df = log_amihud_df.rolling(window=20, min_periods=12).mean()
 
-        logger.info("    > amihud_liquidity (修正版) 计算完成。")
+        # 【核心修正 III - 新增步骤】: 截面标准化
+        # 对平滑后的因子进行Z-Score标准化
+        final_amihud_df = standardize_cross_sectionally(smoothed_log_amihud_df)
 
-        # 返回的因子是一个经过对数变换和平滑处理的、行为良好的因子
-        return smoothed_log_amihud_df
+        logger.info("    > amihud_liquidity (最终版) 计算完成。")
+
+        # 丢弃所有值都为NaN的行，这些通常是回测初期或数据不足的行
+        final_amihud_df.dropna(axis=0, how='all', inplace=True)
+
+        return final_amihud_df
 
     ##财务basic数据
 
@@ -905,6 +906,7 @@ class FactorCalculator:
         return quality_momentum_df
     ######################
     ##以下是模板
+
     # --- 私有的、可复用的计算引擎 ---
     def _calculate_financial_ttm_growth_factor(self,
                                                factor_name: str,
@@ -1255,3 +1257,18 @@ def _broadcast_ann_date_to_daily(
 
 # print("\n最终得到的 bm_ratio 因子:")
 # print(bm_factor.head())
+
+def standardize_cross_sectionally(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    对DataFrame进行截面Z-Score标准化。
+    确保每一行（一个时间点）的数据均值为0，标准差为1。
+    """
+    # df.subtract(..., axis=0) bedeutet, dass jede Spalte von df von der Series abgezogen wird,
+    # wobei die Ausrichtung entlang des Indexes (axis=0) erfolgt.
+    # df.mean(axis=1) berechnet den Mittelwert für jede Zeile (d.h. über alle Aktien zu einem Zeitpunkt)
+    mean = df.mean(axis=1)
+    std = df.std(axis=1)
+
+    # 使用 .subtract 和 .divide 并指定axis=0，可以保证按行进行广播
+    # 这是pandas中按行进行标准化操作的标准方式
+    return df.subtract(mean, axis=0).divide(std, axis=0)

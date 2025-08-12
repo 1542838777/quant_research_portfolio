@@ -11,7 +11,7 @@ target_factors_for_evaluation:
 ##    - #重新
 #    - 'turnover_rate_90d_mean'
 #    - 'ln_turnover_value_90d'
-    - 'rsi'
+#    - 'rsi'
     - 'amihud_liquidity'
 
 #    # === 规模 (Size) ===

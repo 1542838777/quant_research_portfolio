@@ -108,7 +108,7 @@ class FactorSelector:
             else:
                 path_to_find = config_path / version
                 if path_to_find in version_dirs: target_version_path = path_to_find
-            if not target_version_path: return None
+            if not target_version_path: raise  ValueError ("没有找到周期")
             summary_file = target_version_path / 'summary_stats.json'
             if summary_file.exists():
                 # 假设 load_json_with_numpy 是一个可以处理numpy类型的加载函数

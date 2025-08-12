@@ -140,8 +140,11 @@ def notify(title, message):
 
 
 if __name__ == '__main__':
-    df = call_pro_tushare_api("income_vip", ts_code="000001.SZ"
-                              ,fields='ts_code,ann_date,f_ann_date,end_date,report_type,oper_cost')
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'daily_hfq')
+    df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
+    df = df[df['trade_date'] >= pd.to_datetime('20180101') and(df['trade_date'] <=pd.to_datetime('20190101') )]
+    df = call_ts_tushare_api("pro_bar", ts_code="000008.SZ",start_date='20180101',adj = 'hfq', end_date='20180501'
+                             )
     local_df = load_income_df()
     local_df = local_df[local_df['ts_code'] == '000806.SZ']
     print(1)
