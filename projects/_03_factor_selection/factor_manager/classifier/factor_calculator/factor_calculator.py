@@ -37,7 +37,7 @@ class FactorCalculator:
             factor_manager: FactorManager 的实例。计算器需要通过它来获取依赖的因子。
         """
         # 注意：这里持有 FactorManager 的引用，以便在计算衍生因子时，
-        # 可以通过 factor_manager.get_factor() 来获取基础因子，并利用其缓存机制。
+        # 可以通过 factor_manager.get_raw_factor() 来获取基础因子，并利用其缓存机制。
         self.factor_manager = factor_manager
         print("FactorCalculator (因子计算器) 已准备就绪。")
 
@@ -45,14 +45,14 @@ class FactorCalculator:
 
     # === 规模 (Size) ===
     def _calculate_small_cap(self) -> pd.DataFrame:
-        circ_mv_df = self.factor_manager.get_factor('circ_mv').copy()
+        circ_mv_df = self.factor_manager.get_raw_factor('circ_mv').copy()
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
         # 使用 pandas 自带 log 函数，保持类型一致
         factor_df = circ_mv_df.apply(np.log)
         return factor_df
     def _calculate_log_total_mv(self) -> pd.DataFrame:
-        circ_mv_df = self.factor_manager.get_factor('total_mv').copy()
+        circ_mv_df = self.factor_manager.get_raw_factor('total_mv').copy()
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
         # 使用 pandas 自带 log 函数，保持类型一致
@@ -70,7 +70,7 @@ class FactorCalculator:
         相对于其市场价格更高，可能被市场低估。
         """
         print("    > 正在计算因子: bm_ratio...")
-        pb_df = self.factor_manager.get_factor('pb')
+        pb_df = self.factor_manager.get_raw_factor('pb')
         pb_df_positive = pb_df.where(pb_df > 0)
         bm_ratio_df = 1 / pb_df_positive
         return bm_ratio_df
@@ -84,7 +84,7 @@ class FactorCalculator:
         与债券收益率等其他资产回报率进行比较。
         """
         print("    > 正在计算因子: ep_ratio...")
-        pe_ttm_df = self.factor_manager.get_factor('pe_ttm')
+        pe_ttm_df = self.factor_manager.get_raw_factor('pe_ttm')
         pe_df_positive = pe_ttm_df.where(pe_ttm_df > 0)
         ep_ratio_df = 1 / pe_df_positive
         return ep_ratio_df
@@ -98,7 +98,7 @@ class FactorCalculator:
         处于快速扩张期但尚未盈利的成长型公司（PE为负）尤其有价值。
         """
         print("    > 正在计算因子: sp_ratio...")
-        ps_ttm_df = self.factor_manager.get_factor('ps_ttm')
+        ps_ttm_df = self.factor_manager.get_raw_factor('ps_ttm')
         ps_df_positive = ps_ttm_df.where(ps_ttm_df > 0)
         sp_ratio_df = 1 / ps_df_positive
         return sp_ratio_df
@@ -113,8 +113,8 @@ class FactorCalculator:
             """
         print("    > 正在计算 cfp_ratio...")
         # --- 步骤一：获取依赖的因子 ---
-        cashflow_ttm_df = self.factor_manager.get_factor('cashflow_ttm')
-        total_mv_df = self.factor_manager.get_factor('total_mv')
+        cashflow_ttm_df = self.factor_manager.get_raw_factor('cashflow_ttm')
+        total_mv_df = self.factor_manager.get_raw_factor('total_mv')
 
         # --- 步骤二：对齐数据 (使用 .align) ---
         mv_aligned, ttm_aligned = total_mv_df.align(cashflow_ttm_df, join='inner', axis=None)
@@ -376,7 +376,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: momentum_120d...")
         # 1. 获取基础数据：后复权收盘价
-        close_df = self.factor_manager.get_factor('close').copy()
+        close_df = self.factor_manager.get_raw_factor('close').copy()
 
         # 2. 计算120个交易日前的价格到今天的收益率
         #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
@@ -396,7 +396,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: reversal_21d...")
         # 1. 获取基础数据：后复权收盘价
-        close_df = self.factor_manager.get_factor('close').copy()
+        close_df = self.factor_manager.get_raw_factor('close').copy()
 
         # 2. 计算21日收益率
         return_21d = close_df.pct_change(periods=21)
@@ -416,7 +416,7 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: momentum_12_1...")
         # 1. 获取收盘价
-        close_df = self.factor_manager.get_factor('close').copy(deep=True)
+        close_df = self.factor_manager.get_raw_factor('close').copy(deep=True)
         # close_df.ffill(axis=0, inplace=True) #反驳：如果人家停牌一年，你非fill前一年的数据，那误差太大了 不行！
         # 2. 计算 T-21 (约1个月前) 的价格 与 T-252 (约1年前) 的价格之间的收益率
         #    shift(21) 获取的是约1个月前的价格
@@ -432,7 +432,7 @@ class FactorCalculator:
         捕捉短期（约一个月）的价格惯性，即所谓的“强者恒强”。
         """
         print("    > 正在计算因子: momentum_20d...")
-        close_df = self.factor_manager.get_factor('close').copy(deep=True)
+        close_df = self.factor_manager.get_raw_factor('close').copy(deep=True)
         # close_df.reset_index(trading_index = self.factor_manager.data_manager.trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
         # close_df.ffill(axis=0, inplace=True)
         momentum_df = close_df.pct_change(periods=20)
@@ -450,7 +450,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: volatility_90d...")
         # 1. 获取日收益率数据
-        pct_chg_df = self.factor_manager.get_factor('pct_chg').copy()
+        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
 
         # 2. 计算90日滚动标准差
         #    min_periods=60 表示在计算初期，即使窗口不满90天，只要有60天数据也开始计算
@@ -480,7 +480,7 @@ class FactorCalculator:
         低波动率的股票长期来看反而有更高的风险调整后收益。
         """
         print("    > 正在计算因子: volatility_120d...")
-        pct_chg_df = self.factor_manager.get_factor('pct_chg').copy(deep=True)
+        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
         # pct_chg_df.fillna(0, inplace=True)
 
         rolling_std_df = pct_chg_df.rolling(window=120, min_periods=60).std()
@@ -492,7 +492,7 @@ class FactorCalculator:
         """【私有引擎】计算滚动平均换手率（以小数形式）。"""
 
         # 1. 获取并转换为小数
-        turnover_df = self.factor_manager.get_factor('turnover_rate').copy()
+        turnover_df = self.factor_manager.get_raw_factor('turnover_rate').copy()
         turnover_df_decimal = turnover_df / 100.0
 
         # 2. 计算滚动平均
@@ -525,7 +525,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: ln_turnover_value_90d...")
         # 1. 获取日成交额数据 (单位：元)
-        amount_df = self.factor_manager.get_factor('amount').copy()
+        amount_df = self.factor_manager.get_raw_factor('amount').copy()
         amount_df = amount_df * 1000.0
 
         # 2. 计算90日滚动平均成交额
@@ -558,8 +558,8 @@ class FactorCalculator:
         logger.info("    > 正在计算因子: amihud_liquidity (非流动性) - 修正版...")
 
         # 1. 获取依赖数据并计算原始日度Amihud (与你原版逻辑一致)
-        pct_chg_df = self.factor_manager.get_factor('pct_chg').copy()
-        amount_df = self.factor_manager.get_factor('amount').copy()
+        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
+        amount_df = self.factor_manager.get_raw_factor('amount').copy()
 
         pct_chg_decimal = pct_chg_df / 100.0
         amount_in_yuan = amount_df * 1000.0
@@ -689,9 +689,9 @@ class FactorCalculator:
         logger.info("    > 正在计算因子: operating_accruals (经营性应计利润)...")
 
         # 1. 获取所需的基础因子
-        net_profit_ttm = self.factor_manager.get_factor('net_profit_ttm')
-        cashflow_ttm = self.factor_manager.get_factor('cashflow_ttm')
-        total_assets = self.factor_manager.get_factor('total_assets')
+        net_profit_ttm = self.factor_manager.get_raw_factor('net_profit_ttm')
+        cashflow_ttm = self.factor_manager.get_raw_factor('cashflow_ttm')
+        total_assets = self.factor_manager.get_raw_factor('total_assets')
 
         # 2. 对齐数据 (核心修正部分)
         # 使用 reindex 的方式对齐多个DataFrame，这是更稳健和清晰的做法
@@ -777,7 +777,7 @@ class FactorCalculator:
         衡量股价的超买超卖状态，是经典的反转信号。
         """
         logger.info(f"    > 正在计算因子: RSI (window={window})...")
-        close_df = self.factor_manager.get_factor('close')
+        close_df = self.factor_manager.get_raw_factor('close')
 
         # 使用 pandas_ta 库，通过 .apply 在每一列（每只股票）上独立计算
         rsi_df = close_df.apply(lambda x: ta.rsi(x, length=window), axis=0)
@@ -790,9 +790,9 @@ class FactorCalculator:
         衡量股价是否超出其正常波动范围，可用于捕捉趋势的开启或反转。
         """
         logger.info(f"    > 正在计算因子: CCI (window={window})...")
-        high_df = self.factor_manager.get_factor('high')
-        low_df = self.factor_manager.get_factor('low')
-        close_df = self.factor_manager.get_factor('close')
+        high_df = self.factor_manager.get_raw_factor('high')
+        low_df = self.factor_manager.get_raw_factor('low')
+        close_df = self.factor_manager.get_raw_factor('close')
 
         # CCI需要三列数据，我们按股票逐一计算
         cci_results = {}
@@ -835,7 +835,7 @@ class FactorCalculator:
         ann_dates_long['ann_date'] = pd.to_datetime(ann_dates_long['ann_date'])
 
         # 2. 获取日度收益率数据
-        pct_chg = self.factor_manager.get_factor('pct_chg') #todo 除以100
+        pct_chg = self.factor_manager.get_raw_factor('pct_chg') #todo 除以100
 
         # 3. 计算每个公告日之后的短期累计收益
         event_returns = {}
@@ -859,7 +859,7 @@ class FactorCalculator:
 
         if not event_returns:
             logger.warning("未能计算任何有效的PEAD事件回报。")
-            return self.factor_manager.get_factor('close') * np.nan
+            return self.factor_manager.get_raw_factor('close') * np.nan
 
         # 4. 将稀疏的“事件回报”广播成每日因子值
         # 将字典转为Series，便于处理
@@ -889,8 +889,8 @@ class FactorCalculator:
         logger.info("    > 正在计算代理因子: Quality Momentum...")
 
         # 1. 获取动量和波动率因子
-        momentum_120d = self.factor_manager.get_factor('momentum_120d')
-        volatility_90d = self.factor_manager.get_factor('volatility_90d')
+        momentum_120d = self.factor_manager.get_raw_factor('momentum_120d')
+        volatility_90d = self.factor_manager.get_raw_factor('volatility_90d')
 
         # 2. 对齐数据
         mom_aligned, vol_aligned = momentum_120d.align(volatility_90d, join='inner', axis=None)
@@ -926,7 +926,7 @@ class FactorCalculator:
         logger.info(f"      > [引擎] 正在为 {ttm_factor_name} 计算TTM同比增长率...")
 
         # --- 步骤一：获取当期的TTM因子数据 ---
-        ttm_df = self.factor_manager.get_factor(ttm_factor_name)
+        ttm_df = self.factor_manager.get_raw_factor(ttm_factor_name)
 
         # --- 步骤二：获取一年前（回溯期）的TTM因子数据 ---
         ttm_last_year = ttm_df.shift(lookback_days)
@@ -1248,10 +1248,10 @@ def _broadcast_ann_date_to_daily(
 
 # # 3. 获取你需要的因子
 # # 第一次获取 bm_ratio 时，FactorManager 会委托 Calculator 去计算
-# bm_factor = fm.get_factor('bm_ratio')
+# bm_factor = fm.get_raw_factor('bm_ratio')
 
 # # 第二次获取时，它会直接从 FactorManager 的缓存加载，速度极快
-# bm_factor_again = fm.get_factor('bm_ratio')
+# bm_factor_again = fm.get_raw_factor('bm_ratio')
 
 # print("\n最终得到的 bm_ratio 因子:")
 # print(bm_factor.head())

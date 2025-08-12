@@ -203,6 +203,25 @@ class FactorManager:
         """
         【核心】获取因子的统一接口。
         """
+        raw_factor_df = self.get_raw_factor(factor_name)
+
+        # ===================================================================
+        # 步骤3:【统一出口】所有因子在返回前，都必须流经这里
+        # ===================================================================
+        # a) 应用方向性调整
+        # 假设 FACTOR_DIRECTIONS 定义在 self.calculator 或 self 中
+        direction = FACTOR_DIRECTIONS.get(factor_name, 1)  # 默认为1(正向)
+
+        if direction == -1:
+            final_factor_df = raw_factor_df * -1
+        else:
+            final_factor_df = raw_factor_df
+
+        return final_factor_df.copy()
+    def get_raw_factor(self, factor_name: str) -> pd.DataFrame:
+        """
+        【核心】获取因子的统一接口。
+        """
         # 步骤1: 检查缓存，如果命中则直接返回 (行为不变)
         if factor_name in self.factors_cache:
             # logger.info(f"  > 从缓存中加载因子: {factor_name}")
@@ -226,25 +245,12 @@ class FactorManager:
         else:
             raise ValueError(f"获取因子失败：'{factor_name}' 既没有计算函数，也不在原始数据中。")
 
-        # ===================================================================
-        # 步骤3:【统一出口】所有因子在返回前，都必须流经这里
-        # ===================================================================
-
-        # a) 应用方向性调整
-        # 假设 FACTOR_DIRECTIONS 定义在 self.calculator 或 self 中
-        direction = FACTOR_DIRECTIONS.get(factor_name, 1)  # 默认为1(正向)
-
-        if direction == -1:
-            final_factor_df = raw_factor_df * -1
-        else:
-            final_factor_df = raw_factor_df
-
         # b) 存入缓存
         # 我们缓存的是经过方向调整后的、可直接用于分析的最终因子
         logger.info(f"  > 因子 {factor_name} 处理完成并存入缓存。")
-        self.factors_cache[factor_name] = final_factor_df
+        self.factors_cache[factor_name] = raw_factor_df
 
-        return final_factor_df.copy()
+        return raw_factor_df.copy()
 
     def register_factor(self,
                         name: str,
