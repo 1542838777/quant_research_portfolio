@@ -316,14 +316,13 @@ class FactorAnalyzer:
         logger.info(f"开始测试因子: {target_factor_name}")
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
 
-        (auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
+        (final_neutral_dfs, style_category, pit_map
          ) = self.prepare_date_for_process_factor(target_factor_name, factor_df)
         if need_process_factor:
             # 1. 因子预处理
             factor_df = self.factor_processor.process_factor(
                 target_factor_df=factor_df,
                 target_factor_name=target_factor_name,
-                auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
                 pit_map=pit_map,
@@ -1243,9 +1242,6 @@ class FactorAnalyzer:
         #                                                                             need_shift=False)[
         #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
 
-        auxiliary_dfs_base_own_stock_pool = \
-            self.factor_manager.build_diff_stock_pools_dict_auxiliary_dfs()[
-                stock_pool_name]
 
         # circ_mv_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
         #     factor_name='circ_mv',
@@ -1277,13 +1273,13 @@ class FactorAnalyzer:
             # 市值因子是必须的，
             'small_cap': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='small_cap')[
                 stock_pool_name]['small_cap'],
-            'pct_chg_beta': auxiliary_dfs_base_own_stock_pool['pct_chg_beta']['pct_chg_beta'],  # 回归需要用到
+            'pct_chg_beta': self.factor_manager.get_factor('beta'),  # 去beta中性化需要用到
             # 使用字典解包，将动态生成的行业哑变量添加进来
             **industry_dummies_dict
         }
         # style_factor_dfs = self.get_style_factors(stock_pool_name)
 
-        return auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
+        return  final_neutral_dfs, style_category, pit_map
 
     def prepare_date_for_core_test(self, target_factor_name):
         target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)

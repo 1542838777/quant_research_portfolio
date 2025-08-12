@@ -129,7 +129,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =massive_test_mode
+trans_pram =fast_mode_two_pools
 is_debug = False
 
 

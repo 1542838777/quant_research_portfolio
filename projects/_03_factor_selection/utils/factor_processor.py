@@ -125,7 +125,6 @@ class FactorProcessor:
     def process_factor(self,
                        target_factor_df: pd.DataFrame,
                        target_factor_name: str,
-                       auxiliary_dfs,
                        neutral_dfs,
                        style_category: str,
                        need_standardize: bool = True, #标准化
@@ -143,7 +142,6 @@ class FactorProcessor:
         """
         log_flow_start(f"{target_factor_name}因子进入因子预处理...")
         processed_target_factor_df = target_factor_df.copy()
-        auxiliary_dfs = auxiliary_dfs.copy()
 
         if pit_map is None:
             pit_map = PointInTimeIndustryMap()

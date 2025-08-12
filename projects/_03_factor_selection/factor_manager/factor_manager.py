@@ -199,7 +199,6 @@ class FactorManager:
 
         logger.info("因子管理器初始化完成")
 
-    # 返回未经过任何shift的数据 来自于raw_df的数据（比如 close high open） ，或自己手动计算的数据比如（net_profit_growth_yoy ：自己读库自己全全计算）
     def get_factor(self, factor_name: str) -> pd.DataFrame:
         """
         【核心】获取因子的统一接口。

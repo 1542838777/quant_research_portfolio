@@ -41,15 +41,14 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
-        factor_df = self.factor_manager.get_prepare_factor_for_analysis_aligned(factor_name,True)
+        factor_df = self.factor_manager.get_prepare_factor_for_analysis_aligned(factor_name, True)
 
-        (auxiliary_dfs_base_own_stock_pool, final_neutral_dfs, style_category, pit_map
+        (final_neutral_dfs, style_category, pit_map
          ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, factor_df)
 
         processed_df = self.processor.process_factor(
             target_factor_df=factor_df,
             target_factor_name=factor_name,
-            auxiliary_dfs=auxiliary_dfs_base_own_stock_pool,
             neutral_dfs=final_neutral_dfs,
             style_category=style_category, need_standardize=True)
         return processed_df
@@ -120,7 +119,7 @@ if __name__ == '__main__':
     synthesizer = FactorSynthesizer(factor_manager, factor_analyzer)
 
     # 3. 定义你要合成的因子列表
-    sub_factors = list(synthesizer.sub_factors)#改成 从config 里面读取
+    sub_factors = list(synthesizer.sub_factors)  # 改成 从config 里面读取
 
     config_path = "factory/config.yaml",
 
@@ -143,4 +142,5 @@ if __name__ == '__main__':
     #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
     #                                    , target_factor_df= value_composite_df,
     #                                    need_process_factor = False)
-    factor_analyzer.test_factor_entity_service(factor_name,value_composite_df,need_process_factor=False,is_composite_factor = True)
+    factor_analyzer.test_factor_entity_service(factor_name, value_composite_df, need_process_factor=False,
+                                               is_composite_factor=True)
