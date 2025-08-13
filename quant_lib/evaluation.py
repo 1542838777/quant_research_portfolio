@@ -103,8 +103,7 @@ def calculate_ic(
         - ic_series (pd.Series): IC时间序列，索引为满足条件的有效日期。
         - stats_dict (Dict): 包含IC均值、ICIR、t值、p值等核心统计指标的字典。
     """
-    # 【核心修正】在所有计算开始前，将因子整体移位，建立 T-1 对 T 的预测关系
-    factor_df = factor_df.shift(1)
+
     logger.info(f"\t向量化计算 {method.capitalize()} 类型IC (生产级版本)...")
     stats_periods_dict = {}
     ic_series_periods_dict = {}
@@ -303,8 +302,6 @@ def calculate_quantile_returns(
                                  每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
     """
     results = {}
-    # 【核心修正】在所有计算开始前，将因子整体移位，建立 T-1 对 T 的预测关系
-    factor_df = factor_df.shift(1)
     for period in forward_periods:
         logger.info(f"  > 正在处理向前看 {period} 周期...")
 
@@ -405,8 +402,6 @@ def calculate_turnover(
         Dict[str, pd.Series]: 字典，key为周期(如 '5d')，value为换手率的时间序列。
     """
     turnover_periods_dict = {}
-    # 【核心修正】在所有计算开始前，将因子整体移位，建立 T-1 对 T 的预测关系
-    factor_df = factor_df.shift(1)
     # 核心：计算每日的分位数归属
     # 使用rank(pct=True)比qcut更稳健，能直接得到百分位排名
     quantiles = factor_df.rank(axis=1, pct=True, method='first')
@@ -490,7 +485,7 @@ def fama_macbeth_regression(
         returns_calculator: Callable,
         price_df: pd.DataFrame,
         forward_returns_period: int = 20,
-        weights_df: pd.DataFrame = None, # <-- 接收原始 T 日权重
+        circ_mv_df_shifted: pd.DataFrame = None, # <-- 接收原始 T 日权重
         neutral_factors: Dict[str, pd.DataFrame] = None # 因为factor_df以及除杂过，现在不需要再次进行除杂了
 ) -> Tuple[Series,Series, Dict[str, Any]]:
     """
@@ -527,8 +522,8 @@ def fama_macbeth_regression(
             'factor': factor_df,
             'returns': forward_returns
         }
-        if weights_df is not None:
-            all_dfs_to_align['weights'] = weights_df
+        if circ_mv_df_shifted is not None:
+            all_dfs_to_align['weights'] = circ_mv_df_shifted
 
         aligned_dfs = align_dataframes(all_dfs_to_align)
 
@@ -537,9 +532,6 @@ def fama_macbeth_regression(
         aligned_factor = aligned_dfs['factor']
         aligned_weights = aligned_dfs.get('weights')  # 使用 .get() 安全获取
 
-        # 步骤D:【核心】对所有 X 变量 (因子和权重) 进行统一的 .shift(1) 操作
-        aligned_factor_shifted = aligned_factor.shift(1)
-        aligned_weights_shifted = aligned_weights.shift(1) if aligned_weights is not None else None
 
     except Exception as e:
         logger.error(f"数据准备或对齐失败: {e}")
@@ -549,18 +541,18 @@ def fama_macbeth_regression(
     factor_returns = []
     factor_t_stats = [] # <--- 【新增】用于存储每日t值的列表
     valid_dates = []
-    total_dates_to_run = len(aligned_factor_shifted.index)
+    total_dates_to_run = len(aligned_factor.index)
 
-    for date in aligned_factor_shifted.index:
+    for date in aligned_factor.index:
         # a) 准备当天数据
         y_series = aligned_returns.loc[date].rename('returns')
 
         # 【简化】X变量的构建变得非常简单，只包含目标因子
-        x_df = pd.DataFrame({'factor': aligned_factor_shifted.loc[date]})
+        x_df = pd.DataFrame({'factor': aligned_factor.loc[date]})
 
         all_data_for_date = [y_series, x_df]
-        if aligned_weights_shifted is not None:
-            weights_series = np.sqrt(aligned_weights_shifted.loc[date]).rename('weights')
+        if aligned_weights is not None:
+            weights_series = np.sqrt(aligned_weights.loc[date]).rename('weights')
             all_data_for_date.append(weights_series)
 
         # b) 清洗与验证
@@ -575,7 +567,7 @@ def fama_macbeth_regression(
             y_final = combined_df['returns']
             X_final = sm.add_constant(combined_df[['factor']])  # 只对因子列回归
 
-            if aligned_weights_shifted is not None:
+            if aligned_weights is not None:
                 w_final = combined_df['weights']
                 if (w_final <= 0).any() or w_final.isna().any():
                     continue
@@ -690,12 +682,12 @@ def fama_macbeth_regression(
 
 
 def fama_macbeth(
-        factor_data: pd.DataFrame,
+        factor_data: pd.DataFrame,#以经shift处理过
         returns_calculator,
         close_df: pd.DataFrame,
-        neutral_dfs: Dict[str, pd.DataFrame],
+        neutral_dfs: Dict[str, pd.DataFrame], #以经shift处理过
         forward_periods,
-        circ_mv_df: pd.DataFrame,
+        circ_mv_df_shifted: pd.DataFrame,
         factor_name: str) -> Tuple[Dict[str, pd.DataFrame],Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
     """
     Fama-MacBeth回归法测试（黄金标准）
@@ -717,7 +709,7 @@ def fama_macbeth(
             returns_calculator=returns_calculator,
             price_df=close_df,
             forward_returns_period=period,
-            weights_df=circ_mv_df,  # <-- 传入 流通市值作为权重，执行WLS
+            circ_mv_df_shifted=circ_mv_df_shifted,  # <-- 传入 流通市值作为权重，执行WLS
             neutral_factors=neutral_dfs  # <-- 传入市值和行业作为控制变量
         )
         fm_returns_series_dict[f'{period}d'] = fm_returns_series
@@ -758,8 +750,6 @@ def calculate_quantile_daily_returns(
     """
     logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
     forward_returns_1d = returns_calculator(period=1)
-    # 【核心修正】在所有计算开始前，将因子整体移位，建立 T-1 对 T 的预测关系
-    factor_df = factor_df.shift(1)
     # 2. 数据转换与对齐
     factor_long = factor_df.stack().rename('factor')
     returns_1d_long = forward_returns_1d.stack().rename('return_1d')

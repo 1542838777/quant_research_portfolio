@@ -88,6 +88,9 @@ class FactorSelectorV2:
         # self.visualizationManager = VisualizationManager()
         # 假设因子测试中所有可能用到的周期都在这里定义
         self.ALL_PERIODS = ['1d', '5d', '10d', '21d', '40d', '60d', '120d']
+        self.visualization_manager = VisualizationManager(
+        )
+
         print("FactorSelectorV2 (专业级因子筛选平台) 已准备就绪。")
 
     def run_factor_analysis(self, TARGET_STOCK_POOL: str, top_n_final: int = 5, correlation_threshold: float = 0.5):
@@ -99,30 +102,62 @@ class FactorSelectorV2:
             target_stock_pool=TARGET_STOCK_POOL
         )
         print("\n--- 因子冠军排行榜 (已选出每个因子的最佳周期) ---")
-        display_cols = ['factor_name', 'best_period', 'Final_Score', 'Base_Score',
-                        'Robustness_Penalty', 'Purity_Penalty', 'ic_ir_processed_o2c']
+        display_cols = ['factor_name', 'best_period', 'Base_Score',
+                        'Robustness_Penalty', 'Purity_Penalty', 'ic_ir_processed_o2c','Final_Score']
         print(champion_leaderboard[display_cols].head(10))
 
         # --- 第三级火箭: 从冠军排行榜中，筛选出最终的、多样化的顶级因子 ---
-        top_factors_df = self.get_top_factors(
-            leaderboard_df=champion_leaderboard,
-            results_path=RESULTS_PATH,
-            stock_pool=TARGET_STOCK_POOL,
-            quality_score_threshold=30.0,  # 建议设置一个有意义的门槛分，比如40分
-            top_n_final=top_n_final,
-            correlation_threshold=correlation_threshold
-        )
+        # top_factors_df = self.get_top_factors(
+        #     leaderboard_df=champion_leaderboard,
+        #     results_path=RESULTS_PATH,
+        #     stock_pool=TARGET_STOCK_POOL,
+        #     quality_score_threshold=0.0,  # 建议设置一个有意义的门槛分，比如40分
+        #     top_n_final=top_n_final,
+        #     correlation_threshold=correlation_threshold
+        # )
         print("\n--- 最终入选的顶级因子详情 (Diversified Top Factors) ---")
-        print(top_factors_df[display_cols])
+        print(champion_leaderboard[display_cols])
 
         # --- 后续步骤: 为最终入选的因子生成详细报告 ---
         # ... (这里的逻辑与你之前的版本类似, 可以复用)
         logger.info("\n--- 开始为顶级因子生成详细报告 ---")
-        # for _, factor_row in top_factors_df.iterrows():
-        #    factor_name = factor_row['factor_name']
-        #    best_period = factor_row['best_period']
-        #    print(f"正在为因子 '{factor_name}' (最佳周期: {best_period}) 生成报告...")
-        # ... 调用绘图函数 ...
+        for _, factor_row in champion_leaderboard.iterrows():
+           factor_name = factor_row['factor_name']
+           best_period = factor_row['best_period']
+
+           print(f"正在为因子 '{factor_name}' (最佳周期: {best_period}) 生成报告...")
+           print(f"正在为因子 '{factor_name}' 生成报告...")
+           # 4.1 生成主报告 (3x2 统一评估报告)
+           # 绘图函数现在需要从硬盘加载数据，我们只需告知关键信息
+           self.visualization_manager.plot_unified_factor_report(
+               backtest_base_on_index=TARGET_STOCK_POOL,
+               factor_name=factor_name,
+               results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
+               # 你可以决定主报告默认使用C2C还是O2C的结果
+               default_config='o2c'
+           )
+
+           # 4.2 生成稳健性对比报告 (2x2 C2C vs O2C)
+           self.visualization_manager.plot_robustness_report(
+               backtest_base_on_index=TARGET_STOCK_POOL,
+               factor_name=factor_name,
+               results_path=RESULTS_PATH
+           )
+           # 4.2 调用新的分层净值报告函数
+           self.visualization_manager.plot_ic_quantile_panel(
+               backtest_base_on_index=TARGET_STOCK_POOL,
+               factor_name=factor_name,
+               results_path=RESULTS_PATH,
+               default_config='o2c'  # 或 'c2c'
+           )
+           # 调用新的归因分析面板函数
+           self.visualization_manager.plot_attribution_panel(
+               backtest_base_on_index=TARGET_STOCK_POOL,
+               factor_name=factor_name,
+               results_path=RESULTS_PATH,
+               default_config='o2c'
+           )
+
 
     def _build_single_period_row(self, factor_dir: Path, period: str, run_version: str) -> Dict | None:
         """【辅助函数】为单个因子、单个周期构建用于打分的宽表行"""
@@ -303,10 +338,11 @@ if __name__ == '__main__':
     selector = FactorSelectorV2()
 
     # 【决策】在这里做出你的战略决策，选择你的主战场
+    TARGET_UNIVERSE = '000852.SH'  # 以中证1000为主战场
     TARGET_UNIVERSE = '000906.SH'  # 以中证800为主战场
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,
-        top_n_final=10,
-        correlation_threshold=0.38
+        top_n_final=40,
+        correlation_threshold=0.0
     )

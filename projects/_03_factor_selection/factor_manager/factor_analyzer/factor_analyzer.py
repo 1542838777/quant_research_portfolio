@@ -316,13 +316,14 @@ class FactorAnalyzer:
 
         logger.info(f"开始测试因子: {target_factor_name}")
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
+        factor_df_shifted = factor_df.shift(1)
 
         (final_neutral_dfs, style_category, pit_map
          ) = self.prepare_date_for_process_factor(target_factor_name, factor_df,stock_pool_index_name)
         if need_process_factor:
             # 1. 因子预处理
             factor_df = self.factor_processor.process_factor(
-                target_factor_df=factor_df,
+                factor_df_shifted=factor_df_shifted,
                 target_factor_name=target_factor_name,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
@@ -331,7 +332,7 @@ class FactorAnalyzer:
             )
 
         # 数据准备
-        close_df, open_df, circ_mv_df, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
+        close_df, open_df, circ_mv_df_shifted, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
         status_text = "需要处理" if need_process_factor else "不需要处理"
         log_flow_start(
             f"因子 {target_factor_name}（{status_text}）经过预处理之后，进入 core_three_test 测试"
@@ -340,104 +341,12 @@ class FactorAnalyzer:
         ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
             = self.core_three_test(
             factor_df, target_factor_name, open_df, returns_calculator, close_df,
-            final_neutral_dfs, circ_mv_df, style_factor_dfs, do_ic_test,
+            final_neutral_dfs, circ_mv_df_shifted, style_factor_dfs, do_ic_test,
             do_turnover_test,
             do_quantile_test, do_fama_test, do_style_correlation_test)
 
         return factor_df, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
-    # ok
-    def _prepare_dfs_dict_by_diff_stock_pool(self, factor_names) -> Dict[str, pd.DataFrame]:
-        """准备辅助数据（市值、行业等）"""
-        ret_dict = {}
-        for stock_poll_name, in self.stock_pools_dict.items():
-            ret_dict[stock_poll_name] = {}
-
-            for factor_name in factor_names:
-                ret_dict[stock_poll_name].update(self.factor_manager.data_manager.raw_dfs[factor_name])
-
-        return ret_dict
-
-    # ok
-
-    def _prepare_for_neutral_data(self, total_mv_df: pd.DataFrame, industry_df: pd.DataFrame) -> Dict[
-        str, pd.DataFrame]:
-        """
-        准备辅助数据（市值、行业等）
-         1. 通过 stack(dropna=False) 修复了因 shift(1) 导致首日索引丢失的问题。
-         2. 修复了对包含NaN的序列进行排序时产生的TypeError。
-         """
-        # 假设 industry_df 传入时已经是 shift(1) 之后的结果
-        industry_df = industry_df.replace([None, 'NONE', 'None'], np.nan)
-        neutral_dict = {}
-        logger.info("开始准备行业哑变量df，用于后续中性化使用...")
-
-        # --- 1. 市值数据 ---
-        neutral_dict['small_cap'] = total_mv_df
-
-        # --- 2. 行业数据处理 ---
-
-        # 使用 stack(dropna=False) 保留第一天的 NaN 数据行，确保索引的完整性。
-        industry_stacked_series = industry_df.stack(dropna=False)
-
-        # 【核心修正】: 从包含了NaN的Series中，安全地获取所有唯一的、非NaN的行业名称
-        # 1. 先获取唯一值，结果可能包含 np.nan
-        unique_values_with_nan = industry_stacked_series.unique()
-        # 2. 过滤掉 np.nan。注意要用 pd.notna() 来判断，因为 np.nan != np.nan
-        all_industries = sorted([str(ind) for ind in unique_values_with_nan if pd.notna(ind)])
-
-        if not all_industries:
-            print("警告：行业数据中未发现任何有效行业名称。")
-            return neutral_dict
-
-        industry_categorical_series = industry_stacked_series.astype(
-            pd.CategoricalDtype(categories=all_industries)
-        )
-
-        # get_dummies 对于 NaN 输入，会生成全为0的哑变量行，这是我们期望的行为
-        industry_dummies_df = pd.get_dummies(industry_categorical_series,
-                                             prefix='industry',
-                                             sparse=True)
-
-        final_industry_dummies = {}
-
-        # --- 3. 逐个行业哑变量进行 unstack 和存储 ---
-        for col_name in industry_dummies_df.columns:
-            # col_name 是 'industry_TMT', 'industry_医药' 等
-            # 从 industry_dummies_df 中取出对应列，它是一个 Series，其索引仍然是 (日期, 股票代码) MultiIndex
-            one_industry_series = industry_dummies_df[col_name]
-            dummy_df_for_one_industry = one_industry_series.unstack(level=-1)
-
-            # 使用原始 industry_df 的列（所有股票）来 reindex
-            # 这会把在 stack() 过程中丢失的股票列加回来
-            # fill_value=0 的意思是，这些被加回来的股票，它们在这个行业哑变量中的值是0
-            dummy_df_for_one_industry = dummy_df_for_one_industry.reindex(
-                columns=industry_df.columns,
-                fill_value=0
-            )
-
-            final_industry_dummies[col_name] = dummy_df_for_one_industry
-
-        # --- 4. 删除基准行业列 ---
-        if len(all_industries) > 1:
-            base_industry = all_industries[0]
-            base_industry_col_name = f'industry_{base_industry}'
-            if base_industry_col_name in final_industry_dummies:
-                del final_industry_dummies[base_industry_col_name]
-
-        # --- 5. 处理 NaN：将原始行业为 NaN 的位置对应的哑变量设为 NaN ---
-        # 这一步非常重要，它确保了因为 shift(1) 产生的首日NaN，在哑变量矩阵中也被正确地标记为NaN
-        nan_mask_df = industry_df.isna()
-
-        for industry_col_key, dummy_df in final_industry_dummies.items():
-            # dummy_df.mask(nan_mask_df) 会将 nan_mask_df 中为 True 的位置，在 dummy_df 中也设为 NaN
-            final_industry_dummies[industry_col_key] = dummy_df.mask(nan_mask_df)
-            final_industry_dummies[industry_col_key] = final_industry_dummies[industry_col_key].astype(float)
-
-        neutral_dict.update(final_industry_dummies)
-
-        # 此时，neutral_dict 中所有DataFrame的索引都与原始的 industry_df 完全一致，包含了第一天
-        return neutral_dict
 
     def evaluation_score_dict(self,
                               ic_stats_periods_dict,
@@ -1093,7 +1002,7 @@ class FactorAnalyzer:
             fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict = fama_macbeth(
                 factor_data=factor_df, returns_calculator=returns_calculator, close_df=close_df,
                 forward_periods=self.test_common_periods,
-                neutral_dfs={}, circ_mv_df=circ_mv_shift_df,
+                neutral_dfs={}, circ_mv_df_shifted=circ_mv_shift_df,
                 factor_name=target_factor_name)
 
         # 【新增】4. 风格相关性分析
@@ -1264,35 +1173,29 @@ class FactorAnalyzer:
             stock_pool=target_factor_df.columns,
             level=industry_level
         )
-        # ：last ：方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
         # # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
         # industry_dummies_dict = {
         #     key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
         # }
         final_neutral_dfs = {
             # 市值因子是必须的，
-            'small_cap': self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='small_cap')[
-                stock_pool_name]['small_cap'],
-            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis('beta',stock_pool_name,True),  # 去beta中性化需要用到
+            'small_cap': self.factor_manager.get_prepare_aligned_factor_for_analysis('small_cap',stock_pool_name,True).shift(1),
+            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis('beta',stock_pool_name,True).shift(1),  # 去beta中性化需要用到
             # 使用字典解包，将动态生成的行业哑变量添加进来
-            **industry_dummies_dict
+            **{key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()}
         }
         # style_factor_dfs = self.get_style_factors(stock_pool_name)
 
         return  final_neutral_dfs, style_category, pit_map
 
     def prepare_date_for_core_test(self, target_factor_name,stock_pool_index_name):
-        close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-                                                                                     need_shift=False)[
-            stock_pool_index_name]['close']  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
-                                                                                    need_shift=False)[
-            stock_pool_index_name]['open']
-        circ_mv_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
-            factor_name='circ_mv',
-            need_shift=False)[stock_pool_index_name]['circ_mv']
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis('close', stock_pool_index_name, True)
+             # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis('open', stock_pool_index_name, True)
+        #用于回归测试的，所以必须shift 提前处理好
+        circ_mv_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv', stock_pool_index_name, True).shift(1)
         style_factor_dfs = self.get_style_factors(stock_pool_index_name)
-        return close_df, open_df, circ_mv_df, style_factor_dfs
+        return close_df, open_df, circ_mv_df_shifted, style_factor_dfs
 
     def prepare_date_for_entity_service(self, factor_name,stock_pool_index_name):
         factor_data = None
