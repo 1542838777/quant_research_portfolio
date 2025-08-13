@@ -325,6 +325,7 @@ def download_stock_change_name_details():
 
 # --- 4. 主下载逻辑 ---
 if __name__ == '__main__':
+    #todo daily_hfq 曾发生过 数据year字段重复问题！！ 务必重视
     LOCAL_PARQUET_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # --- 下载配套数据 (逻辑不变) ---

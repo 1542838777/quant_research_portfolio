@@ -286,7 +286,7 @@ class FactorAnalyzer:
                            factor_df: pd.DataFrame = None,
                            stock_pool_index_name: str = None,
                            preprocess_method: str = "standard",
-                           returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame] = None,
+                           returns_calculator: Callable = None,
                            start_date: str = None, end_date: str = None,
                            need_process_factor: bool = True,
                            do_ic_test: bool = True, do_turnover_test: bool = True, do_quantile_test: bool = True,
@@ -312,8 +312,8 @@ class FactorAnalyzer:
         Returns:
             综合测试结果字典
         """
-        # if (not need_process_factor) & (not is_debug):
-        #     raise ValueError("圣餐环境 不能跳过中xinghua")
+
+
         logger.info(f"开始测试因子: {target_factor_name}")
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
 

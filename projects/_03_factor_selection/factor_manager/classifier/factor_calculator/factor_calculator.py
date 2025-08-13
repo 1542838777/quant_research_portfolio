@@ -9,6 +9,9 @@ import pandas as pd
 from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df, load_income_df, \
     load_balancesheet_df, load_all_stock_codes
 from quant_lib import logger
+from quant_lib.utils.test import check_step
+
+
 ## 数据统一 tushare 有时候给元 千元 万元!  现在需要达成:统一算元!
 #remind:pct_chg turnover_rate  都要除以100
 # total_mv, circ_mv *10000

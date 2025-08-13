@@ -485,7 +485,6 @@ def calculate_max_drawdown_robust(
     return max_drawdown, start_date, end_date
 
 
-# ok 传入的必须是 shif之后的！！！！
 def fama_macbeth_regression(
         factor_df: pd.DataFrame, # <-- 接收原始 T 日因子
         returns_calculator: Callable,

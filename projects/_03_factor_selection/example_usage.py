@@ -28,7 +28,9 @@ from projects._03_factor_selection.factor_manager.registry.factor_registry impor
 
 # 导入重构后的模块 - 使用绝对导入
 from projects._03_factor_selection.factory.strategy_factory import StrategyFactory
+from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.config.logger_config import setup_logger, log_success
+from quant_lib.utils.test import check_step
 
 # 配置日志
 logger = setup_logger(__name__)
@@ -103,4 +105,12 @@ def main():
 
 
 if __name__ == "__main__":
+    print("=" * 30 + " 【第一步：直接读取水源文件】 " + "=" * 30)
+    # 假设你的日线数据存储在这里，请替换成你的真实路径
+    # 这里我们只关心价量数据，所以直接读日线行情文件
+    RAW_DAILY_DATA_PATH = LOCAL_PARQUET_DATA_DIR/'daily_hfq'
+
+    # 直接用pandas读取，不经过你的任何封装
+    raw_daily_df = pd.read_parquet(RAW_DAILY_DATA_PATH)
+    check_step(raw_daily_df,0,'直接读取水源daily_hfq文件')
     main()

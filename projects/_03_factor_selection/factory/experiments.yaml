@@ -1,26 +1,26 @@
 # experiments.yml
 # --- 实验批次一：中证800核心因子测试 ---
-- factor_name: 'value_composite'
-  stock_pool_name: 'dongbei_1000' # 中证1000
-- factor_name: 'beta'
-  stock_pool_name: 'dongbei_1000' # 中证1000
+#- factor_name: 'value_composite'
+#  stock_pool_name: 'dongbei_1000' # 中证1000
+#- factor_name: 'beta'
+#  stock_pool_name: 'dongbei_1000' # 中证1000
 
 #
 #- factor_name: 'amihud_liquidity'
 #  stock_pool_name: 'institutional_stock_pool' # 中证800
-#
-#- factor_name: 'cci'
-#  stock_pool_name: 'institutional_stock_pool'
-#
+
+- factor_name: 'beta'
+  stock_pool_name: 'institutional_stock_pool'
+##
 ## 【完美解决你的诉求】
 #- factor_name: 'ln_turnover_value_90d'
 #  stock_pool_name: 'institutional_stock_pool'
-#
-#- factor_name: 'rsi'
-#  stock_pool_name: 'institutional_stock_pool'
-#
+##
+##- factor_name: 'rsi'
+##  stock_pool_name: 'institutional_stock_pool'
+##
 #- factor_name: 'turnover_rate_90d_mean'
 #  stock_pool_name: 'institutional_stock_pool'
-#
+##
 #- factor_name: 'turnover_rate_monthly_mean'
 #  stock_pool_name: 'institutional_stock_pool'

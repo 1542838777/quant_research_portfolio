@@ -4,6 +4,7 @@ import pandas as pd
 from vectorbt.utils.docs import to_doc
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, permanent__day
+from quant_lib.utils.test import check_step
 
 
 def load_index_daily(start_date, end_date):

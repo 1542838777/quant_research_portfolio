@@ -15,6 +15,7 @@ from numpyencoder import NumpyEncoder
 
 from quant_lib import setup_logger
 from quant_lib.config.logger_config import log_warning, log_error
+from quant_lib.utils.test import check_step
 from .classifier.factor_calculator.factor_calculator import FactorCalculator, calculate_rolling_beta
 from .classifier.factor_classifier import FactorClassifier
 
@@ -219,6 +220,8 @@ class FactorManager:
 
         return final_factor_df.copy()
     def get_raw_factor(self, factor_name: str) -> pd.DataFrame:
+
+
         """
         【核心】获取因子的统一接口。
         """

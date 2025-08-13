@@ -142,7 +142,7 @@ def notify(title, message):
 if __name__ == '__main__':
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'daily_hfq')
     df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
-    df = df[df['trade_date'] >= pd.to_datetime('20180101') and(df['trade_date'] <=pd.to_datetime('20190101') )]
+    df = df[(df['trade_date'] >= pd.to_datetime('20250415')) and(df['trade_date'] <=pd.to_datetime('20250715') )]
     df = call_ts_tushare_api("pro_bar", ts_code="000008.SZ",start_date='20180101',adj = 'hfq', end_date='20180501'
                              )
     local_df = load_income_df()
