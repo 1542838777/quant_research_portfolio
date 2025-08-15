@@ -235,3 +235,5 @@ def save_token_to_local(token, key_name=None, call_count=None, max_count=None):
      token_manager.save_token_to_cache(token,key_name,call_count,max_count)
 def load_token_from_local():
     return token_manager.load_token_from_cache()
+if __name__ == '__main__':
+    print(token_manager.get_valid_token())

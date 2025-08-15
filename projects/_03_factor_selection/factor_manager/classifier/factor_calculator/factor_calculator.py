@@ -1,21 +1,18 @@
 from typing import Callable  # 引入Callable来指定函数类型的参数
-from pandas.tseries.offsets import BDay # BDay代表Business Day
-import pandas_ta as ta
-
 
 import numpy as np
 import pandas as pd
+import pandas_ta as ta
 
-from data.local_data_load import load_index_daily, get_trading_dates, load_daily_hfq, load_cashflow_df, load_income_df, \
-    load_balancesheet_df, load_all_stock_codes
+from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
+    load_balancesheet_df, load_dividend_events_long
 from quant_lib import logger
-from quant_lib.utils.test import check_step
 
 
 ## 数据统一 tushare 有时候给元 千元 万元!  现在需要达成:统一算元!
-#remind:pct_chg turnover_rate  都要除以100
-# total_mv, circ_mv *10000
-# amount  *1000
+#remind:pct_chg turnover_rate 具体处理 都要除以100
+# total_mv, circ_mv 具体处理 *10000
+# amount 具体处理  *1000
 class FactorCalculator:
     """
     【新增】因子计算器 (Factor Calculator)
@@ -47,7 +44,7 @@ class FactorCalculator:
 
 
     # === 规模 (Size) ===
-    def _calculate_small_cap(self) -> pd.DataFrame:
+    def _calculate_log_circ_mv(self) -> pd.DataFrame:
         circ_mv_df = self.factor_manager.get_raw_factor('circ_mv').copy()
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
@@ -369,6 +366,22 @@ class FactorCalculator:
         return yoy_daily
  
     # === 动量与反转 (Momentum & Reversal) ===
+    ###材料 是否需要填充 介绍:
+    ##
+    # ：动量/反转类因子
+    # 因子示例: _calculate_momentum_120d, _calculate_reversal_21d, _calculate_momentum_12_1, _calculate_momentum_20d
+    #
+    # 计算特性: 它们的核心逻辑是 price(t) / price(t-N) - 1。这类计算对价格的绝对时间间隔非常敏感。
+    #
+    # 推荐使用: self.factor_manager.get_raw_factor('close_adj') (未经填充的版本)
+    #
+    # 理由:
+    #
+    # 想象一下momentum_12_1的计算：close_adj.shift(21) / close_adj.shift(252) - 1。
+    #
+    # 如果一只股票在t-252之后停牌了半年，然后复牌。如果你使用了close_adj_filled，那么close_adj.shift(252)取到的就是一个非常“陈腐”的、半年前的价格。用这个陈腐价格计算出的动量值，其经济学意义是存疑的。
+    #
+    # 更稳健的做法是使用未经填充的close_adj。如果在t-21或t-252的任一时间点，股票是停牌的（值为NaN），那么最终的动量因子值也应该是NaN。我们宁愿在没有可靠数据时得到一个NaN，也不要一个基于陈腐数据计算出的错误值。#
     def _calculate_momentum_120d(self) -> pd.DataFrame:
         """
         计算120日（约半年）动量/累计收益率。
@@ -379,7 +392,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: momentum_120d...")
         # 1. 获取基础数据：后复权收盘价
-        close_df = self.factor_manager.get_raw_factor('close').copy()
+        close_df = self.factor_manager.get_raw_factor('close_adj').copy()
 
         # 2. 计算120个交易日前的价格到今天的收益率
         #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
@@ -399,7 +412,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: reversal_21d...")
         # 1. 获取基础数据：后复权收盘价
-        close_df = self.factor_manager.get_raw_factor('close').copy()
+        close_df = self.factor_manager.get_raw_factor('close_adj').copy()
 
         # 2. 计算21日收益率
         return_21d = close_df.pct_change(periods=21)
@@ -419,7 +432,7 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: momentum_12_1...")
         # 1. 获取收盘价
-        close_df = self.factor_manager.get_raw_factor('close').copy(deep=True)
+        close_df = self.factor_manager.get_raw_factor('close_adj').copy(deep=True)
         # close_df.ffill(axis=0, inplace=True) #反驳：如果人家停牌一年，你非fill前一年的数据，那误差太大了 不行！
         # 2. 计算 T-21 (约1个月前) 的价格 与 T-252 (约1年前) 的价格之间的收益率
         #    shift(21) 获取的是约1个月前的价格
@@ -435,7 +448,7 @@ class FactorCalculator:
         捕捉短期（约一个月）的价格惯性，即所谓的“强者恒强”。
         """
         print("    > 正在计算因子: momentum_20d...")
-        close_df = self.factor_manager.get_raw_factor('close').copy(deep=True)
+        close_df = self.factor_manager.get_raw_factor('close_adj').copy(deep=True)
         # close_df.reset_index(trading_index = self.factor_manager.data_manager.trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
         # close_df.ffill(axis=0, inplace=True)
         momentum_df = close_df.pct_change(periods=20)
@@ -466,11 +479,44 @@ class FactorCalculator:
 
         logger.info("    > volatility_90d 计算完成。")
         return annualized_vol_df
-    def _calculate_beta(self) -> pd.DataFrame:
-        beta_df = calculate_rolling_beta(
-            self.factor_manager.data_manager.config['backtest']['start_date'],
-            self.factor_manager.data_manager.config['backtest']['end_date']
+
+    def _calculate_beta(self, benchmark_index: str = '000300.SH', window: int = 60,
+                        min_periods: int = 20) -> pd.DataFrame:
+        """
+        1. 从FactorManager获取个股和指定的市场收益率。
+        2. 准备数据缓冲期。
+        3. 调用纯函数 `calculate_rolling_beta_pure` 进行计算。
+        """
+        logger.info(f"调度Beta计算任务 (基准: {benchmark_index}, 窗口: {window}天)...")
+
+        # --- 1. 获取原材料 ---
+        stock_returns = self.factor_manager.get_raw_factor('pct_chg')
+        market_returns = self._calculate_market_pct_chg(index_code=benchmark_index)
+
+        # --- 2. 准备 ---
+        config = self.factor_manager.data_manager.config['backtest']
+        start_date, end_date = config['start_date'], config['end_date']
+
+        buffer_days = int(window * 1.7) + 5
+        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y-%m-%d')
+
+        stock_returns_buffered = stock_returns.loc[buffer_start_date:end_date]
+        market_returns_buffered = market_returns.loc[buffer_start_date:end_date]
+
+        # --- 3. 执行计算 ---
+        beta_df_full = calculate_rolling_beta_pure(
+            stock_returns=stock_returns_buffered,
+            market_returns=market_returns_buffered,
+            window=window,
+            min_periods=min_periods
         )
+
+        # --- 4. 收尾工作 ---
+        # a) 截取最终需要的日期范围
+        beta_df = beta_df_full.loc[start_date:end_date]
+
+        # b) 【关键】执行 T-1 移位，确保返回的是合规的、可用于决策的因子
+        logger.info("  > [调度] Beta计算完成，。")
         return beta_df
 
     def _calculate_volatility_120d(self) -> pd.DataFrame:
@@ -493,12 +539,11 @@ class FactorCalculator:
     def _calculate_rolling_mean_turnover_rate(self, window: int, min_periods: int) -> pd.DataFrame:
         """【私有引擎】计算滚动平均换手率（以小数形式）。"""
 
-        # 1. 获取并转换为小数
-        turnover_df = self.factor_manager.get_raw_factor('turnover_rate').copy()
-        turnover_df_decimal = turnover_df / 100.0
+        # 1. 获取原始换手率数据（其中停牌日为NaN） ---现在直接ffill（0） 符合金融要求
+        turnover_df_filled = self.factor_manager.get_raw_factor('turnover_rate_fill_zero')
 
-        # 2. 计算滚动平均
-        mean_turnover_df = turnover_df_decimal.rolling(window=window, min_periods=min_periods).mean()
+        # 2. 在填充后的、代表了真实交易活动的数据上进行滚动计算
+        mean_turnover_df = turnover_df_filled.rolling(window=window, min_periods=min_periods).mean()
 
         return mean_turnover_df
 
@@ -527,8 +572,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: ln_turnover_value_90d...")
         # 1. 获取日成交额数据 (单位：元)
-        amount_df = self.factor_manager.get_raw_factor('amount').copy()
-        amount_df = amount_df * 1000.0
+        amount_df = self.factor_manager.get_raw_factor('amount_raw_fill_zero').copy()
 
         # 2. 计算90日滚动平均成交额
         mean_amount_df = amount_df.rolling(window=90, min_periods=60).mean()
@@ -560,11 +604,11 @@ class FactorCalculator:
 
         # 步骤 1: 计算原始日度Amihud
         pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
-        amount_df = self.factor_manager.get_raw_factor('amount').copy()
-        pct_chg_decimal = pct_chg_df / 100.0
+        amount_df = self.factor_manager.get_raw_factor('amount_raw').copy()
+
         amount_in_yuan = amount_df * 1000.0
         amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0)
-        daily_amihud_df = pct_chg_decimal.abs() / amount_in_yuan_safe
+        daily_amihud_df = pct_chg_df.abs() / amount_in_yuan_safe
 
         # 2. 对数变换
         # 使用 np.log1p()，它计算的是 log(1 + x)，可以完美处理x接近0的情况。
@@ -774,13 +818,28 @@ class FactorCalculator:
         return stability_daily_df
 
         # === 新增情绪类因子 (Sentiment) ===
+    ##
+    # 滚动技术指标类 (价格材料 必须喂给它是连续的
+    # 因子示例: _calculate_rsi, _calculate_cci
+    #
+    # 计算特性: 它们的算法（尤其是在pandas_ta这样的库中）通常假定输入的时间序列是连续的。数据的中断（NaN）会导致指标计算中断，产生非常稀疏的因子值。
+    #
+    # 推荐使用: self.factor_manager.get_raw_factor(('close_adj_filled', 10)) (经过填充的版本)
+    #
+    # 理由:
+    #
+    # 这是一个实用性和纯粹性之间的权衡。
+    #
+    # 为了得到一个更连续、在策略中更“可用”的因子信号，我们主动选择接受一个假设：“短期停牌（如10天内），股票的状态可以被认为是其停牌前的延续”。
+    #
+    # 我们用一个带limit的ffill来填充短期的NaN，以确保技术指标能够连续计算。这是一个主动的、有意识的建模选择。#
     def _calculate_rsi(self, window: int = 14) -> pd.DataFrame:
         """
         计算RSI (相对强弱指数)。
         衡量股价的超买超卖状态，是经典的反转信号。
         """
         logger.info(f"    > 正在计算因子: RSI (window={window})...")
-        close_df = self.factor_manager.get_raw_factor('close')
+        close_df = self.factor_manager.get_raw_factor(('close_adj_filled', 10))
 
         # 使用 pandas_ta 库，通过 .apply 在每一列（每只股票）上独立计算
         rsi_df = close_df.apply(lambda x: ta.rsi(x, length=window), axis=0)
@@ -793,10 +852,9 @@ class FactorCalculator:
         衡量股价是否超出其正常波动范围，可用于捕捉趋势的开启或反转。
         """
         logger.info(f"    > 正在计算因子: CCI (window={window})...")
-        high_df = self.factor_manager.get_raw_factor('high')
-        low_df = self.factor_manager.get_raw_factor('low')
-        close_df = self.factor_manager.get_raw_factor('close')
-
+        high_df = self.factor_manager.get_raw_factor(('high_adj_filled',10))
+        low_df = self.factor_manager.get_raw_factor(('low_adj_filled',10))
+        close_df = self.factor_manager.get_raw_factor(('close_adj_filled',10))
         # CCI需要三列数据，我们按股票逐一计算
         cci_results = {}
         for stock_code in close_df.columns:
@@ -838,7 +896,7 @@ class FactorCalculator:
         ann_dates_long['ann_date'] = pd.to_datetime(ann_dates_long['ann_date'])
 
         # 2. 获取日度收益率数据
-        pct_chg = self.factor_manager.get_raw_factor('pct_chg') #todo 除以100
+        pct_chg = self.factor_manager.get_raw_factor('pct_chg') # 除以100 不需要，这是手动根据close 算出来的
 
         # 3. 计算每个公告日之后的短期累计收益
         event_returns = {}
@@ -861,9 +919,7 @@ class FactorCalculator:
                     event_returns[(ann_date, code)] = cumulative_return
 
         if not event_returns:
-            logger.warning("未能计算任何有效的PEAD事件回报。")
-            return self.factor_manager.get_raw_factor('close') * np.nan
-
+            raise ValueError("未能计算任何有效的PEAD事件回报")
         # 4. 将稀疏的“事件回报”广播成每日因子值
         # 将字典转为Series，便于处理
         pead_series = pd.Series(event_returns).rename('pead')
@@ -907,6 +963,19 @@ class FactorCalculator:
         quality_momentum_df = quality_momentum_df.replace([np.inf, -np.inf], np.nan)
         return quality_momentum_df
     ######################
+
+    ##辅助函数
+    #ok
+    def _calculate_market_pct_chg(self, index_code: str = '000300.SH') -> pd.Series:
+        """【新增】根据指定的指数代码，计算其总回报收益率。"""
+        # (这个函数请参考我们上一轮讨论的实现)
+        logger.info(f"  > [调度] 正在获取市场基准 [{index_code}] 的收益率...")
+        index_df = load_index_daily(index_code)
+        if index_df is None: raise ValueError(f"DataManager中未找到指数 {index_code} 的数据")
+        # index_df = index_df.set_index('trade_date').sort_index()
+        # index_df.index = pd.to_datetime(index_df.index)
+        market_pct_chg_series = index_df['close'].pct_change()
+        return market_pct_chg_series
     ##以下是模板
 
     # --- 私有的、可复用的计算引擎 ---
@@ -1118,104 +1187,282 @@ class FactorCalculator:
         single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=True)  # 确保公告日和计算值都存在
 
         return single_q_long_df
+    # def _calculate_pct_chg(self):
+        # """
+        #    根据复权收盘价，计算真实的、处理了停牌情况的总回报收益率。
+        #    """
+        # logger.info("  > 正在计算权威的 pct_chg (V13.0)...")
+        #
+        # # 1. 获取权威的、T日的复权收盘价
+        # close_adj = self.factor_manager.get_raw_factor('close_adj') #这里不用做填充，为了的就是 最后：剔除所有在停牌期间被错误计算为0的收益率
+        #
+        # # 2. 【第一步】先对价格序列进行前向填充，以搭建计算复牌日收益的“桥梁”
+        # ##
+        # # 为什么要fill
+        # # 场景：比如1号买的 1元 2 3停牌 4号 卖出1.5。
+        # # --如果不对价格进行fill -->1 nan nan 1.5
+        # #----pct:nan nan nan nan
+        # #--如果对价格fff  1 1  1 1.5
+        # #----pct:nan  nan 0 0 50%
+        # # 关注 pct 各自最后的50% 以及nan。显然50%是我们想要的： 确保我的回测系统能够精确地模拟我管理的资金账户的真实净值变化**。（ 虽然
+        # # #
+        # close_adj_filled = close_adj.ffill(limit=10)#宽表index全交易日！
+        #
+        # # 3. 【第二步】在填充后的价格序列上，计算pct_change
+        # true_pct_chg = close_adj_filled.pct_change()
+        #
+        # # 4. 【第三步】用原始价格序列的notna()作为“面具”，恢复停牌日的NaN状态
+        # #    这会剔除所有在停牌期间被错误计算为0的收益率
+        # final_pct_chg = true_pct_chg.where(close_adj.notna())
+        #
+        # return final_pct_chg
+    #ok
+    def _calculate_pct_chg(self) -> pd.DataFrame:
+        """
+           【V14.0 - 终极权威版】
+           根据“总回报恒等式”，直接从不复权价和分红送股事件计算真实总回报率。
+           """
+        logger.info("  > 正在基于第一性原理，计算【最终版】权威 pct_chg...")
 
+        close_raw = self.factor_manager.get_raw_factor('close_raw')
+        pre_close_raw = close_raw.shift(1)
+        dividend_events = load_dividend_events_long()
 
+        cash_div_matrix = dividend_events.pivot_table(index='ex_date', columns='ts_code',
+                                                      values='cash_div_tax').reindex(close_raw.index).fillna(0)
+        stk_div_matrix = dividend_events.pivot_table(index='ex_date', columns='ts_code', values='stk_div').reindex(
+            close_raw.index).fillna(0)
 
-def calculate_rolling_beta(
-        start_date: str = None,
-        end_date: str= None,
-        cur_stock_codes: list= None,
-        window: int = 60,
-        min_periods: int = 20
-) -> pd.DataFrame:
-    """
-    【最终健壮版】计算A股市场上每只股票相对于市场指数的滚动Beta值。
-    此版本修复了数据对齐的隐患。
+        # 核心公式: (今日收盘价 * (1 + 送股比例) + 每股派息) / 昨日收盘价 - 1
+        numerator = close_raw * (1 + stk_div_matrix) + cash_div_matrix
+        true_pct_chg = numerator / pre_close_raw - 1
 
-    Args:
-        start_date (str): 回测开始日期, 格式 'YYYYMMDD'
-        end_date (str): 回测结束日期, 格式 'YYYYMMDD'
-        window (int): 滚动窗口大小（天数）。
-        min_periods (int): 窗口内计算所需的最小观测数。
+        final_pct_chg = true_pct_chg.where(close_raw.notna())
+        return final_pct_chg
 
-    Returns:
-        pd.DataFrame: 滚动Beta矩阵 (index=date, columns=stock)。
-    """
-    logger.info(f"开始计算滚动Beta (窗口: {window}天)...")
-    if not cur_stock_codes :
-        cur_stock_codes = load_all_stock_codes()
+    def _calculate_close_adj(self):
+        """
+           【V5.0 - 派生版】
+           通过对权威的pct_chg进行累积乘积，来构建一个连续的、
+           与总回报一致的复权价格序列。
+           """
+        logger.info("  > 正在从权威pct_chg派生close_adj...")
 
-    # --- 1. 数据获取与准备 ---
-    #  指数提前。但是入参传入的股票是死的，建议重新手动加载。但是考虑是否与股票池对应！ 答案：还是别跟动态股票池进行where了，疑问
-    # 解释：
-    # 为了计算滚动值，我们需要往前多取一些数据作为“缓冲”
-    ##
-    # 滚动历史因子 (Rolling History Factor)
-    # 例子: pct_chg_beta, 动量因子 (Momentum), 滚动波动率 (Volatility)。
+        # 1. 获取权威的、T日的真实总回报率
+        true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')
+
+        # 2. 将收益率序列转换为净值曲线 (以1为基准)
+        #    (1 + true_pct_chg) 创建了每日的增长系数
+        #    .cumprod() 计算了从开始到当日的累积增长系数
+        net_value_curve = (1 + true_pct_chg).cumprod()
+
+        # 3. 将净值曲线“锚定”到真实的价格水平
+        #    为了让复权价的“量级”与真实价格保持一致，我们用第一天的价格作为基准价
+        close_raw = self.factor_manager.get_raw_factor('close_raw')
+        # ffill().iloc[0] 是一个稳健的获取每只股票第一个有效价格的方法
+        base_prices = close_raw.ffill().iloc[0]
+
+        # 用净值曲线乘以基准价，得到与真实价格水平可比的复权价序列
+        close_adj_df = net_value_curve * base_prices
+
+        return close_adj_df
+
+    def _calculate_open_adj(self) -> pd.DataFrame:
+        """【V6.0 - 统一版】根据通用复权乘数计算复权开盘价"""
+        open_raw = self.factor_manager.get_raw_factor('open_raw')
+        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
+        return open_raw * multiplier
+
+    def _calculate_high_adj(self) -> pd.DataFrame:
+        """【V6.0 - 统一版】根据通用复权乘数计算复权最高价"""
+        high_raw = self.factor_manager.get_raw_factor('high_raw')
+        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
+        return high_raw * multiplier
+
+    def _calculate_low_adj(self) -> pd.DataFrame:
+        """【V6.0 - 统一版】根据通用复权乘数计算复权最低价"""
+        low_raw = self.factor_manager.get_raw_factor('low_raw')
+        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
+        return low_raw * multiplier
+
+    def _calculate_vol_adj(self) -> pd.DataFrame:
+        """【V3.0 - 统一版】根据通用复权乘数计算【反向】复权成交量"""
+        vol_raw = self.factor_manager.get_raw_factor('vol_raw')
+        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
+        # 价格乘数是 < 1 的“折扣”，所以成交量要【除以】它，实现反向调整
+        ##
+        # 为什么 vol (成交量) 是要反向的？（for：确保跨时间历史数据的可比性
+        # 一句话概括：因为vol（成交量）是一个实物数量（Physical Quantity）指标，它会因为送股、拆股等股本变化事件而发生剧烈跳变，导致历史数据和当前数据完全没有可比性，因此必须调整。#
+        ##
+        #
+        # 比如10元一股 1000量 成交额1w
+        #  次日因为分红，把现金给出去。股价：1元 ，但是每天成交额都是1w左右 （基于这个假设。 所以今天量：10000的量，显然无法跟昨天相比，跨倍数太多！。所以需要除以复权因子
+        #
+        # #
+        return vol_raw.div(multiplier).where(multiplier != 0)
+
+    #ok
+    # def _calculatesss_adj_factor(self) -> pd.DataFrame:
+    #     """1
+    #     【V2.0 - 最终生产版】
+    #     根据不复权价格和分红送股事件，从头开始计算一个严格“随时点”的
+    #     累积复权因子。此版本已修复停牌对前收盘价获取的bug。
+    #     """
+    #     logger.info("  > 正在基于第一性原理，计算权威的 adj_factor (V2.0)...")
     #
-    # 关键特征: 计算今天的值，需要过去N天连续、干净的历史数据。(所以给他提前buffer)它的计算过程本身就是一个“时间序列”操作。
-    buffer_days = int(window * 1.7) + 5
-    buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y%m%d')
-    # 1. Load the long-form DataFrame
-    stock_data_long = load_daily_hfq(buffer_start_date, end_date, cur_stock_codes)
+    #     # --- 1. 获取原材料 ---
+    #     # 最后一个有效价格填补停牌期间的NaN ，明确需要 必须无脑ffill，那怕是十年前的收盘价格！
+    #
+    #     close_raw_filled = self.factor_manager.get_raw_factor('close_raw_ffill')
+    #     # 然后，在这个“无空洞”的价格序列上，获取前一天的价格
+    #     pre_close_raw_robust = close_raw_filled.shift(1)
+    #     dividend_events = load_dividend_events_long()
+    #
+    #     # --- 2. 计算【每日】的调整比例 ---
+    #     daily_adj_ratio = pd.DataFrame(1.0, index=close_raw_filled.index, columns=close_raw_filled.columns)
+    #
+    #     for _, event in dividend_events.iterrows():
+    #         event_date, evet_stock_code = event['ex_date'], event['ts_code']
+    #         if event_date in daily_adj_ratio.index and evet_stock_code in daily_adj_ratio.columns:
+    #             cash_div = event.get('cash_div_tax', 0)
+    #             stk_div = event.get('stk_div', 0)
+    #
+    #             # 【修正】使用我们新计算的、更稳健的前收盘价
+    #             prev_close = pre_close_raw_robust.at[event_date, evet_stock_code]
+    #
+    #             if pd.isna(prev_close) or prev_close <= 0 or (cash_div == 0 and stk_div == 0):
+    #                 continue
+    #
+    #             numerator = prev_close - cash_div
+    #             denominator = prev_close * (1 + stk_div)
+    #
+    #             if denominator > 0:
+    #                 daily_adj_ratio.at[event_date, evet_stock_code] = numerator / denominator
+    #
+    #     # --- 3. 计算【累积】复权因子 ---
+    #     daily_adj_ratio.replace(0, np.nan, inplace=True) # 因为 numerator = prev_close - cash_div极端情况会==0.这里对修复
+    #     daily_adj_ratio.fillna(1.0, inplace=True) #对上面那行产生的nan 填充成1 ，1是干净的，对后续计算没有影响的 （因为我们下面是是累计乘法！
+    #     adj_factor_df = daily_adj_ratio.cumprod(axis=0)
+    #
+    #     logger.info("  > ✓ 权威的 adj_factor (V2.0) 计算完成。")
+    #     return adj_factor_df
 
-    # 2. It's better to modify the column before pivoting
-    stock_data_long['pct_chg'] = stock_data_long['pct_chg'] / 100
 
-    # 3. Correctly pivot the DataFrame to wide format
-    # The 'columns' argument should be the name of the column containing the stock codes.
-    stock_returns = pd.pivot_table(
-        stock_data_long,
-        index='trade_date',
-        columns='ts_code',  # Use the column name 'ts_code'
-        values='pct_chg'
-    )
+    #填充好 ，供于重复使用！ （目前场景 计算cci 要求必须是连续的价格数据！且是后复权
 
-    # a) 获取市场指数的每日收益率 是否是自动过滤了 非交易日 yes
-    market_returns_long = load_index_daily(buffer_start_date, end_date).assign(
-        pct_chg=lambda x: x['pct_chg'] / 100)  # pct_chg = ...: 这指定了要创建或修改的列的名称 x：当前DataFrame
-    market_returns = market_returns_long.set_index('trade_date')['pct_chg']
-    market_returns.index = pd.to_datetime(market_returns.index)
-    market_returns.name = 'market_return'  # chong'ming
 
-    # --- 2. 【核心修正】显式数据对齐 ---
-    # logger.info("  > 正在进行数据显式对齐...")
-    # 使用 'left' join，以 stock_returns 的日期为基准
-    # 这会创建一个统一的时间轴，并将市场收益精确地匹配到每个交易日
-    combined_df = stock_returns.join(market_returns, how='left')
+    def _calculate_close_adj_filled(self,limit: int) -> pd.DataFrame:
+        open_adj_unfilled = self.factor_manager.get_raw_factor('close_adj')
+        return open_adj_unfilled.ffill(limit=limit)
 
-    # 更新 market_returns 为对齐后的版本，确保万无一失
-    market_returns_aligned = combined_df.pop('market_return')  # 剔除这列！
+    def _calculate_open_adj_filled(self,limit: int ) -> pd.DataFrame:
+        open_adj_unfilled = self.factor_manager.get_raw_factor('open_adj')
+        return open_adj_unfilled.ffill(limit=limit)
 
-    # --- 3. 滚动计算Beta ---
-    # logger.info("  > 正在进行滚动计算...")
-    # Beta = Cov(R_stock, R_market) / Var(R_market)
+    def _calculate_high_adj_filled(self,limit: int ) -> pd.DataFrame:
+        open_adj_unfilled = self.factor_manager.get_raw_factor('high_adj')
+        return open_adj_unfilled.ffill(limit=limit)
 
-    # a) 现在，stock_returns 和 market_returns_aligned 的索引是100%对齐的
-    rolling_cov = combined_df.rolling(window=window, min_periods=min_periods).cov(
-        market_returns_aligned)  # 协方差关心的是两组数据之间的关系（描述两个变量之间的关系方向）（是不是都是一起）
+    def _calculate_low_adj_filled(self,limit: int ) -> pd.DataFrame:
+        open_adj_unfilled = self.factor_manager.get_raw_factor('low_adj')
+        return open_adj_unfilled.ffill(limit=limit)
 
-    # b) 计算指数收益率的滚动方差
-    rolling_var = market_returns_aligned.rolling(window=window, min_periods=min_periods).var()
+    ###标准内部件
 
-    # c) 计算滚动Beta
-    beta_df = rolling_cov.div(rolling_var, axis=0)
 
-    # d) 截取我们需要的最终日期范围
-    beta_df_in_range = beta_df.loc[start_date:end_date]
 
-    # --- 4. 【核心修正】使用reindex确保最终索引是完整的交易日历 ---
-    # a) 获取目标日期范围内的标准交易日历
-    trading_index = pd.to_datetime(get_trading_dates(start_date, end_date))  # 确保是DatetimeIndex
+    ##
+    #  目前用于 计算adj_factor 必须是ffill#
+    def _calculate_close_raw_ffill(self):
+        return self.factor_manager.get_raw_factor('close_raw').ffill()
 
-    # b) 使用 reindex 将 beta 矩阵对齐到标准交易日历上
-    # 缺失的日期（如初始窗口期）会自动用 NaN 填充
-    final_beta_df = beta_df_in_range.reindex(trading_index)
-    final_beta_df = final_beta_df.reindex(columns=cur_stock_codes) #看看原始index todo
-    logger.info(f"滚动Beta计算完成，最终矩阵形状: {final_beta_df.shape}")
+    ##
+    # 估值与市值类 (每日更新)
+    # 字段: ps_ttm, total_mv, circ_mv, pb, pe_ttm
+    #
+    # 金融含义: NaN代表停牌，或指标本身无效（如PE为负）。这些是**“状态类”**数据。
+    #
+    # 下游需求: 因子计算和中性化时，我们希望尽可能有多的有效数据点。
+    #
+    # 填充策略: FILL_STRATEGY_FFILL_LIMIT_65 (有限前向填充)。
+    #
+    # 理由:
+    #
+    # 经济学假设：一个公司在停牌期间，其估值水平和市值，最合理的估计就是它停牌前的状态。ffill完美地符合这个假设。
+    #
+    # 风险控制：我们不希望这个假设无限期地延续。如果一只股票停牌超过一个季度（约65个交易日），我们就认为它停牌前的信息已经“陈腐”，不再具有代表性。limit=65正是为了控制这个风险。#
+    def _calculate_ps_ttm_fill_limit65(self):
+        return self.factor_manager.get_raw_factor('ps_ttm').ffill(limit=65)
+    def _calculate_total_mv_fill_limit65(self):
+        return self.factor_manager.get_raw_factor('total_mv').ffill(limit=65)
 
-    return final_beta_df
+    def _calculate_circ_mv_fill_limit65(self):
+        return self.factor_manager.get_raw_factor('circ_mv').ffill(limit=65)
 
+    def _calculate_pb_fill_limit65(self):
+        return self.factor_manager.get_raw_factor('pb').ffill(limit=65)
+    def _calculate_pe_ttm_fill_limit65(self):
+        return self.factor_manager.get_raw_factor('pe_ttm').ffill(limit=65)
+
+    ##
+    # 交易行为类
+    # 字段: turnover_rate, amount_raw
+    #
+    # 金融含义: NaN代表停牌，当天没有发生任何交易行为。
+    #
+    # 下游需求: 滚动计算流动性因子时，需要处理这些NaN。
+    #
+    # 填充策略: FILL_STRATEGY_ZERO (填充为0)。
+    #
+    # 理由:
+    #
+    # 经济学假设：这是最符合事实的假设。停牌 = 0成交量 = 0成交额 = 0换手率。
+    #
+    # ffill的危害：如果你对turnover_rate进行ffill，就等于错误地假设“停牌日的热度=停牌前一天”，这与事实完全相反。#
+    ##        # 金融逻辑：停牌日的真实换手率就是0
+    def _calculate_turnover_rate_fill_zero(self):
+        """【标准件】生产一个将停牌日NaN处理为0的换手率序列"""
+        turnover_df = self.factor_manager.get_raw_factor('turnover_rate')
+        return (turnover_df / 100.0).fillna(0)
+    def _calculate_amount_raw_fill_zero(self):
+        return self.factor_manager.get_raw_factor('amount_raw').fillna(0) * 1000.0
+
+
+    ##
+    #  静态信息类
+    # 字段: list_date, delist_date
+    #
+    # 金融含义: NaN代表股票还未上市或尚未退市。
+    #
+    # 下游需求: 确定股票的生命周期。
+    #
+    # 填充策略: FILL_STRATEGY_FFILL (无限制前向填充)。
+    #
+    # 理由: 一只股票的上市日期是一个永恒不变的事实。一旦这个信息出现，它就对该股票的整个生命周期有效。因此，使用无限制的ffill将这个事实广播到所有后续的日期，是完全正确的。#
+    def _calculate_delist_date_raw_ffill(self):
+        return self.factor_manager.get_raw_factor('delist_date').ffill()
+    def _calculate_list_date_ffill(self):
+        return self.factor_manager.get_raw_factor('list_date').ffill()
+
+
+    ###标准件
+
+    def _calculate_price_adj_multiplier(self) -> pd.DataFrame:
+        """
+        【新增核心组件】
+        根据权威的 close_adj 和 close_raw，计算每日通用的复权乘数。
+        这是所有其他复权价和复权量的基础。
+        """
+        logger.info("  > 正在生产核心标准件: price_adj_multiplier...")
+
+        # 依赖于我们之前已经定义好的、最权威的两个“标准件”
+        close_adj = self.factor_manager.get_raw_factor('close_adj')
+        close_raw = self.factor_manager.get_raw_factor('close_raw')
+
+        # 为防止除零错误，在close_raw为0的地方返回NaN
+        price_adj_multiplier = close_adj.div(close_raw).where(close_raw > 0)
+
+        return price_adj_multiplier
 def _broadcast_ann_date_to_daily(
                                  sparse_wide_df: pd.DataFrame,
                                  trading_dates: pd.DatetimeIndex) -> pd.DataFrame:
@@ -1276,3 +1523,46 @@ def standardize_cross_sectionally(df: pd.DataFrame) -> pd.DataFrame:
     # 使用 .subtract 和 .divide 并指定axis=0，可以保证按行进行广播
     # 这是pandas中按行进行标准化操作的标准方式
     return df.subtract(mean, axis=0).divide(std, axis=0)
+
+
+def calculate_rolling_beta_pure(
+        stock_returns: pd.DataFrame,
+        market_returns: pd.Series,
+        window: int = 60,
+        min_periods: int = 20
+) -> pd.DataFrame:
+    """
+    【】根据输入的个股和市场收益率，计算滚动Beta。
+    这是一个独立的计算引擎，不涉及任何数据加载或预处理。
+
+    Args:
+        stock_returns (pd.DataFrame): 个股收益率矩阵 (index=date, columns=stock)。
+        market_returns (pd.Series): 市场收益率序列 (index=date)。
+        window (int): 滚动窗口大小（天数）。
+        min_periods (int): 窗口内计算所需的最小观测数。
+
+    Returns:
+        pd.DataFrame: 滚动Beta矩阵 (index=date, columns=stock)，未做任何日期截取或移位。
+    """
+    logger.info(f"  > 开始执行滚动Beta计算 (窗口: {window}天)...")
+
+    # --- 1. 数据对齐 ---
+    # 使用 'left' join 确保所有股票的日期和市场收益率对齐
+    # 这是计算逻辑的核心部分，必须保留
+    combined_df = stock_returns.join(market_returns.rename('market_return'), how='left')
+    market_returns_aligned = combined_df.pop('market_return')
+
+    # --- 2. 滚动计算 ---
+    # Beta = Cov(R_stock, R_market) / Var(R_market)
+
+    # a) 计算滚动协方差
+    # 在对齐后，combined_df 就是我们要的 stock_returns
+    rolling_cov = combined_df.rolling(window=window, min_periods=min_periods).cov(market_returns_aligned)
+
+    # b) 计算市场收益率的滚动方差
+    rolling_var = market_returns_aligned.rolling(window=window, min_periods=min_periods).var()
+
+    # c) 计算滚动Beta
+    beta_df = rolling_cov.div(rolling_var, axis=0)
+
+    return beta_df

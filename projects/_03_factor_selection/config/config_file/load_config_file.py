@@ -10,11 +10,11 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
     pool_for_massive_test_CSI800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
-    dongbei_SETTING
+    dongbei_SETTING, fast_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20190328','20190612')
-tem_p = ('20250415','20250624')
+tem_p = ('20241215','20250624')
 # fast_periods = ('20190328','20190612')
 fast_periods_2 = ('20240301','20250710')
 self_periods = ('20220101','20250710')
@@ -44,7 +44,7 @@ CSI300_most_basic_mode = {
 fast_mode = {
     'mode': 'fast',
     'pools': {
-        **CSI300_none_FFF_most_basic_profile
+        **fast_profile
     },
     'period':tem_p,
     'evaluation': EVAL_SETTING_FAST,  # <--- 【新增】
@@ -129,7 +129,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =massive_test_mode
+trans_pram =东北证券_CSI1000_more_filter_mode
 is_debug = False
 
 

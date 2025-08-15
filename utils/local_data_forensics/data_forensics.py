@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 import warnings
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
+from quant_lib.tushare.tushare_client import TushareClient
 
 warnings.filterwarnings('ignore')
 
@@ -404,7 +405,45 @@ class DataForensics:
 
 
 # --- 使用示例 ---
+def check_stock_nums_diff():
+    paths = ['daily', 'daily_basic', 'index_weights', 'margin_detail',
+             'stk_limit',
+
+             'balancesheet.parquet',
+             'cashflow.parquet',
+             'dividend.parquet',
+             'fina_indicator.parquet',
+             'income.parquet',
+             'index_daily.parquet',
+             'industry_record.parquet',
+             'namechange.parquet',
+             'stock_basic.parquet',
+             'suspend_d.parquet',
+             'trade_cal.parquet',
+
+             ]
+    #读取所有文件
+    ret =[]
+    for path in paths:
+        df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / path)
+        if('ts_code' in df.columns):
+                stock_num = df['ts_code'].nunique()
+                ret.append({'path': path, 'stock_num': stock_num})
+    ret.sort(key=lambda x: x['stock_num'])
+    print(ret)
+
+
 if __name__ == '__main__':
+    stock_basic = TushareClient.get_pro().stock_basic(list_status='L,D,P',
+                                                      fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type')
+    all_ts_codes = list(stock_basic['ts_code'].unique())
+    daily_basic_codes = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic')['ts_code'].unique()
+    diff_ts_codes = pd.Series( np.setdiff1d(all_ts_codes, daily_basic_codes))
+    diff_ts_codes_really = diff_ts_codes[~diff_ts_codes.str.endswith('.BJ')].unique().tolist()
+
+    info = daily_basic_codes = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
+
+    check_stock_nums_diff()
     # 1. 实例化诊断器
     forensics = DataForensics()
 

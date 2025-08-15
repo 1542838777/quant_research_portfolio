@@ -2,19 +2,18 @@
 # 作用：一个健壮的数据下载器，用于从Tushare获取所有需要的A股核心数据，
 #      并以高效的Parquet格式保存在本地，为后续的量化研究做准备。
 #      本脚本已处理好API的频率和单次条数限制。
-import time
+import os
 from datetime import timedelta, datetime
-from pathlib import Path
 
+import numpy as np
 import pandas as pd
-from IPython.testing.decorators import skipif
 from tqdm import tqdm
-from yfinance import download
 
+from projects._03_factor_selection.config.base_config import INDEX_CODES
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
-from utils.date.report_date import get_reporting_period_day_list
+from quant_lib.utils.report_date import get_reporting_period_day_list
 
 # --- 2. 全局配置 ---
 START_YEAR = 2018
@@ -107,27 +106,58 @@ def download_index_weights():
 def download_index_daily_info():
     """获取上证指数日线数据"""
     print("\n===== 开始下载指数成分股数据 =====")
-    final_df = call_pro_tushare_api('index_daily', ts_code='000300.SH', start_date='20100101', end_date='20250711')
-
+    all = []
+    for index_code_key,value in INDEX_CODES.items():
+        final_df = call_pro_tushare_api('index_daily', ts_code=value, start_date='20100101', end_date='20250711')
+        all.append(final_df)
     path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
-    final_df.to_parquet(path)
+    # 先合并DataFrame
+    concatenated_df = pd.concat(all, ignore_index=True)
+    # 再保存
+    concatenated_df.to_parquet(path)
+    print(f"✓ 所有指数数据已合并并保存至: {path}")
 #2025 07 31调用，所以也只有截止到0731的数据！
 def download_suspend_d():
-    print("\n===== 开始下载停复牌数据 =====")
-    #获取所有股票
-    stock_basic = TushareClient.get_pro().stock_basic(list_status='L,D,P',
-                                                      fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type')
-    ts_codes = list(stock_basic['ts_code'].unique())
-    all_data_list=[]
+    stock_basic = TushareClient.get_pro().stock_basic(
+        list_status='L,D,P',
+        fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type'
+    )
+    all_ts_codes = stock_basic['ts_code'].unique().tolist()
 
-    for i,ts_code in enumerate(ts_codes):
-        print(f"开始处理第{i+1}/{len(ts_codes)}股票...")
+    # 已有数据
+    old_date_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
+
+    already_ts_codes = old_date_df['ts_code'].unique()
+
+    # 差集
+    diff_ts_codes = np.setdiff1d(all_ts_codes, already_ts_codes)
+
+    # 下载新增数据
+    all_data_list = []
+    for i, ts_code in enumerate(diff_ts_codes):
+        print(f"开始处理第{i + 1}/{len(diff_ts_codes)}股票...")
         data = call_pro_tushare_api('suspend_d', ts_code=ts_code)
-        all_data_list.append(data)
-    final_df = pd.concat(all_data_list, ignore_index=True)
+        if not data.empty:
+            all_data_list.append(data)
+
+    # 合并新旧数据
+    if all_data_list:
+        new_data_df = pd.concat(all_data_list, ignore_index=True)
+        final_df = pd.concat([old_date_df, new_data_df], ignore_index=True)
+    else:
+        final_df = old_date_df.copy()
+
+    # 去重
     final_df.drop_duplicates(inplace=True)
-    final_df.to_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
-    print("download_suspend_d保存成功")
+
+    # 保存前删除原文件（如果存在）
+    file_path = LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet'
+    if file_path.exists():
+        os.remove(file_path)
+
+    # 保存
+    final_df.to_parquet(file_path)
+    print("download_suspend_d 保存成功")
 
 
 def download_stock_info(stock_basic_path):
@@ -245,6 +275,9 @@ def download_balancesheet(name='资产负债表'):
 def get_all_stock_basic_from_api():
     stock_list = call_pro_tushare_api("stock_basic", list_status='L,D,P', fields='ts_code')['ts_code'].tolist()
     return  stock_list
+def get_all_stock_basic_from_local():
+    stock_list = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')['ts_code'].tolist()
+    return  stock_list
 
 #目前6000股票/60
 def download_industry_record():
@@ -322,6 +355,26 @@ def download_stock_change_name_details():
     else:
         print("股票名称变更历史已存在，跳过下载。")
 
+def download_dividend(name='分红送股'):
+    basic_path = LOCAL_PARQUET_DATA_DIR / 'dividend.parquet'#
+
+    if not basic_path.exists():
+        print(f"--- 正在下载{name}信息 ---")
+        #获取报告期日list
+        all_data_list = []
+        stocks = get_all_stock_basic_from_api()
+        for index,stock_code in enumerate(stocks):
+            print(f"处理第{index+1}/{len(stocks)}个股票-{name}数据")
+            df = call_pro_tushare_api('dividend',ts_code=stock_code)
+            all_data_list.append(df)
+
+        # 合并所有季度数据
+        final_df = pd.concat(all_data_list, ignore_index=True)#final_df[final_dfduplicated()]
+        final_df = final_df.drop_duplicates()
+        final_df.to_parquet(basic_path)
+        print(f'{name}保存完毕')
+    else:
+        print(f"{name}已存在，跳过下载。")
 
 # --- 4. 主下载逻辑 ---
 if __name__ == '__main__':
@@ -363,8 +416,7 @@ if __name__ == '__main__':
 
             # 模式: batch_stock (按股票代码分批，适用于大多数pro接口)
             'daily': {'func': 'daily', 'params': {}, 'mode': 'batch_stock'},
-            'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'},
-            'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'}
+            'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'}
 
         }
 

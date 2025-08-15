@@ -128,11 +128,11 @@ class MomentumFactor(BaseFactor):
         logger.info("计算动量因子...")
         
         # 检查必要的数据是否存在
-        if 'close' not in data_dict:
-            logger.error("缺少计算动量因子所需的数据: close")
+        if 'close_raw' not in data_dict:
+            logger.error("缺少计算动量因子所需的数据: close_raw")
             return pd.DataFrame()
         
-        close = data_dict['close']
+        close = data_dict['close_raw']
         
         # 计算不同周期的收益率
         returns = {}
@@ -196,11 +196,11 @@ class VolatilityFactor(BaseFactor):
         logger.info("计算波动率因子...")
         
         # 检查必要的数据是否存在
-        if 'close' not in data_dict:
+        if 'close_raw' not in data_dict:
             logger.error("缺少计算波动率因子所需的数据: close")
             return pd.DataFrame()
         
-        close = data_dict['close']
+        close = data_dict['close_raw']
         
         # 计算日收益率
         daily_returns = close / close.shift(1) - 1

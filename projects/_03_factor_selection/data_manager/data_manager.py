@@ -5,24 +5,20 @@
 实现配置驱动的数据加载和动态股票池构建功能
 """
 
-import pandas as pd
-import numpy as np
-import yaml
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
-import warnings
-import sys
 import os
+import sys
+import warnings
+from pathlib import Path
+from typing import Dict, List
 
-from pandas import DatetimeIndex
+import numpy as np
+import pandas as pd
 
-from data.local_data_load import load_index_daily, load_suspend_d_df
-from data.namechange_date_manager import fill_end_date_field
-from projects._03_factor_selection.config.base_config import INDEX_CODES
+from data.local_data_load import load_suspend_d_df
 from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional, _load_file
-from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG, FILL_STRATEGY_FFILL_UNLIMITED, \
+from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, FILL_STRATEGY_FFILL_UNLIMITED, \
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
-
+from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
 from quant_lib.data_loader import DataLoader
 
 # 添加项目根目录到路径
@@ -76,16 +72,18 @@ def _get_nan_comment(field: str, rate: float) -> str:
 
     if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
         return "正常现象：不需要care 多少缺失率"
-    if field in ['circ_mv', 'close', 'total_mv',
-                 'turnover_rate', 'open', 'high', 'low',
-                 'pre_close', 'amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+    if field in ['circ_mv', 'close_raw', 'total_mv',
+                 'turnover_rate', 'open_raw', 'high_raw', 'low_raw',
+                 'pre_close', 'amount_raw'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
-    if field in ['pct_chg', 'beta'] and rate <= 0.20:
+    if field in ['beta'] and rate <= 0.20:
         return "正常"
     if field in ['ps_ttm'] and rate <= 0.20:
         return "正常"
+
+
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
 
@@ -123,6 +121,7 @@ class DataManager:
             self.stock_pools_dict = None
             self.trading_dates = self.data_loader.get_trading_dates(self.backtest_start_date, self.backtest_end_date)
             self._existence_matrix = None
+            self.pit_map = None
 
     def prepare_basic_data(self) -> Dict[str, pd.DataFrame]:
         """
@@ -138,6 +137,8 @@ class DataManager:
         self.raw_dfs = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
                                                                       start_date=self.buffer_start_date,
                                                                       end_date=self.backtest_end_date)
+        #加载辅助数据，
+        self.pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
 
         check_field_level_completeness(self.raw_dfs)
         logger.info(f"raw_dfs加载完成，共加载 {len(self.raw_dfs)} 个字段")
@@ -162,7 +163,7 @@ class DataManager:
         # print("1. 验证股票池构建所需数据...")
 
         # 验证必需字段是否已加载
-        required_fields_for_universe = ['close', 'circ_mv', 'turnover_rate', 'list_date']
+        required_fields_for_universe = ['close_raw', 'circ_mv', 'turnover_rate', 'list_date']
         missing_fields = [field for field in required_fields_for_universe if field not in self.raw_dfs]
 
         if missing_fields:
@@ -215,18 +216,17 @@ class DataManager:
 
         # 基础字段
         required_fields.update([
-            'pct_chg',  # 股票收益与指数收益的联动beta (用于中性化 进一步净化因子 它能为动量因子“降噪”，额外剔除市场系统性风险（Beta）的影响。
 
             'close',
             'pb',  # 为了计算价值类因子
             'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
-            'industry',  # 用于计算中性化
+            # 'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
             'total_mv',
             'list_date',  # 上市日期,
             'delist_date',  # 退市日期,用于构建标准动态股票池
 
-            'open', 'high', 'low', 'pre_close', 'amount',  # 为了计算次日是否一字马涨停
+            'open', 'high', 'low', 'amount',  # 为了计算次日是否一字马涨停
             'pe_ttm', 'ps_ttm',  # 懒得写calcu 直接在这里生成就好
         ])
         # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
@@ -241,7 +241,8 @@ class DataManager:
         neutralization = self.config['preprocessing']['neutralization']
         if neutralization['enable']:
             if 'industry' in neutralization['factors']:
-                required_fields.add('industry')
+                print()
+                # required_fields.add('industry')# 方案已经调整为临时加载 申万一级二级行业，
             if 'market_cap' in neutralization['factors']:
                 required_fields.add('circ_mv')
         return list(required_fields)
@@ -259,7 +260,7 @@ class DataManager:
             print(f"    缺失值比例: {missing_ratio:.2%}")
 
             # 检查异常值
-            if field_name in ['close', 'total_mv', 'pb', 'pe_ttm']:
+            if field_name in ['close_raw', 'total_mv', 'pb', 'pe_ttm']:
                 negative_ratio = (df <= 0).sum().sum() / df.notna().sum().sum()
                 print(f"  极值(>99%分位) 占比: {((df > df.quantile(0.99)).sum().sum()) / (df.shape[0] * df.shape[1])}")
 
@@ -641,7 +642,15 @@ class DataManager:
 
         return stock_pool_df
 
-    # ok 这个属于感知未来，用不得！
+
+
+    # ok 这个属于感知未来，用不得！ todo 用的时候 必须考虑 ：open_df = self.raw_dfs['open'] 要不要是后复权的
+    ##
+    #
+    #         open_df = self.raw_dfs['open']
+    #         high_df = self.raw_dfs['high']
+    #         low_df = self.raw_dfs['low']
+    #         pre_close_df = self.raw_dfs['pre_close']  # T日的pre_close就是T-1日的close#
     def _filter_next_day_limit_up(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
         """
          剔除在T日开盘即一字涨停的股票。
@@ -654,14 +663,14 @@ class DataManager:
         logger.info("    应用次日涨停股票过滤...")
 
         # --- 1. 数据准备与验证 ---
-        required_data = ['open', 'high', 'low', 'pre_close']
+        required_data = ['open_raw', 'high_raw', 'low_raw', 'pre_close']
         for data_key in required_data:
             if data_key not in self.raw_dfs:
                 raise RuntimeError(f"缺少行情数据 '{data_key}'，无法过滤次日涨停股票")
 
-        open_df = self.raw_dfs['open']
-        high_df = self.raw_dfs['high']
-        low_df = self.raw_dfs['low']
+        open_df = self.raw_dfs['open_raw']
+        high_df = self.raw_dfs['high_raw']
+        low_df = self.raw_dfs['low_raw']
         pre_close_df = self.raw_dfs['pre_close']  # T日的pre_close就是T-1日的close
 
         # --- 2. 向量化计算每日涨停价 ---
@@ -841,7 +850,7 @@ class DataManager:
 
     def get_price_data(self) -> pd.DataFrame:
         """获取价格数据"""
-        return self.raw_dfs['close']
+        return self.raw_dfs['close_raw']
 
     def get_namechange_data(self) -> pd.DataFrame:
         """获取name改变的数据"""
@@ -896,9 +905,7 @@ class DataManager:
 
     # 输入学术因子，返回计算所必须的base 因子
     def get_base_require_factors(self, target_factors_name: list[str]) -> set:
-        factor_definition_df = pd.DataFrame(self.config['factor_definition'])  # 将 list[dict] 转为 DataFrame
         result = set()
-
         for name in target_factors_name:
             factor_config = self.get_factor_definition(name)
             if factor_config['cal_require_base_fields_from_daily'].iloc[0]:
@@ -906,11 +913,7 @@ class DataManager:
                 result.update(base_fields)  # 用 update 合并列表到 set
 
         return result
-    def get_cal_require_base_fields(self,name):
-        factor_config = self.get_factor_definition(name)
-        if factor_config['cal_require_base_fields_from_daily'].iloc[0]  :
-            base_fields = factor_config['cal_require_base_fields'].iloc[0]
-            return base_fields
+
     def get_cal_require_base_fields_for_composite(self,name):
         factor_config = self.get_factor_definition(name)
         if  factor_config['action'].iloc[0] =='composite'  :
@@ -925,11 +928,11 @@ class DataManager:
                 """
         logger.info(f"  构建{pool_name}动态股票池...")
         # 第一步：基础股票池 - 有价格数据的股票
-        if 'close' not in self.raw_dfs:
+        if 'close_raw' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
         # 定基准！
-        final_stock_pool_df = self.raw_dfs['close'].notna()  # close 有值的地方 ：true
+        final_stock_pool_df = self.raw_dfs['close_raw'].notna()  # close 有值的地方 ：true
         final_stock_pool_df = final_stock_pool_df.reindex(self.trading_dates)
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
         # 【第一道防线：存在性过滤 - 必须置于最前！】
@@ -1033,7 +1036,7 @@ class DataManager:
 def fill_self(factor_name, df, _existence_matrix):
     # 步骤2: 根据配置字典，应用填充策略
     # =================================================================
-    strategy = FACTOR_FILL_CONFIG.get(factor_name)
+    strategy = FACTOR_FILL_CONFIG_FOR_STRATEGY.get(factor_name)
     df = df.copy(deep=True)
 
     if strategy is None:

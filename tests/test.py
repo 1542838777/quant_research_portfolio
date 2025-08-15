@@ -34,7 +34,7 @@ def tesasdadst():
 #     print(df[['date', 'close']])
 
 def read_():
-    for name in ['daily_basic', 'daily_hfq', 'adj_factor', 'namechange.parquet', 'stock_basic.parquet']:
+    for name in ['daily_basic', 'daily_hfq', 'namechange.parquet', 'stock_basic.parquet']:
         df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / name)
         print(f"{name}\n")
         print(f'{df.isna().mean()}')

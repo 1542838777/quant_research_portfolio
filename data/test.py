@@ -1,16 +1,15 @@
+import numpy as np
 import pandas as pd
 
-from data.local_data_load import get_industry_record_df_processed
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
-from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
-from quant_lib.tushare.data.downloader import download_index_weights, download_index_daily_info, download_suspend_d, \
-    download_cashflow, download_income, download_balancesheet, download_industry_record
+from quant_lib.tushare.data.downloader import download_suspend_d
 from quant_lib.tushare.tushare_client import TushareClient
+
 
 # daily_hfq 有问题
 def get_fields_map():
     result = []
-    paths = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq',  'index_weights', 'margin_detail',
+    paths = [ 'daily', 'daily_basic', 'daily_hfq',  'index_weights', 'margin_detail',
              'stk_limit',
 
              'cashflow.parquet',
@@ -22,7 +21,6 @@ def get_fields_map():
              'suspend_d.parquet',
              'trade_cal.parquet',
              'balancesheet.parquet',
-
              ]
 
     for path in paths:
@@ -113,7 +111,36 @@ def dup_check_report_type():
         })
     return result
 
+def fq():
+    import pandas as pd
 
+    # ▼▼▼▼▼ 请在这里修改为你自己的配置 ▼▼▼▼▼
+    # 你的“不复权”日线行情文件的真实路径
+    RAW_DAILY_FILE_PATH =  LOCAL_PARQUET_DATA_DIR / 'daily'
+
+    # 你选择的股票和它的一个历史除权日
+    STOCK_TO_CHECK = '600519.SH'  # 以贵州茅台为例
+    EX_DATE = '2023-06-30'  # 茅台2022年度分红的除权日
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    # --- 执行检验 ---
+    print("--- 正在对最底层‘不复权’数据源进行终极审查 ---")
+    try:
+        df = pd.read_parquet(RAW_DAILY_FILE_PATH)
+        df['trade_date'] = pd.to_datetime(df['trade_date'])
+
+        stock_df = df[df['ts_code'] == STOCK_TO_CHECK].set_index('trade_date').sort_index()
+
+        ex_date_dt = pd.to_datetime(EX_DATE)
+
+        # 获取除权日前后几天的价格
+        price_slice = stock_df.loc[ex_date_dt - pd.Timedelta(days=5): ex_date_dt + pd.Timedelta(days=5)]
+
+        print(f"\n正在检查 {STOCK_TO_CHECK} 在除权日 {EX_DATE} 前后的【不复权】价格：")
+        print(price_slice[['close']])  # 我们只关心 close_raw
+
+    except Exception as e:
+        print(f"\n读取或处理文件时发生错误: {e}")
 def compare_df_rows(df, index1, index2):
     """
     比较 df 中 index1 和 index2 两行，返回它们不一致的列名列表
@@ -132,13 +159,63 @@ def compare_df_rows(df, index1, index2):
 
 
 if __name__ == '__main__':
-    df = get_industry_record_df_processed()
-    ori_df= pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'industry_record.parquet')
-    df.sort_values(by=['ts_code','in_date'], ascending=[True,True], inplace=True)
+    fq()
+    stock_basic = TushareClient.get_pro().stock_basic(
+        list_status='L,D,P',
+        fields='ts_code,symbol,name,area,industry,fullname,enname,cnspell,market,exchange,curr_type,list_status,list_date,delist_date,is_hs,act_name,act_ent_type'
+    )
+    all_ts_codes = stock_basic['ts_code'].unique().tolist()
 
-    result = df.groupby('ts_code').filter(lambda x: (x['out_date'].isna()).sum() >2)
-    result.sort_values(by=['ts_code','in_date'], ascending=[True,True], inplace=True)
-    print(1)
+    # 已有数据
+    old_date_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
+
+    already_ts_codes = old_date_df['ts_code'].unique()
+
+
+    # 差集
+    diff_ts_codes = np.setdiff1d(all_ts_codes, already_ts_codes)
+    info = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
+
+
+
+
+
+    index_daily = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet')
+    index_daily['trade_date'] = pd.to_datetime(index_daily['trade_date'])
+    daily_df = index_daily[index_daily['trade_date'] >= pd.to_datetime('2025-04-11')]
+    # adj_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'adj_factor')
+    # adj_df['trade_date'] = pd.to_datetime(adj_df['trade_date'])
+    # adj_df = adj_df.sort_values(by=['ts_code','trade_date'])
+    # adj_df = adj_df[adj_df['trade_date'] >= pd.to_datetime('2025-04-11')]
+    # adj_df = adj_df.set_index(['ts_code', 'trade_date'])
+
+    daily_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily')
+    daily_df['trade_date'] = pd.to_datetime(daily_df['trade_date'])
+    daily_df = daily_df[daily_df['trade_date'] >= pd.to_datetime('2025-04-11')]
+    daily_df = daily_df.set_index(['ts_code', 'trade_date'])
+
+
+    daily_basic_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_basic')
+    daily_basic_df['trade_date'] = pd.to_datetime(daily_basic_df['trade_date'])
+    daily_basic_df = daily_basic_df[daily_basic_df['trade_date'] >= pd.to_datetime('2025-04-11')]
+    daily_basic_df = daily_basic_df.set_index(['ts_code', 'trade_date'])
+
+
+    hfq_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
+    hfq_df['trade_date'] = pd.to_datetime(hfq_df['trade_date'])
+    hfq_df = hfq_df[hfq_df['trade_date'] >= pd.to_datetime('2025-04-11')]
+    hfq_df = hfq_df[hfq_df['ts_code'].isin(['000001.SZ','000002.SZ'])]
+
+
+    # 初始化 DataFrame
+    com_df = pd.DataFrame(index=daily_df.index)
+
+    # for col in ['close','vol','amount']:
+    #     # com_df[col] = daily_df[col] * adj_df['adj_factor']
+
+    # 对比手动复权 vs 已复权
+    print(com_df['close','pct_chg'].head())
+    print(hfq_df['close','pct_chg'].head())
 
 
 

@@ -166,4 +166,7 @@ def delete_duplicates_partitioned():
 
 
 if __name__ == '__main__':
-    mockShift_neutral_V2()
+    path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
+    df =  pd.read_parquet(path, engine='pyarrow')
+    print(df)
+    # download_index_daily_info()

@@ -60,7 +60,7 @@ class FullQuantConfig:
 
 style_factor_list =  [
       # 1. 规模 (Size)
-      'small_cap',              # 基于流通市值的对数，最核心的规模因子
+      'log_circ_mv',              # 基于流通市值的对数，最核心的规模因子
 
       # 2. 价值 (Value)
       'bm_ratio',               # 账面市值比(B/P)，Fama-French三因子模型经典成员
@@ -157,6 +157,7 @@ CSI300_none_TFF_most_basic_profile = make_pool_profile('institutional_stock_pool
 CSI300_none_FTF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,True,False, 0, 0)
 CSI300_none_FFT_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,False,True, 0, 0)
 CSI300_none_FFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300.SH',False,False,False, 0, 0)
+fast_profile = make_pool_profile('fast', True, '000300.SH',False,False,False, 0, 0)
 CSI500_none_FFF_most_basic_profile = make_pool_profile('microstructure_stock_pool', True, INDEX_CODES['ZZ500'],False,False,False, 0, 0)
 CSI500_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000905.SH', True,True,True,0, 0)
 # 用于我需要在最真实的环境，交易，需要必须要过滤流动差劲的

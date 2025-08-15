@@ -16,7 +16,7 @@ target_factors_for_evaluation:
 
 #    # === 规模 (Size) ===
 #    - 'log_total_mv'
-#    - 'small_cap'
+#    - 'log_circ_mv'
 #
 #    # === 价值 (Value) ===
 #    - 'bm_ratio'
@@ -135,6 +135,24 @@ stock_pool_profiles:
 
       # 中证800本身已是市值筛选的结果，此项可禁用或设为非常宽松的保险丝
       min_market_cap_percentile: 0.05
+  fast:
+      # 启用指数过滤，
+      index_filter:
+        enable: true
+        index_code: '000852.SH'  #
+
+      filters:
+        # --- 普适性风险过滤 (强制性) ---
+        remove_st: false          # 必须剔除ST股票
+        remove_new_stocks: false  # 必须剔除上市不足6个月的新股
+        adapt_tradeable_matrix_by_suspend_resume: false #适配停经历复牌事件的可交易股票池
+
+        # --- 指标过滤 (针对指数池内部) ---
+        # 在中证800这个优等生群体中，再剔除流动性最差的10%，作为风险控制
+        min_liquidity_percentile: 0
+
+        # 中证800本身已是市值筛选的结果，此项可禁用或设为非常宽松的保险丝
+        min_market_cap_percentile: 0
 
       # --- 可交易性过滤 (强制性) ---
 #      remove_next_day_suspended: true  # 必须剔除次日停牌
@@ -225,10 +243,7 @@ factor_definition:
     style_category: 'price'
     action: null
     description: '后复权最低价。'
-  - name: 'pct_chg'
-    style_category: 'return'
-    action: null
-    description: '每日收益率（后复权）。'
+
   - name: 'amount'
     style_category: 'liquidity'
     action: null
@@ -268,7 +283,7 @@ factor_definition:
   # ----------------------------------------------------------------------------
 
   # === 规模 (Size) ===
-  - name: 'small_cap'
+  - name: 'log_circ_mv'
     # 【修正与增强】 使用流通市值并明确命名为对数形式，这是进行回归和中性化的标准做法。
     style_category: 'size'
     description: '流通市值的对数。必须取对数以缓解数据右偏，是进行回归和中性化时最标准的规模因子。'
@@ -284,6 +299,12 @@ factor_definition:
     cal_require_base_fields_from_daily: True
 
   # === 价值 (Value) ===
+  - name: 'pct_chg'
+    style_category: 'return'
+    description: '每日收益率（后复权）。'
+    action: technical_calcu
+    cal_require_base_fields: [ 'close','adj_factor' ]
+    cal_require_base_fields_from_daily: False
   - name: 'bm_ratio'
     style_category: 'value'
     description: '账面市值比(Book-to-Market)，即市净率(PB)倒数。Fama-French三因子模型的核心成员。'
@@ -403,14 +424,14 @@ factor_definition:
     description: '120日年化波动率，衡量个股自身的价格波动风险。低波动股票有时反而有超额收益。'
     action: 'technical_calcu'
     cal_require_base_fields: [ 'pct_chg' ]
-    cal_require_base_fields_from_daily: True
+    cal_require_base_fields_from_daily: False
   - name: 'volatility_90d'
     # 【新增】 与Beta互补，衡量自身风险
     style_category: 'risk'
     description: '90日年化波动率，衡量个股自身的价格波动风险（特质风险）。低波动股票有时反而有超额收益。'
     action: 'technical_calcu'
     cal_require_base_fields: [ 'pct_chg' ]
-    cal_require_base_fields_from_daily: True
+    cal_require_base_fields_from_daily: False
 
   # === 流动性 (Liquidity) ===
 
@@ -419,13 +440,13 @@ factor_definition:
     description: '月平均换手率，衡量股票在一段时间内的交易活跃度。'
     action: 'technical_calcu'
     cal_require_base_fields: [ 'turnover_rate' ]
-    cal_require_base_fields_from_daily: True
+    cal_require_base_fields_from_daily: False
   - name: 'liquidity_amihud'
     style_category: 'liquidity'
     description: 'Amihud非流动性指标，衡量单位成交额能引起多大的价格波动，是冲击成本的优秀代理变量。'
     action: 'technical_calcu'
     cal_require_base_fields: [ 'pct_chg', 'amount' ] # 依赖日收益率和成交额
-    cal_require_base_fields_from_daily: True
+    cal_require_base_fields_from_daily: False
   - name: 'turnover_rate_90d_mean'
     # 【新增】 90日平均换手率
     style_category: 'liquidity'
@@ -446,7 +467,7 @@ factor_definition:
     description: 'Amihud非流动性指标，衡量单位成交额能引起多大的价格波动，是冲击成本的优秀代理变量。'
     action: 'technical_calcu'
     cal_require_base_fields: [ 'pct_chg', 'amount' ] # 依赖日收益率和成交额
-    cal_require_base_fields_from_daily: True
+    cal_require_base_fields_from_daily: False
   # === 质量类深化 (Advanced Quality) ===
   - name: 'operating_accruals'
     style_category: 'quality'

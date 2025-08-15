@@ -183,7 +183,7 @@ class FactorSelectorV2:
             for d_type in ['raw', 'processed']:
                 ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
                 q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})
-                if not ic_stats or not q_stats: return None  # 如果该周期数据不完整，则返回None
+                if not ic_stats or not q_stats: continue  # 如果该周期数据不完整，则返回None
 
                 row[f'ic_mean_{d_type}_{r_type}'] = ic_stats.get('ic_mean')
                 row[f'ic_ir_{d_type}_{r_type}'] = ic_stats.get('ic_ir')
@@ -338,8 +338,9 @@ if __name__ == '__main__':
     selector = FactorSelectorV2()
 
     # 【决策】在这里做出你的战略决策，选择你的主战场
-    TARGET_UNIVERSE = '000852.SH'  # 以中证1000为主战场
     TARGET_UNIVERSE = '000906.SH'  # 以中证800为主战场
+    TARGET_UNIVERSE = '000300.SH'  # 以中证300为主战场
+    TARGET_UNIVERSE = '000852.SH'  # 以中证1000为主战场
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,

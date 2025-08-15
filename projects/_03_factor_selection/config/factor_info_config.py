@@ -43,17 +43,33 @@ FILL_STRATEGY_FFILL_LIMIT_5 = 'ffill_limit_5'  # 有限前向填充(约1周)，�
 FILL_STRATEGY_CONDITIONAL_ZERO = 'conditional_zero'  # 条件填充0 (处理停牌的核心)
 
 # =================================================================
-#  最终填充配置字典 (用于 get_backtest_ready_factor)
+#  最终填充配置字典 (用于 get_backtest_ready_factor) 严谨用于基层因子计算的填充 remind
 # =================================================================
-FACTOR_FILL_CONFIG = {
+FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # --------------------------------------------------------------------------
     #  一、基础数据层 (Base Data)
     # --------------------------------------------------------------------------
     # 保持绝对纯净，不在最终阶段填充
-    'close': FILL_STRATEGY_NONE,
-    'open': FILL_STRATEGY_NONE,
-    'high': FILL_STRATEGY_NONE,
-    'low': FILL_STRATEGY_NONE,
+    'close_raw': FILL_STRATEGY_NONE,
+    'close_raw_ffill': FILL_STRATEGY_NONE,
+    'close_adj_filled': FILL_STRATEGY_NONE,
+    'open_raw': FILL_STRATEGY_NONE,
+    'open_adj_filled': FILL_STRATEGY_NONE,
+    'high_raw': FILL_STRATEGY_NONE,
+    'high_adj_filled': FILL_STRATEGY_NONE,
+    'low_raw': FILL_STRATEGY_NONE,
+    'low_adj_filled': FILL_STRATEGY_NONE,
+
+    'close_adj': FILL_STRATEGY_NONE,
+    'open_adj': FILL_STRATEGY_NONE,
+    'high_adj': FILL_STRATEGY_NONE,
+    'low_adj': FILL_STRATEGY_NONE,
+
+    'amount_raw': FILL_STRATEGY_NONE,
+
+    'vol_raw': FILL_STRATEGY_NONE,
+    'vol_adj': FILL_STRATEGY_NONE,
+
     'pre_close': FILL_STRATEGY_NONE,
     'pe_ttm': FILL_STRATEGY_NONE,  # pe_ttm等基础估值指标，其填充应在衍生因子层定义
     'pb': FILL_STRATEGY_NONE,
@@ -82,7 +98,7 @@ FACTOR_FILL_CONFIG = {
     'sp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
     'cfp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
     'roe_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
-    'small_cap': FILL_STRATEGY_FFILL_LIMIT_65,
+    'log_circ_mv': FILL_STRATEGY_FFILL_LIMIT_65,
     'log_total_mv': FILL_STRATEGY_FFILL_LIMIT_65,
     'gross_margin_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
     'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
@@ -127,5 +143,9 @@ FACTOR_FILL_CONFIG = {
     'rsi': FILL_STRATEGY_NONE,
     'cci': FILL_STRATEGY_NONE,
     'quality_momentum': FILL_STRATEGY_NONE,
+
+
+    #新增
+    'adj_factor':FILL_STRATEGY_NONE,
 
 }

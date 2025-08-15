@@ -39,14 +39,17 @@ class FactorSynthesizer:
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
         factor_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
-        factor_df_shifted = factor_df
-        (final_neutral_dfs, style_category, pit_map
-         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, factor_df,stock_pool_index_name)
+        trade_dates = factor_df.index
+        stock_codes = factor_df.columns
 
+        (final_neutral_dfs, style_category
+         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, trade_dates, stock_codes, stock_pool_index_name)
+        factor_df_shifted = factor_df.shift(1)
         processed_df = self.processor.process_factor(
             factor_df_shifted=factor_df_shifted,
             target_factor_name=factor_name,
             neutral_dfs=final_neutral_dfs,
+            pit_map=self.factor_manager.data_manager.pit_map,
             style_category=style_category, need_standardize=True)
         return processed_df
 

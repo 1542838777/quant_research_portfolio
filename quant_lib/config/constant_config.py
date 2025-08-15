@@ -44,13 +44,6 @@ TRADING_DAYS_PER_YEAR = 252
 TRADING_DAYS_PER_MONTH = 21
 TRADING_DAYS_PER_WEEK = 5
 
-# 股票池配置
-INDEX_COMPONENTS = {
-    '000300.SH': '沪深300',
-    '000905.SH': '中证500',
-    '000016.SH': '上证50',
-    '399006.SZ': '创业板指'
-}
 
 # 行业分类配置
 INDUSTRY_CLASSIFICATION = {
@@ -80,7 +73,7 @@ parquet_file_names = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'fina_i
 every_day_parquet_file_names = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq', 'index_weights',
                      'margin_detail', 'stk_limit']
 #'index_weights'  fina_indicator
-need_fix = ['adj_factor', 'daily', 'daily_basic', 'daily_hfq',
+need_fix = [ 'daily', 'daily_basic', 'daily_hfq',
                      'margin_detail', 'stk_limit']
 
 permanent__day = '22000101'

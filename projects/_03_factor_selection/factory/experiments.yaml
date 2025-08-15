@@ -29,7 +29,7 @@
 #- factor_name: 'log_total_mv'
 #  stock_pool_name: 'institutional_stock_pool'
 #
-#- factor_name: 'small_cap'
+#- factor_name: 'log_circ_mv'
 #  stock_pool_name: 'institutional_stock_pool'
 #
 ## === 价值 (Value) ===
@@ -91,7 +91,13 @@
 #
 #- factor_name: 'amihud_liquidity'
 #  stock_pool_name: 'institutional_stock_pool'
-- factor_name: 'volatility_120d'
-  stock_pool_name: 'institutional_stock_pool'
-- factor_name: 'volatility_90d'
-  stock_pool_name: 'institutional_stock_pool'
+#- factor_name: 'beta'
+#  stock_pool_name: 'dongbei_1000'
+#- factor_name: 'value_composite'
+#  stock_pool_name: 'institutional_stock_pool'
+- factor_name: 'beta'
+  stock_pool_name: 'dongbei_1000'
+- factor_name: 'value_composite'
+  stock_pool_name: 'dongbei_1000'
+#- factor_name: 'cfp_ratio'
+#  stock_pool_name: 'institutional_stock_pool'

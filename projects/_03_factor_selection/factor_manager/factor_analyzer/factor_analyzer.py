@@ -25,7 +25,8 @@ from scipy import stats
 from projects._03_factor_selection.config.config_file.load_config_file import is_debug
 from projects._03_factor_selection.factor_manager.factor_composite.factors_composite import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.factor_manager import FactorResultsManager
-from projects._03_factor_selection.utils.factor_processor import FactorProcessor, PointInTimeIndustryMap
+from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
+from projects._03_factor_selection.utils.factor_processor import FactorProcessor
 from projects._03_factor_selection.visualization_manager import VisualizationManager
 from quant_lib import logger
 from quant_lib.config.logger_config import log_flow_start
@@ -55,7 +56,7 @@ warnings.filterwarnings('ignore')
 def prepare_industry_dummies(
         pit_map: PointInTimeIndustryMap,
         trade_dates: pd.DatetimeIndex,
-        stock_pool: list,
+        stock_codes: list,
         level: str = 'l1_code',  # 接收来自配置的行业级别
         drop_first: bool = True  # <--- 新增一个参数，默认为True
 
@@ -66,13 +67,24 @@ def prepare_industry_dummies(
     Args:
         pit_map: 预处理好的PointInTimeIndustryMap实例。
         trade_dates: 整个回测区间的交易日索引。
-        stock_pool: 整个回测区间的股票池列表。
+        stock_codes: 整个回测区间的股票池列表。
         level: 'l1_code' 或 'l2_code'，指定行业级别。
 
     Returns:
         一个字典，键为 'industry_行业代码'，值为对应的哑变量DataFrame (index=date, columns=stock)。
     """
-    print(f"  正在基于 {level} 生成行业哑变量...")
+    # 【在这里加入诊断代码】
+    # print("\n" + "=" * 20 + " 正在诊断 trade_dates " + "=" * 20)
+    # print(f"传入的 trade_dates 的类型是: {type(trade_dates)}")
+    # 我们尝试打印它的第一个元素，看看它到底是什么
+    # try:
+    #     first_element = list(trade_dates)[0]
+    #     print(f"trade_dates 的第一个元素是: {first_element}")
+    #     print(f"第一个元素的类型是: {type(first_element)}")
+    # except IndexError:
+    #     print("trade_dates 为空！")
+    # print("=" * 60 + "\n")
+    # print(f"  正在基于 {level} 生成行业哑变量...")
 
     # 1. 构建一个包含所有日期和股票的“长格式”行业分类表
     all_daily_maps = []
@@ -129,7 +141,7 @@ def prepare_industry_dummies(
         pivoted_df = dummy_df.pivot(index='date', columns='ts_code', values=col).fillna(0)
 
         # 确保返回的DataFrame的索引和列与因子数据完全一致
-        dummy_dfs[col] = pivoted_df.reindex(index=trade_dates, columns=stock_pool).fillna(0)
+        dummy_dfs[col] = pivoted_df.reindex(index=trade_dates, columns=stock_codes).fillna(0)
 
     print(f"  成功生成 {len(dummy_dfs)} 个 {level} 级别的行业哑变量。")
     return dummy_dfs
@@ -157,7 +169,7 @@ class FactorAnalyzer:
             raise RuntimeError("config 没有传递过来！")
         self.factor_manager = factor_manager
         data_manager = factor_manager.data_manager
-        if self.factor_manager.data_manager is None or 'close' not in self.factor_manager.data_manager.raw_dfs:
+        if self.factor_manager.data_manager is None or 'close_raw' not in self.factor_manager.data_manager.raw_dfs:
             raise ValueError('close的df是必须的，请写入！')
 
         config = data_manager.config
@@ -312,27 +324,84 @@ class FactorAnalyzer:
         Returns:
             综合测试结果字典
         """
-
+        # import sys  # 引入sys模块以便退出  测试代码
+        #
+        # # --- 1. 定义我们的审计目标 ---
+        # STOCK_TO_AUDIT = '000001.SZ'
+        # DATE_TO_AUDIT = pd.to_datetime('2025-06-20')
+        #
+        # logger.info(f"\n---【终极审计模式】启动，目标因子: {target_factor_name} ---")
+        # logger.info(f"--- 审计对象: {STOCK_TO_AUDIT} on {DATE_TO_AUDIT.strftime('%Y-%m-%d')} ---")
+        #
+        # # --- 2. 强制关闭中性化，只看原始因子 ---
+        # need_process_factor = False
+        #
+        # # --- 3. 准备 T-1 因子 (这是我们最终用于预测的因子) ---
+        # # 这是我们“中央移位”原则的体现
+        # factor_df_t1 = factor_df.shift(1)
+        #
+        # # --- 4. 获取T日和T-1日的复权收盘价，用于计算真实收益 ---
+        # close_adj = self.factor_manager.get_raw_factor('close_adj')
+        #
+        # # --- 5. 从所有数据中，提取我们关心的那个“原子”信息 ---
+        # try:
+        #     # a) T-1日的因子值 (我们的“预测变量” X)
+        #     factor_value_t1 = factor_df_t1.at[DATE_TO_AUDIT, STOCK_TO_AUDIT]
+        #
+        #     # b) T-1日的复权收盘价
+        #     price_t1 = close_adj.at[DATE_TO_AUDIT - pd.Timedelta(days=1), STOCK_TO_AUDIT]  # 注意日期的对应关系
+        #
+        #     # c) T日的复权收盘价
+        #     price_t0 = close_adj.at[DATE_TO_AUDIT, STOCK_TO_AUDIT]
+        #
+        #     # d) T日的真实收益率 (我们的“预测目标” Y)
+        #     actual_return_t0 = (price_t0 / price_t1) - 1
+        #
+        #     # --- 6. 打印“法医报告” ---
+        #     print("\n" + "=" * 30 + " 【法医报告】 " + "=" * 30)
+        #     print(f"因子名称: {target_factor_name}")
+        #     print(f"股票代码: {STOCK_TO_AUDIT}")
+        #     print(f"观测日期 (T日): {DATE_TO_AUDIT.strftime('%Y-%m-%d')}")
+        #     print("-" * 50)
+        #     print(f"用于预测的 T-1 因子值: {factor_value_t1:.6f}")
+        #     print("-" * 50)
+        #     print(f"T-1日 复权收盘价: {price_t1:.2f}")
+        #     print(f"T日  复权收盘价: {price_t0:.2f}")
+        #     print(f"T日  真实收益率: {actual_return_t0:.4%}")
+        #     print("=" * 80)
+        #
+        # except KeyError:
+        #     logger.error("审计失败：无法在指定日期或股票代码找到数据。请确保日期是交易日，且股票当天在市。")
+        # except Exception as e:
+        #     logger.error(f"审计过程中发生未知错误: {e}")
+        #
+        # # --- 7. 终止程序 ---
+        # # 我们只关心打印结果，不需要继续往下跑完整的测试
+        # logger.info("--- 终极审计完成，程序将终止。 ---")
+        # sys.exit()  # 或者 raise Exception("Debug Point Reached")
 
         logger.info(f"开始测试因子: {target_factor_name}")
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
-        factor_df_shifted = factor_df.shift(1)
+        trade_dates = factor_df.index
+        stock_codes = factor_df.columns
 
-        (final_neutral_dfs, style_category, pit_map
-         ) = self.prepare_date_for_process_factor(target_factor_name, factor_df,stock_pool_index_name)
+        (final_neutral_dfs, style_category
+         ) = self.prepare_date_for_process_factor(target_factor_name, trade_dates,stock_codes,stock_pool_index_name)
+        factor_df_go_to_test = factor_df.shift(1)
+
         if need_process_factor:
             # 1. 因子预处理
-            factor_df = self.factor_processor.process_factor(
-                factor_df_shifted=factor_df_shifted,
+            factor_df_go_to_test = self.factor_processor.process_factor(
+                factor_df_shifted=factor_df_go_to_test,
                 target_factor_name=target_factor_name,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
-                pit_map=pit_map,
+                pit_map=self.factor_manager.data_manager.pit_map,
                 need_standardize = False
             )
 
         # 数据准备
-        close_df, open_df, circ_mv_df_shifted, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
+        close_df, circ_mv_df_shifted, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
         status_text = "需要处理" if need_process_factor else "不需要处理"
         log_flow_start(
             f"因子 {target_factor_name}（{status_text}）经过预处理之后，进入 core_three_test 测试"
@@ -340,12 +409,12 @@ class FactorAnalyzer:
 
         ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
             = self.core_three_test(
-            factor_df, target_factor_name, open_df, returns_calculator, close_df,
+            factor_df_go_to_test, target_factor_name, returns_calculator, close_df,
             final_neutral_dfs, circ_mv_df_shifted, style_factor_dfs, do_ic_test,
             do_turnover_test,
             do_quantile_test, do_fama_test, do_style_correlation_test)
 
-        return factor_df, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
+        return factor_df_go_to_test, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
 
     def evaluation_score_dict(self,
@@ -820,7 +889,7 @@ class FactorAnalyzer:
         保存结果
         画图保存
         """
-        factor_df,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, close_df, open_df, style_category, test_configurations\
+        factor_df,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
             = self.prepare_date_for_entity_service(
             factor_name,stock_pool_index_name)
         all_configs_results = {}
@@ -967,7 +1036,7 @@ class FactorAnalyzer:
     #
     #     return results
 
-    def core_three_test(self, factor_df, target_factor_name, open_df,
+    def core_three_test(self, factor_df, target_factor_name,
                         returns_calculator: Callable[[int, pd.DataFrame, pd.DataFrame], pd.DataFrame],
                         close_df,
                         prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict,
@@ -1002,7 +1071,8 @@ class FactorAnalyzer:
             fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict = fama_macbeth(
                 factor_data=factor_df, returns_calculator=returns_calculator, close_df=close_df,
                 forward_periods=self.test_common_periods,
-                neutral_dfs={}, circ_mv_df_shifted=circ_mv_shift_df,
+                neutral_dfs={},#因为因子预处理 processer 阶段，以经对因子进行了 中性化行业、极值、beta处理 ，所以这里传空 不再处理
+                circ_mv_df_shifted=circ_mv_shift_df,
                 factor_name=target_factor_name)
 
         # 【新增】4. 风格相关性分析
@@ -1086,7 +1156,7 @@ class FactorAnalyzer:
         style_factor_list = self.factor_manager.data_manager.config['evaluation']['style_factor_list']
         # style_factor_list = [
         #     # 规模因子 (必须对数化)
-        #     'small_cap',
+        #     'log_circ_mv',
         #     # 价值因子 (建议用倒数)
         #     'bm_ratio', 'sp_ratio', 'ep_ratio',
         #     # 成长因子
@@ -1105,10 +1175,10 @@ class FactorAnalyzer:
         # ]
         for factor_name in style_factor_list:
             #   build_df_dict... 函数可以获取因子数据并应用T-1原则
-            df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
-                factor_name=factor_name,
-                need_shift=False
-            )[stock_pool_name][factor_name]
+            df = self.factor_manager.get_prepare_aligned_factor_for_analysis(
+                factor_request=factor_name,
+                stock_pool_index_name=stock_pool_name,for_test=True)
+
 
             style_factors[factor_name] = df
         return style_factors
@@ -1139,63 +1209,50 @@ class FactorAnalyzer:
 
         return correlation_results
 
-    def prepare_date_for_process_factor(self, target_factor_name, target_factor_df,stock_pool_name):
+    def prepare_date_for_process_factor(self, target_factor_name, trade_dates,stock_codes,stock_pool_name):
         # 目标因子基础信息准备
         style_category = self.factor_manager.get_style_category(target_factor_name)
-        #
-        # # 必要操作。确实要 每天真实的能交易的股票当中。所以需要跟动态股票池进行where.!
-        # close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-        #                                                                              need_shift=False)[
-        #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        # open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
-        #                                                                             need_shift=False)[
-        #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-
-
-        # circ_mv_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(
-        #     factor_name='circ_mv',
-        #     need_shift=False)[stock_pool_name]
-        # ==============================================================================
-        # 【核心改造】在此处统一准备权威的“中性化数据篮子 (neutral_dfs)”
-        # ==============================================================================
 
         # 1. 从配置中读取所需的行业级别
         neutralization_config = self.factor_processor.preprocessing_config.get('neutralization', {})
         industry_level = neutralization_config.get('by_industry', {}).get('industry_level', 'l1_code')  # 默认为一级行业
 
         # 2. 初始化PIT地图
-        pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
+        # pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
 
         # 3. 动态生成所需的行业哑变量
         industry_dummies_dict = prepare_industry_dummies(
-            pit_map=pit_map,
-            trade_dates=target_factor_df.index,
-            stock_pool=target_factor_df.columns,
+            pit_map=self.factor_manager.data_manager.pit_map,
+            trade_dates=trade_dates,
+            stock_codes=stock_codes,
             level=industry_level
         )
-        # # 对字典中的每一个哑变量DataFrame进行shift 一视同仁，人家所有都是shift1 这也需要
-        # industry_dummies_dict = {
-        #     key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()
-        # }
+
+        index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
+        BETA_REQUEST = ('beta',  index_code)  # 我们需要的是相对沪深300的Beta
+
         final_neutral_dfs = {
             # 市值因子是必须的，
-            'small_cap': self.factor_manager.get_prepare_aligned_factor_for_analysis('small_cap',stock_pool_name,True).shift(1),
-            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis('beta',stock_pool_name,True).shift(1),  # 去beta中性化需要用到
+            'log_circ_mv': self.factor_manager.get_prepare_aligned_factor_for_analysis('log_circ_mv',stock_pool_name,True).shift(1),
+
+            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis(BETA_REQUEST,stock_pool_name,True).shift(1),  # 去beta中性化需要用到
             # 使用字典解包，将动态生成的行业哑变量添加进来
             **{key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()}
         }
-        # style_factor_dfs = self.get_style_factors(stock_pool_name)
-
-        return  final_neutral_dfs, style_category, pit_map
+        return  final_neutral_dfs, style_category
 
     def prepare_date_for_core_test(self, target_factor_name,stock_pool_index_name):
-        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis('close', stock_pool_index_name, True)
+        ##
+        # 为什么是要填充过的 (_filled)？
+        #
+        # 。close_df计算出的未来收益率矩阵，是后续所有统计检验（IC、分层回测）的**Y变量**。
+        # 如果使用带NaN的close_adj，会导致计算出的forward_returns矩阵也充满NaN，从而大幅减少我们统计检验的样本量，降低结果的置信度。#
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(('close_adj_filled', 10), stock_pool_index_name, True)
              # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis('open', stock_pool_index_name, True)
         #用于回归测试的，所以必须shift 提前处理好
         circ_mv_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv', stock_pool_index_name, True).shift(1)
         style_factor_dfs = self.get_style_factors(stock_pool_index_name)
-        return close_df, open_df, circ_mv_df_shifted, style_factor_dfs
+        return close_df, circ_mv_df_shifted, style_factor_dfs
 
     def prepare_date_for_entity_service(self, factor_name,stock_pool_index_name):
         factor_data = None
@@ -1215,12 +1272,8 @@ class FactorAnalyzer:
             self.factor_manager.data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,
                                                                                                  'style_category').iloc[
                 0]
-        close_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-                                                                                     need_shift=False)[
-            stock_pool_index_name]['close']  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        open_df = self.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='open',
-                                                                                    need_shift=False)[
-            stock_pool_index_name]['open']
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('close_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)   # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('open_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)
 
         # 准备收益率计算器
         c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)
@@ -1233,7 +1286,7 @@ class FactorAnalyzer:
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
         returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
         # return factor_data,is_composite_factor,start_date, end_date, target_school, stock_pool_index_code, stock_pool_index_name, close_df, open_df, style_category, returns_calculator_result
-        return factor_data,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name, close_df, open_df, style_category, returns_calculator_result
+        return factor_data,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category, returns_calculator_result
 
     def test_factor_entity_service_for_composite_factor(self, factor_name, factor_df, stock_pool_index_name,test_configurations, start_date, end_date, stock_pool_index_code):
         all_configs_results = {}
@@ -1274,3 +1327,4 @@ class FactorAnalyzer:
             )
             all_configs_results[calculator_name] = single_config_results
         return all_configs_results
+

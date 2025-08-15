@@ -62,17 +62,17 @@ class DataLoader:
             file_path = self.data_path / logical_name
 
             df = pd.read_parquet(file_path)
-            if  logical_name in ['index_daily.parquet','daily_basic','daily_basic','index_weights','adj_factor','daily','stk_limit','margin_detail'] :
+            if logical_name in ['index_daily.parquet', 'daily_basic', 'daily_basic', 'index_weights',
+                                'daily', 'stk_limit', 'margin_detail']:
                 self.check_local_date_period_completeness_for_trade(logical_name, df, start_date, end_date)
-            if 'trade_cal.parquet'  == logical_name:
+            if 'trade_cal.parquet' == logical_name:
                 self.check_local_date_period_completeness_col(logical_name, df, 'cal_date', start_date, end_date)
-            if 'namechange.parquet'  == logical_name:
+            if 'namechange.parquet' == logical_name:
                 self.check_local_date_period_completeness_col(logical_name, df, 'ann_date', start_date, end_date)
-            if 'stock_basic.parquet'  == logical_name:
+            if 'stock_basic.parquet' == logical_name:
                 self.check_local_date_period_completeness_col(logical_name, df, 'list_date', start_date, end_date)
-            if 'fina_indicator.parquet'  == logical_name:
+            if 'fina_indicator.parquet' == logical_name:
                 self.check_local_date_period_completeness_col(logical_name, df, 'ann_date', start_date, end_date)
-
 
     def _load_trade_cal(self) -> pd.DataFrame:
         """加载交易日历"""
@@ -92,6 +92,7 @@ class DataLoader:
                (self.trade_cal['is_open'] == 1)
         dates = pd.to_datetime(self.trade_cal.loc[mask, 'cal_date'].unique())
         return pd.DatetimeIndex(sorted(dates))  # 显式排序，确保有序
+
     def _build_field_map_to_file_name(self) -> Dict[str, str]:
         """
         构建字段到数据源的映射
@@ -117,12 +118,17 @@ class DataLoader:
 
                 # 构建字段映射
                 for col in columns:
-                    if (col == 'name') & (
-                            logical_name == 'stock_basic.parquet'):  # 就是不要这里面的name ，我们需要namechange表里面的name 目前场景：用于过滤st开头的name股票
+                    if (col in ['total_mv', 'pe_ttm', 'pb', 'circ_mv','turnover_rate']) & (
+                            logical_name != 'daily_basic'):
                         continue
-                    if (col in ['close', 'open', 'high', 'low', 'pre_close', 'pct_chg','amount']) & (
-                            logical_name != 'daily_hfq'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据
+                    if (col in ['list_date','delist_date']) & (
+                            logical_name != 'stock_basic.parquet'):
                         continue
+                    if (col in ['close', 'open', 'high', 'low', 'pre_close', 'amount']) & (
+                            logical_name != 'daily'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据 #最新修改 手动计算，不依赖不纯洁的hfq
+                        continue
+                    if (col in ['adj_factor']):  #
+                        raise ValueError('严谨利用adj_factor数据！请将config 用adj_factor的 from_daily配置 置为false，这样就不会此阶段加载了')
                     if col not in field_to_files_map:
                         field_to_files_map[col] = logical_name
             except Exception as e:
@@ -256,7 +262,8 @@ class DataLoader:
         # 更新缓存
         if self.use_cache:
             self.cache[cache_key] = aligned_data
-
+        # 小tip 为了警惕自己 不用错数据，对一些容易混错的name进行rename。
+        aligned_data = self.rename_for_safe(aligned_data)
         return aligned_data
 
     def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:  # ok
@@ -359,3 +366,32 @@ class DataLoader:
     def check_local_date_period_completeness_for_namechange(self, logical_name, df, start_date, end_date):
 
         pass
+
+    def rename_for_safe(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+        """
+        对加载的数据字典进行安全的重命名，将通用价格字段统一加上 _raw 后缀。
+        确保下游模块接收到的是含义明确的数据。
+        """
+        # 创建一个新的字典来存储结果， 避免修改原始传入的对象
+        renamed_data = aligned_data.copy()
+
+        # 定义需要被重命名的目标列
+        cols_to_rename = ['close', 'open', 'high', 'low']
+
+        for old_name in cols_to_rename:
+            # 检查旧的名称是否存在于字典中
+            if old_name in renamed_data:
+                new_name = f"{old_name}_raw"
+                # 使用 .pop() 方法，将旧键的值赋给新键，并从字典中移除旧键
+                renamed_data[new_name] = renamed_data.pop(old_name)
+        #   vol也应该被命名为 vol_raw
+        if 'vol' in renamed_data:
+            renamed_data['vol_raw'] = renamed_data.pop('vol')
+
+        ##
+        # 为什么 amount (成交额) 要用 raw 的？
+        # 一句话概括：因为amount（成交额）是一个名义价值（Nominal Value）指标，它衡量的是“今天有多少钱在交易”，而这个问题的答案与历史上的分红送股无关。#
+        if 'amount' in renamed_data:
+            renamed_data['amount_raw'] = renamed_data.pop('amount')
+
+        return renamed_data

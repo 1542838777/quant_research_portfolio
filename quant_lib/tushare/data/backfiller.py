@@ -22,8 +22,8 @@ MISSING_STOCKS_LIST = status_d_p_stocks[filter]['ts_code'].unique().tolist()
 
 # 【请确认要回填的数据集】(通常与downloader.py中的任务一致)
 DATASETS_TO_BACKFILL = [
-    'daily_hfq', 'margin_detail', 'stk_limit', 'daily',
-    'daily_basic', 'adj_factor'
+     'margin_detail', 'stk_limit', 'daily',
+    'daily_basic'
 ]
 
 # 【请确认回填的时间范围】
@@ -34,15 +34,14 @@ END_YEAR = datetime.now().year
 # 我们从你的downloader.py中复制任务定义，以保证下载逻辑的统一性
 data_to_download_tasks = {
     # 模式: by_stock (逐个股票循环，适用于pro_bar等)
-    'daily_hfq': {'func': 'pro_bar', 'params': {'adj': 'hfq', 'asset': 'E'}, 'mode': 'by_stock',
-                  'api_type': 'ts'},
+
     'margin_detail': {'func': 'margin_detail', 'params': {}, 'mode': 'by_stock'},  # <-- 修正下载模式为 'by_stock'
     'stk_limit': {'func': 'stk_limit', 'params': {}, 'mode': 'by_stock'},
 
     # 模式: batch_stock (按股票代码分批，适用于大多数pro接口)
     'daily': {'func': 'daily', 'params': {}, 'mode': 'batch_stock'},
-    'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'},
-    'adj_factor': {'func': 'adj_factor', 'params': {}, 'mode': 'batch_stock'}
+    'daily_basic': {'func': 'daily_basic', 'params': {}, 'mode': 'batch_stock'}
+
 
 
 }

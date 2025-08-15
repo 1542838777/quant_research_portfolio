@@ -14,15 +14,12 @@ import pandas as pd
 from numpyencoder import NumpyEncoder
 
 from quant_lib import setup_logger
-from quant_lib.config.logger_config import log_warning, log_error
-from quant_lib.utils.test import check_step
-from .classifier.factor_calculator.factor_calculator import FactorCalculator, calculate_rolling_beta
+from quant_lib.config.logger_config import log_warning
+from .classifier.factor_calculator.factor_calculator import FactorCalculator
 from .classifier.factor_classifier import FactorClassifier
-
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .storage.single_storage import add_single_factor_test_result
-from ..config.base_config import INDEX_CODES
 from ..config.factor_direction_config import FACTOR_DIRECTIONS
 from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool
 
@@ -199,19 +196,19 @@ class FactorManager:
         self.test_results = {}
 
         logger.info("因子管理器初始化完成")
-
-    def get_factor(self, factor_name: str) -> pd.DataFrame:
+    #带着规则！ 注意用的时候 这个方向 会不会对你有影响 注意2：没有对齐股票池噢，需要对齐 可以调用  get_prepare_aligned_factor_for_analysis
+    def get_factor_by_rule(self, factor_request: Union[str, tuple]) -> pd.DataFrame:
         """
         【核心】获取因子的统一接口。
         """
-        raw_factor_df = self.get_raw_factor(factor_name)
+        # 1. 调用最底层函数，获取纯净的原始因子
+        #    直接将 factor_request 透传下去
+        raw_factor_df = self.get_raw_factor(factor_request)
 
-        # ===================================================================
-        # 步骤3:【统一出口】所有因子在返回前，都必须流经这里
-        # ===================================================================
-        # a) 应用方向性调整
-        # 假设 FACTOR_DIRECTIONS 定义在 self.calculator 或 self 中
-        direction = FACTOR_DIRECTIONS.get(factor_name, 1)  # 默认为1(正向)
+        # 2. 应用方向性调整
+        #    我们需要从请求中解析出因子的基础名字
+        factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
+        direction = FACTOR_DIRECTIONS.get(factor_name_str, 1)
 
         if direction == -1:
             final_factor_df = raw_factor_df * -1
@@ -219,41 +216,52 @@ class FactorManager:
             final_factor_df = raw_factor_df
 
         return final_factor_df.copy()
-    def get_raw_factor(self, factor_name: str) -> pd.DataFrame:
-
-
+    #最原始的因子获取，未经过任何处理，目前被使用于 因子计算
+    def get_raw_factor(self, factor_request: Union[str, tuple]) -> pd.DataFrame:
         """
-        【核心】获取因子的统一接口。
+        【V3.0 - 参数化版】获取纯净的原始因子。
+        能处理简单的字符串请求，也能处理带参数的元组请求。
         """
-        # 步骤1: 检查缓存，如果命中则直接返回 (行为不变)
-        if factor_name in self.factors_cache:
-            # logger.info(f"  > 从缓存中加载因子: {factor_name}")
-            return self.factors_cache[factor_name].copy()
+        # 1. 缓存键就是请求本身，元组是可哈希的，可以直接做键
+        if factor_request in self.factors_cache:
+            return self.factors_cache[factor_request]
 
-        # 步骤2: 获取“原始”因子值，无论来源
-        raw_factor_df = None
-        calculation_method_name = f"_calculate_{factor_name}"
-
-        if hasattr(self.calculator, calculation_method_name):
-            # 来源一：通过专门的函数计算
-            # logger.info(f"  > 发现计算函数，开始计算: {calculation_method_name}...")
-            method_to_call = getattr(self.calculator, calculation_method_name)
-            raw_factor_df = method_to_call()
-
-        elif factor_name in self.data_manager.raw_dfs:
-            # 来源二：直接从原始数据中加载
-            # logger.info(f"  > 无计算函数，从raw_dfs加载: {factor_name}")
-            raw_factor_df = self.data_manager.raw_dfs[factor_name]
-
+        # 2. 解析请求
+        if isinstance(factor_request, str):
+            factor_name = factor_request
+            params = {}  # 无参数
+        elif isinstance(factor_request, tuple):
+            factor_name = factor_request[0]
+            # 将参数打包成字典，传递给计算函数
+            # 例如: ('beta', '000300.SH') -> {'benchmark_index': '000300.SH'}
+            # 你需要根据因子定义，约定好参数名
+            if factor_name == 'beta':
+                params = {'benchmark_index': factor_request[1]}
+            if factor_name in ['close_adj_filled','open_adj_filled']:
+                params = {'limit': factor_request[1]}
+            # 未来可以扩展到其他因子，如 'momentum'
+            # elif factor_name == 'momentum':
+            #     params = {'window': factor_request[1]}
+            else:
+                params = {}
         else:
-            raise ValueError(f"获取因子失败：'{factor_name}' 既没有计算函数，也不在原始数据中。")
+            raise TypeError("factor_request 必须是字符串或元组")
 
-        # b) 存入缓存
-        # 我们缓存的是经过方向调整后的、可直接用于分析的最终因子
-        logger.info(f"  > 因子 {factor_name} 处理完成并存入缓存。")
-        self.factors_cache[factor_name] = raw_factor_df
+        # 3. 调度计算
+        calculation_method_name = f"_calculate_{factor_name}"
+        if hasattr(self.calculator, calculation_method_name):
+            method_to_call = getattr(self.calculator, calculation_method_name)
+            # 【关键】将解析出的参数传递给计算函数
+            raw_factor_df = method_to_call(**params)
+        elif factor_name in self.data_manager.raw_dfs and not params:
+            log_warning("高度重视---这是宽表 index为全交易日，所以：停牌期的行全是nan，请思考这突如其来的nan对下面公式计算是否有影响，有影响是否ffill解决，参考adj_close计算")
+            raw_factor_df = self.data_manager.raw_dfs[factor_name]
+        else:
+            raise ValueError(f"获取因子失败：{factor_request}")
 
-        return raw_factor_df.copy()
+        # 4. 存入缓存并返回
+        # self.factors_cache[factor_request] = raw_factor_df #todo 打开
+        return raw_factor_df
 
     def register_factor(self,
                         name: str,
@@ -607,17 +615,27 @@ class FactorManager:
     #         technical_school_dict.update({target_factor_name: school})
     #
     #     return technical_df_dict, technical_category_dict, technical_school_dict
-
-    def get_prepare_aligned_factor_for_analysis(self, factor_name,stock_pool_index_name, for_test):
+    #跟股票池对齐，在股票池里面马上进行测试 处于快要到分析阶段，可以调用，因为理解确实需要对齐股票池。目前没发现什么场景不需要对其的，所i无脑掉 没错
+    def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple],stock_pool_index_name, for_test):
         if not for_test:
             raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
-        df = self.get_factor(factor_name)  ## 这是纯净的、T日的因子
+
+
+        factor_with_direction = self.get_factor_by_rule(factor_request)#本质就是get_raw_factor 带了规则而已 目前就规则：比如*-1 or *1
+
+        # 2. 获取股票池DataFrame
         pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
-        # 对整个因子矩阵进行.shift(1)，用昨天的数据 t-1  方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了
-        # df=df.shift(1)
-        return fill_and_align_by_stock_pool(factor_name=factor_name,
-                                            df=df, stock_pool_df=pool,
-                                            _existence_matrix=self.data_manager._existence_matrix)
+
+        # 3. 执行最终的对齐和填充
+        #    注意：factor_request[0] 可以确保我们拿到'beta'这样的基础名字用于日志或调试
+        factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
+
+        return fill_and_align_by_stock_pool(
+            factor_name=factor_name_str,
+            df=factor_with_direction,
+            stock_pool_df=pool,
+            _existence_matrix=self.data_manager._existence_matrix
+        )
 
     def get_school_code_by_factor_name(self, factor_name):
         return self.get_school_by_style_category(self.get_style_category(factor_name))
@@ -713,109 +731,90 @@ class FactorManager:
     #
     #     raise TypeError("build_df_dict_base_on_diff_pool 入参类似有误")
 
-    # 仅仅只是构造一个dict 不做任何处理!
-    def generate_structure_dict_base_on_diff_pool_name(self, factor_name):
-        df_dict_base_on_diff_pool = {}
-        df = self.get_factor(factor_name)
-        for pool_name, stock_pool_df in self.data_manager.stock_pools_dict.items():
-            df_dict_base_on_diff_pool[pool_name] = df
-        return df_dict_base_on_diff_pool
-    #慎用,后面优化掉,感觉直接取 generate_structure_dict_base_on_diff_pool_name 此函数自带align
-    def build_df_dict_base_on_diff_pool_can_set_shift(self, base_dict=None, factor_name=None, need_shift=False):
-        if base_dict is None:
-            base_dict = self.generate_structure_dict_base_on_diff_pool_name(factor_name)
-        if need_shift:
-            raise ValueError(
-                f"方案全体整改。shift操作放在最后的测试阶段进行，逻辑更加明了！。后续也再不担心漏掉shift了 居然遗漏的上游{factor_name}还在使用提前shift!")
-            # ret = self.do_shift_and_align_for_dict(factor_name =factor_name , data_dict = base_dict,  _existence_matrix = self.data_manager._existence_matrix)
-            # return ret
-        else:
-            ret = self.do_align_for_dict(factor_name, base_dict)
-            return ret
+    #
+    # def do_shift_and_align_for_dict(self, factor_name=None, data_dict=None, _existence_matrix: pd.DataFrame = None):
+    #     result = {}
+    #     for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
+    #         ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool,
+    #                                                        _existence_matrix=_existence_matrix)
+    #         result[stock_name] = ret
+    #     return result
+    #
+    # def do_align_for_dict(self, factor_name, data_dict):
+    #     result = {}
+    #     for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
+    #         ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
+    #         result[stock_name] = {factor_name: ret}
+    #     return result
+    #
+    # def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,
+    #                                         _existence_matrix: pd.DataFrame = None):
+    #     # 率先shift
+    #     data_to_deal_by_shifted = self.do_shift(data_to_deal)
+    #     # 对齐
+    #     result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool, _existence_matrix=_existence_matrix)
+    #     return result
 
-    def do_shift_and_align_for_dict(self, factor_name=None, data_dict=None, _existence_matrix: pd.DataFrame = None):
-        result = {}
-        for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
-            ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool,
-                                                           _existence_matrix=_existence_matrix)
-            result[stock_name] = ret
-        return result
-
-    def do_align_for_dict(self, factor_name, data_dict):
-        result = {}
-        for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
-            ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
-            result[stock_name] = {factor_name: ret}
-        return result
-
-    def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,
-                                            _existence_matrix: pd.DataFrame = None):
-        # 率先shift
-        data_to_deal_by_shifted = self.do_shift(data_to_deal)
-        # 对齐
-        result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool, _existence_matrix=_existence_matrix)
-        return result
-
-    def do_shift(
-            self,
-            data_to_shift: Union[pd.DataFrame, Dict[str, pd.DataFrame]]
-    ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
-        """
-        对输入的数据执行 .shift(1) 操作，智能处理单个DataFrame或DataFrame字典。
-        Args:
-            data_to_shift: 需要进行滞后处理的数据，
-                           可以是一个 pandas DataFrame，
-                           也可以是一个 key为字符串, value为pandas DataFrame的字典。
-        Returns:
-            一个与输入类型相同的新对象，其中所有的DataFrame都已被 .shift(1) 处理。
-        """
-        # --- 情况一：输入是字典 ---
-        if isinstance(data_to_shift, dict):
-            shifted_dict = {}
-            for key, df in data_to_shift.items():
-                if not isinstance(df, pd.DataFrame):
-                    raise ValueError("do_shift失败,dict内部不是df结构")
-                # 对字典中的每个DataFrame执行shift操作
-                shifted_dict[key] = df.shift(1)
-            return shifted_dict
-
-        # --- 情况二：输入是单个DataFrame ---
-        elif isinstance(data_to_shift, pd.DataFrame):
-            return data_to_shift.shift(1)
-
-        # --- 其他情况：输入类型错误，主动报错 ---
-        else:
-            raise TypeError(
-                f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
-                f"但收到的是 {type(data_to_shift).__name__}"
-            )
-
-    def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool,
-                 _existence_matrix: pd.DataFrame = None
-                 ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
-        # --- 情况一：输入是字典 ---
-        if isinstance(data_to_align, dict):
-            shifted_dict = {}
-            for key, df in data_to_align.items():
-                if not isinstance(df, pd.DataFrame):
-                    raise ValueError("do_align失败,dict内部不是df结构")
-                # 对字典中的每个DataFrame执行shift操作
-                shifted_dict[key] = fill_and_align_by_stock_pool(factor_name=key, df=df,
-                                                                 stock_pool_df=stock_pool,
-                                                                 _existence_matrix=_existence_matrix)
-            return shifted_dict
-
-        # --- 情况二：输入是单个DataFrame ---
-        elif isinstance(data_to_align, pd.DataFrame):
-            return fill_and_align_by_stock_pool(factor_name=factor_name, df=data_to_align,
-                                                stock_pool_df=stock_pool, _existence_matrix=_existence_matrix)
-
-        # --- 其他情况：输入类型错误，主动报错 ---
-        else:
-            raise TypeError(
-                f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
-                f"但收到的是 {type(data_to_align).__name__}"
-            )
+    # def do_shift(
+    #         self,
+    #         data_to_shift: Union[pd.DataFrame, Dict[str, pd.DataFrame]]
+    # ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    #     """
+    #     对输入的数据执行 .shift(1) 操作，智能处理单个DataFrame或DataFrame字典。
+    #     Args:
+    #         data_to_shift: 需要进行滞后处理的数据，
+    #                        可以是一个 pandas DataFrame，
+    #                        也可以是一个 key为字符串, value为pandas DataFrame的字典。
+    #     Returns:
+    #         一个与输入类型相同的新对象，其中所有的DataFrame都已被 .shift(1) 处理。
+    #     """
+    #     # --- 情况一：输入是字典 ---
+    #     if isinstance(data_to_shift, dict):
+    #         shifted_dict = {}
+    #         for key, df in data_to_shift.items():
+    #             if not isinstance(df, pd.DataFrame):
+    #                 raise ValueError("do_shift失败,dict内部不是df结构")
+    #             # 对字典中的每个DataFrame执行shift操作
+    #             shifted_dict[key] = df.shift(1)
+    #         return shifted_dict
+    #
+    #     # --- 情况二：输入是单个DataFrame ---
+    #     elif isinstance(data_to_shift, pd.DataFrame):
+    #         return data_to_shift.shift(1)
+    #
+    #     # --- 其他情况：输入类型错误，主动报错 ---
+    #     else:
+    #         raise TypeError(
+    #             f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
+    #             f"但收到的是 {type(data_to_shift).__name__}"
+    #         )
+    #
+    # def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool,
+    #              _existence_matrix: pd.DataFrame = None
+    #              ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    #     # --- 情况一：输入是字典 ---
+    #     if isinstance(data_to_align, dict):
+    #         shifted_dict = {}
+    #         for key, df in data_to_align.items():
+    #             if not isinstance(df, pd.DataFrame):
+    #                 raise ValueError("do_align失败,dict内部不是df结构")
+    #             # 对字典中的每个DataFrame执行shift操作
+    #             shifted_dict[key] = fill_and_align_by_stock_pool(factor_name=key, df=df,
+    #                                                              stock_pool_df=stock_pool,
+    #                                                              _existence_matrix=_existence_matrix)
+    #         return shifted_dict
+    #
+    #     # --- 情况二：输入是单个DataFrame ---
+    #     elif isinstance(data_to_align, pd.DataFrame):
+    #         return fill_and_align_by_stock_pool(factor_name=factor_name, df=data_to_align,
+    #                                             stock_pool_df=stock_pool, _existence_matrix=_existence_matrix)
+    #
+    #     # --- 其他情况：输入类型错误，主动报错 ---
+    #     else:
+    #         raise TypeError(
+    #             f"输入类型不支持，期望是DataFrame或Dict[str, DataFrame]，"
+    #             f"但收到的是 {type(data_to_align).__name__}"
+    #         )
 
     # # ok 因为需要滚动计算，所以不依赖股票池的index（trade） 只要对齐股票列就好
     # def get_pct_chg_beta_dict(self):

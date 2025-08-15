@@ -58,36 +58,36 @@ def load_config(config_path: str) -> dict:
     return load_from_yaml(config_path)
 
 
-def load_data(config: dict) -> dict:
-    """
-    加载数据
-    
-    Args:
-        config: 配置字典
-        
-    Returns:
-        数据字典
-    """
-    logger.info("开始加载数据...")
-    
-    # 创建数据加载器
-    data_loader = DataLoader(data_path=LOCAL_PARQUET_DATA_DIR)
-    
-    # 确定需要加载的字段
-    fields = []
-    
-    # 添加价格特征
-    fields.extend(config['features']['price_features'])
-    
-    # 添加基本面特征
-    fields.extend(config['features']['fundamental_features'])
-    
-    # 加载数据
-    data_dict = data_loader.get_raw_dfs_by_require_fields(fields=fields, start_date=config['start_date'],
-                                                          end_date=config['end_date'])
-    
-    logger.info(f"数据加载完成，共加载 {len(data_dict)} 个字段")
-    return data_dict
+# def load_data(config: dict) -> dict:
+#     """
+#     加载数据
+#
+#     Args:
+#         config: 配置字典
+#
+#     Returns:
+#         数据字典
+#     """
+#     logger.info("开始加载数据...")
+#
+#     # 创建数据加载器
+#     data_loader = DataLoader(data_path=LOCAL_PARQUET_DATA_DIR)
+#
+#     # 确定需要加载的字段
+#     fields = []
+#
+#     # 添加价格特征
+#     fields.extend(config['features']['price_features'])
+#
+#     # 添加基本面特征
+#     fields.extend(config['features']['fundamental_features'])
+#
+#     # 加载数据
+#     data_dict = data_loader.get_raw_dfs_by_require_fields(fields=fields, start_date=config['start_date'],
+#                                                           end_date=config['end_date'])
+#
+#     logger.info(f"数据加载完成，共加载 {len(data_dict)} 个字段")
+#     return data_dict
 
 
 def generate_features(config: dict, data_dict: dict) -> tuple:

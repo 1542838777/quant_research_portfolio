@@ -7,6 +7,8 @@
 2. 中性化 (Neutralization) 
 3. 标准化 (Standardization)
 """
+from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
+
 try:
     import statsmodels.api as sm
     HAS_STATSMODELS = True
@@ -23,7 +25,6 @@ import sys
 import os
 from pathlib import Path
 
-from data.local_data_load import get_industry_record_df_processed
 from projects._03_factor_selection.config.base_config import FACTOR_STYLE_RISK_MODEL
 from projects._03_factor_selection.factor_manager.classifier.factor_classifier import FactorClassifier
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
@@ -41,66 +42,6 @@ warnings.filterwarnings('ignore')
 logger = setup_logger(__name__)
 
 
-class PointInTimeIndustryMap:
-    """
-    一个高效的、支持即时查询(Point-in-Time)的行业地图管理器。
-    """
-
-    def __init__(self,raw_industry_df=None):
-        """
-        通过原始的、包含in_date和out_date的成员关系DataFrame进行初始化。
-        这个过程会进行一次性预处理，构建高效的查询结构。
-        """
-        print("正在预处理历史行业数据，构建Point-in-Time地图...")
-        if raw_industry_df is None:
-            self._raw_data = get_industry_record_df_processed()
-        else:
-            self._raw_data = raw_industry_df
-
-        # 1. 获取所有行业变动的“事件日”
-        event_dates = pd.unique(np.concatenate([
-            self._raw_data['in_date'],
-            self._raw_data['out_date'] + pd.Timedelta(days=1)  # out_date当天失效，第二天变更 （理解：我们要的是状态变更生效的哪一天！
-        ])).astype('datetime64[ns]')
-        #... 快照A ... [2023-11-15] ... 快照B ... [2023-12-29] ... 快照C ... [2024-02-10] ... 快照D ... [2024-03-16] ... 快照E ...
-        # 核心思想就是 快照B的start end 都来自于某天某只股票的事件（生效or剔除） 在整个快照period，可以理解为 这整个时期 所有行业都是稳定未变化的！
-        #下面 遍历每个事件行动日！
-        ###比如遍历到快照B的start日，20231115
-        #### 注意期间的不需要遍历啊，这就是此设计的唯一的性能亮点 （为什么可以做到不需要遍历：见上面说的核心思想
-        ##然后遍历快照B的end日， 20231229
-        self._event_dates = sorted([d for d in event_dates if d < pd.Timestamp(permanent__day)])
-
-        # 2. 为每个事件日生成一个行业地图快照
-        self._maps_on_event_dates = {}
-        for date in self._event_dates:
-            # 筛选出在 `date` 当天有效的成员关系
-            current_map_df = self._raw_data[
-                (self._raw_data['in_date'] <= date) &
-                (self._raw_data['out_date'] >= date)
-                ]
-            # 只保留需要的列，并设置索引
-            self._maps_on_event_dates[date] = current_map_df[['ts_code', 'l1_code', 'l2_code']].set_index('ts_code')
-
-        print(f"预处理完成！共生成 {len(self._event_dates)} 个历史快照。")
-    #ok
-    def get_map_for_date(self, query_date: pd.Timestamp) -> pd.DataFrame:
-        """
-        高效获取指定日期的行业地图。
-        :param query_date: 需要查询的日期
-        :return: 一个以ts_code为索引的DataFrame，包含l1_code和l2_code
-        """
-        # 使用二分查找找到正确的事件日索引
-        # bisect_right 会找到 query_date 应该插入的位置
-        # 它之前的那个事件日，就是我们需要的快照日期
-        idx = bisect_right(self._event_dates, query_date) #event_Dates 间隔就是静态的日期，现在 需要查询query_date 位于哪段时间，返回query_date 左侧最接近的event_Date 就是我们这段时期的start。直接取用整个静态的结果！（但是这个函数返回的是目标query_date的索引，所以我们需要-1 才是左侧最接近event_date的start
-
-        if idx == 0:
-            # 如果查询日期比最早的事件日还早
-            raise ValueError("查询日期比最早的事件日还早 肯定有问题！") #return  pd.DataFrame(columns=['l1_code', 'l2_code'])
-
-        # 获取对应的历史快照
-        target_event_date = self._event_dates[idx - 1]
-        return self._maps_on_event_dates[target_event_date]
 class FactorProcessor:
     """
     因子预处理器 - 专业级因子预处理流水线
@@ -140,6 +81,16 @@ class FactorProcessor:
         Returns:
             预处理后的因子数据
         """
+        # print("\n" + "=" * 30 + " 【进入 process_factor 调试模式】 " + "=" * 30)
+        # print("--- 目标因子 (target_factor_df) 的最后5行 ---")
+        # print(factor_df_shifted.tail())
+        #
+        # print("\n--- 中性化风格因子 (neutral_dfs) 的最后5行 ---")
+        # for name, df in neutral_dfs.items():
+        #     print(f"  > 风格因子: {name}")
+        #     print(df.tail())
+        #
+        # print("=" * 80 + "\n")
         log_flow_start(f"{target_factor_name}因子进入因子预处理...")
         processed_target_factor_df = factor_df_shifted.copy()
 
@@ -444,9 +395,9 @@ class FactorProcessor:
 
             # --- 市值因子 ---
             if 'market_cap' in factors_to_neutralize:
-                # 【命名统一】从 neutral_dfs 中寻找规模因子，名字可以是 'small_cap', 'log_circ_mv' 等
+                # 【命名统一】从 neutral_dfs 中寻找规模因子，名字可以是 'log_circ_mv', 'log_circ_mv' 等
                 # 我们假设传入的已经是log处理过的
-                market_cap_key = 'small_cap'  # 与你 neutral_dfs 中定义的key保持一致
+                market_cap_key = 'log_circ_mv'  # 与你 neutral_dfs 中定义的key保持一致
                 if market_cap_key not in neutral_dfs:
                     raise ValueError(f"neutral_dfs 中缺少市值因子 '{market_cap_key}'。")
                 mv_series = neutral_dfs[market_cap_key].loc[date].rename('log_market_cap')
@@ -814,7 +765,6 @@ def mock_full_historical_industry_data():
     df['out_date'] = pd.to_datetime(df['out_date']).fillna(pd.Timestamp(permanent__day))
     return df
 
-from bisect import bisect_right
 
 
 
