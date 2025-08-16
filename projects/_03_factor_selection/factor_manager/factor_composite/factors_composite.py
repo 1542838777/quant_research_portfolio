@@ -44,7 +44,7 @@ class FactorSynthesizer:
 
         (final_neutral_dfs, style_category
          ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, trade_dates, stock_codes, stock_pool_index_name)
-        factor_df_shifted = factor_df.shift(1)
+        factor_df_shifted = factor_df.shift(1)# 因为下面的预处理 用的t-1的信息！，只能委屈自己 也用t-1
         processed_df = self.processor.process_factor(
             factor_df_shifted=factor_df_shifted,
             target_factor_name=factor_name,
@@ -65,7 +65,7 @@ class FactorSynthesizer:
             sub_factor_names (List[str]): 用于合成的细分因子名称列表.
 
         Returns:
-            pd.DataFrame: 合成后的复合因子矩阵。
+            pd.DataFrame: 合成后的复合因子矩阵。 remind 已经是shift1 之后的
         """
         print(f"\n==============================================")
         print(f"开始合成复合因子: {composite_factor_name}")

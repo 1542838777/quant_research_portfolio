@@ -62,18 +62,18 @@ def main():
     for index, config in experiments.iterrows():
         try:
             # 执行测试
-            results.append({index: (factor_analyzer.test_factor_entity_service(
+            results.append({index: (factor_analyzer.test_factor_entity_service_route(
                 factor_name=config[0],
                 stock_pool_index_name=config[1],
             ))})
         except Exception as e:
             raise ValueError(f"✗ 因子{index}测试失败: {e}") from e
 
+    log_success(f"✓ 批量测试完成，成功测试 {len(results)} 个因子")
     return results
     # batch_results = factor_analyzer.batch_test_factors(
     #     target_factors_dict=target_factors_dict
     # )
-    log_success(f"✓ 批量测试完成，成功测试 {len(batch_results)} 个因子")
 
     #
     # # 11. 多因子优化

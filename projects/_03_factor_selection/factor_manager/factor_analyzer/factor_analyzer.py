@@ -295,7 +295,7 @@ class FactorAnalyzer:
     # 纯测试结果
     def comprehensive_test(self,
                            target_factor_name: str = None,
-                           factor_df: pd.DataFrame = None,
+                           factor_data_shifted: pd.DataFrame = None,
                            stock_pool_index_name: str = None,
                            preprocess_method: str = "standard",
                            returns_calculator: Callable = None,
@@ -303,19 +303,10 @@ class FactorAnalyzer:
                            need_process_factor: bool = True,
                            do_ic_test: bool = True, do_turnover_test: bool = True, do_quantile_test: bool = True,
                            do_fama_test: bool = True, do_style_correlation_test: bool = True,
-
                            ) -> Tuple[
-        pd.DataFrame,
-        Optional[Dict[str, pd.Series]],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[ pd.DataFrame],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[Dict[str, pd.DataFrame]],
-        Optional[Dict[str, float]]
+        pd.DataFrame,Optional[Dict[str, pd.Series]],Optional[Dict[str, pd.DataFrame]],Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],Optional[pd.DataFrame],Optional[Dict[str, pd.DataFrame]],
+        Optional[Dict[str, pd.DataFrame]],Optional[Dict[str, pd.DataFrame]], Optional[Dict[str, pd.DataFrame]],Optional[Dict[str, float]]
     ]:
         """
         综合测试 - 执行所有三种测试方法
@@ -382,17 +373,17 @@ class FactorAnalyzer:
 
         logger.info(f"开始测试因子: {target_factor_name}")
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
-        trade_dates = factor_df.index
-        stock_codes = factor_df.columns
+        trade_dates =factor_data_shifted.index
+        stock_codes = factor_data_shifted.columns
 
         (final_neutral_dfs, style_category
          ) = self.prepare_date_for_process_factor(target_factor_name, trade_dates,stock_codes,stock_pool_index_name)
-        factor_df_go_to_test = factor_df.shift(1)
+
 
         if need_process_factor:
             # 1. 因子预处理
-            factor_df_go_to_test = self.factor_processor.process_factor(
-                factor_df_shifted=factor_df_go_to_test,
+            factor_data_shifted = self.factor_processor.process_factor(
+                factor_df_shifted=factor_data_shifted,
                 target_factor_name=target_factor_name,
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
@@ -877,8 +868,8 @@ class FactorAnalyzer:
             if shape != self.factor_manager.prepare_for_neutral_dfs_shift_diff_stock_pools_dict[pool_name][
                 'total_mv'].shape:
                 raise ValueError("形状不一致 ，请必须检查")
-
-    def test_factor_entity_service(self,
+    #合成测试，单因子测试
+    def test_factor_entity_service_route(self,
                                    factor_name: str,
                                    stock_pool_index_name: str,
                                    preprocess_method: str = "standard",
@@ -889,18 +880,18 @@ class FactorAnalyzer:
         保存结果
         画图保存
         """
-        factor_df,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
+        factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
             = self.prepare_date_for_entity_service(
             factor_name,stock_pool_index_name)
         all_configs_results = {}
         if is_composite_factor:
-           return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_df,stock_pool_index_name, test_configurations, start_date, end_date, stock_pool_index_code)
+           return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,stock_pool_index_name, test_configurations, start_date, end_date, stock_pool_index_code)
         for calculator_name, func in test_configurations.items():
             # 执行测试
             # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
             raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw,q_st_raw, _, _, _, _, _ = self.comprehensive_test(
                 target_factor_name=factor_name,
-                factor_df=factor_df,
+                factor_data_shifted =factor_data_shifted,
                 stock_pool_index_name=stock_pool_index_name,
                 returns_calculator=func,
                 preprocess_method="standard",
@@ -914,7 +905,7 @@ class FactorAnalyzer:
             proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
                 = self.comprehensive_test(
                 target_factor_name=factor_name,
-                factor_df=factor_df,
+                factor_data_shifted=factor_data_shifted,
                 stock_pool_index_name = stock_pool_index_name,
                 returns_calculator=func,
                 preprocess_method="standard",
@@ -1255,20 +1246,20 @@ class FactorAnalyzer:
         return close_df, circ_mv_df_shifted, style_factor_dfs
 
     def prepare_date_for_entity_service(self, factor_name,stock_pool_index_name):
-        factor_data = None
+        factor_data_shifted = None
         is_composite_factor = self.factor_manager.data_manager.is_composite_factor(factor_name)
 
         if is_composite_factor:
             factorComposite =  FactorSynthesizer(self.factor_manager,self,self.factor_processor)
-            factor_data  = factorComposite.do_composite(factor_name=factor_name,stock_pool_index_name=stock_pool_index_name)
+            factor_data_shifted  = factorComposite.do_composite(factor_name=factor_name,stock_pool_index_name=stock_pool_index_name) #shift1之后的
         else:
             factor_data = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
+            factor_data_shifted = factor_data.shift(1) #强行跟上面shift11 保持一致
 
         start_date = self.factor_manager.data_manager.config['backtest']['start_date']
         end_date = self.factor_manager.data_manager.config['backtest']['end_date']
-        # target_school = self.factor_manager.get_school_code_by_factor_name(factor_name)
         stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name)
-        style_category = \
+        style_category_type = \
             self.factor_manager.data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,
                                                                                                  'style_category').iloc[
                 0]
@@ -1285,22 +1276,21 @@ class FactorAnalyzer:
         }
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
         returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
-        # return factor_data,is_composite_factor,start_date, end_date, target_school, stock_pool_index_code, stock_pool_index_name, close_df, open_df, style_category, returns_calculator_result
-        return factor_data,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category, returns_calculator_result
-
-    def test_factor_entity_service_for_composite_factor(self, factor_name, factor_df, stock_pool_index_name,test_configurations, start_date, end_date, stock_pool_index_code):
+        return factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category_type, returns_calculator_result
+    #factor_data_shifted todo
+    def test_factor_entity_service_for_composite_factor(self, factor_name, factor_data_shifted, stock_pool_index_name,test_configurations, start_date, end_date, stock_pool_index_code):
         all_configs_results = {}
         for calculator_name, func in test_configurations.items():
             processed_df, ic_s, ic_st, q_r,q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
                 = self.comprehensive_test(
                 target_factor_name=factor_name,
-                factor_df=factor_df,
+                factor_data_shifted =factor_data_shifted ,
                 stock_pool_index_name=stock_pool_index_name,
                 returns_calculator=func,
                 preprocess_method="standard",
                 start_date=start_date,
                 end_date=end_date,
-                need_process_factor=False,
+                need_process_factor=False, #因为合成好的因子无需再次中性化了。它的子弟已经体验过中性化了
                 do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
                 do_style_correlation_test=True
             )
