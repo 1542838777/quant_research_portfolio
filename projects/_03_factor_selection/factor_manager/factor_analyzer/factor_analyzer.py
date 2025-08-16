@@ -400,12 +400,12 @@ class FactorAnalyzer:
 
         ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
             = self.core_three_test(
-            factor_df_go_to_test, target_factor_name, returns_calculator, close_df,
+            factor_data_shifted, target_factor_name, returns_calculator, close_df,
             final_neutral_dfs, circ_mv_df_shifted, style_factor_dfs, do_ic_test,
             do_turnover_test,
             do_quantile_test, do_fama_test, do_style_correlation_test)
 
-        return factor_df_go_to_test, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
+        return factor_data_shifted, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
 
     def evaluation_score_dict(self,
