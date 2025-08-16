@@ -92,13 +92,104 @@
 #- factor_name: 'amihud_liquidity'
 #  stock_pool_name: 'institutional_stock_pool'
 
+#
+#- factor_name: 'operating_accruals'
+#  stock_pool_name: 'fast' # 中证800
+#
+#- factor_name: 'earnings_stability'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'pead'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'quality_momentum'
+#  stock_pool_name: 'fast'
+#
+## === 情绪/技术类因子 (Sentiment / Technical) ===
+#- factor_name: 'rsi'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'cci'
+#  stock_pool_name: 'fast'
+#
+## === 规模 (Size) ===
+#- factor_name: 'log_total_mv'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'log_circ_mv'
+#  stock_pool_name: 'fast'
+#
+## === 价值 (Value) ===
+#- factor_name: 'bm_ratio'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'ep_ratio'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'sp_ratio'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'cfp_ratio'
+#  stock_pool_name: 'fast'
+#
+## === 质量 (Quality) ===
+#- factor_name: 'roe_ttm'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'gross_margin_ttm'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'debt_to_assets'
+#  stock_pool_name: 'fast'
+#
+## === 成长 (Growth) ===
+#- factor_name: 'net_profit_growth_yoy'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'total_revenue_growth_yoy'
+#  stock_pool_name: 'fast'
+#
+## === 动量 (Momentum) ===
+#- factor_name: 'momentum_12_1'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'momentum_20d'
+#  stock_pool_name: 'fast'
+#
+### === 风险 (Risk / Volatility) ===
+##- factor_name: 'beta'
+##  stock_pool_name: 'fast'
+#
+#- factor_name: 'volatility_120d'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'volatility_90d'
+#  stock_pool_name: 'fast'
+##
+## === 流动性 (Liquidity) ===
+#- factor_name: 'turnover_rate_90d_mean'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'ln_turnover_value_90d'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'turnover_rate_monthly_mean'
+#  stock_pool_name: 'fast'
+#
+#- factor_name: 'amihud_liquidity'
+#  stock_pool_name: 'fast'
 
+#-----
 
+- factor_name: 'gross_margin_ttm'
+  stock_pool_name: 'fast'
+- factor_name: 'ep_ratio'
+  stock_pool_name: 'fast'
+- factor_name: 'bm_ratio'
+  stock_pool_name: 'fast'
 - factor_name: 'volatility_120d'
   stock_pool_name: 'fast'
-#- factor_name: 'beta'
-#  stock_pool_name: 'dongbei_1000'
-#- factor_name: 'value_composite'
-#  stock_pool_name: 'dongbei_1000'
-##- factor_name: 'cfp_ratio'
-##  stock_pool_name: 'institutional_stock_pool'
+
+
+
+ 

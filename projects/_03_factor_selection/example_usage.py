@@ -333,6 +333,16 @@ def simulate_your_aggregation_method(factor_manager):
         return monotonicity
 
 
+def verify_data(factor_manager):
+    stock_codes=factor_manager.data_manager.stock_pools_dict['fast'].columns
+    _120d = factor_manager.get_raw_factor('bm_ratio')
+    volatility_120d = factor_manager.get_raw_factor('volatility_120d')
+    earnings_stability = factor_manager.get_raw_factor('earnings_stability')
+    operating_accruals = factor_manager.get_raw_factor('operating_accruals')
+    print(1)
+    pass
+
+
 def main():
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
@@ -340,9 +350,10 @@ def main():
     data_manager.prepare_basic_data()
     factor_manager  = FactorManager(data_manager)
     # analyze_why_better_performance(factor_manager)
+    verify_data(factor_manager)
 
     # 测试时间聚合效果
-    mono_aggregated = simulate_your_aggregation_method(factor_manager)
+    # mono_aggregated = simulate_your_aggregation_method(factor_manager)
     # comprehensive_factor_test(factor_manager)
     # verify_pct_chg(factor_manager) #通过
 

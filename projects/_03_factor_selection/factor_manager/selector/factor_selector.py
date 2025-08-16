@@ -7,7 +7,6 @@ from quant_lib import logger
 
 
 from projects._03_factor_selection.visualization_manager import VisualizationManager
-from quant_lib.config.logger_config import log_warning
 
 def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.Series:
 
