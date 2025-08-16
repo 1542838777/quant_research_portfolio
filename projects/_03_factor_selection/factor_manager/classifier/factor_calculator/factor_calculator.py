@@ -59,84 +59,105 @@ class FactorCalculator:
         factor_df = circ_mv_df.apply(np.log)
         return factor_df
 
+    # === 价值 (Value) - 【V2.0 - 第一性原理版】 ===
 
-    # === 价值 (Value) ===
     def _calculate_bm_ratio(self) -> pd.DataFrame:
         """
-        计算账面市值比 (Book-to-Market Ratio)，即市净率(PB)的倒数。
-
-        金融逻辑:
-        这是Fama-French三因子模型中的核心价值衡量指标。高BM比率意味着公司的账面价值
-        相对于其市场价格更高，可能被市场低估。
+        【V2.0 - 第一性原理版】计算账面市值比 (Book-to-Market Ratio)。
+        B/M = total_equity / total_mv
         """
-        print("    > 正在计算因子: bm_ratio...")
-        pb_df = self.factor_manager.get_raw_factor('pb')
-        pb_df_positive = pb_df.where(pb_df > 0)
-        bm_ratio_df = 1 / pb_df_positive
-        return bm_ratio_df
+        logger.info("  > 正在基于第一性原理，计算【权威 bm_ratio】...")
+
+        # 1. 获取分子: 随时点的股东权益 (Book Value)
+        #    我们的财报引擎，确保了这里使用的是 ann_date，无未来数据
+        book_value_df = self.factor_manager.get_raw_factor('total_equity')
+
+        # 2. 获取分母: 随时点的总市值 (Market Value)
+        #    我们信任 daily_basic 中的 total_mv 是随时点正确的
+        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+
+        # 3. 对齐数据
+        book_aligned, market_aligned = book_value_df.align(market_value_df, join='right', axis=None)
+
+        # 4. 对齐后，对低频的财报数据进行前向填充
+        book_aligned_filled = book_aligned.ffill()
+
+        # 5. 计算因子并进行风控
+        market_positive = market_aligned.where(market_aligned > 0)
+        book_positive = book_aligned_filled.where(book_aligned_filled > 0)
+
+        bm_ratio_df = book_positive / market_positive
+        return bm_ratio_df.replace([np.inf, -np.inf], np.nan)
 
     def _calculate_ep_ratio(self) -> pd.DataFrame:
         """
-        计算盈利收益率 (Earnings Yield)，即市盈率(PE_TTM)的倒数。
-
-        金融逻辑:
-        衡量投资者每投入一元市值，可以获得多少公司盈利。它比PE更能直观地
-        与债券收益率等其他资产回报率进行比较。
+        【V2.0 - 第一性原理版】计算盈利收益率 (Earnings Yield)。
+        E/P = net_profit_ttm / total_mv
         """
-        print("    > 正在计算因子: ep_ratio...")
-        pe_ttm_df = self.factor_manager.get_raw_factor('pe_ttm')
-        pe_df_positive = pe_ttm_df.where(pe_ttm_df > 0)
-        ep_ratio_df = 1 / pe_df_positive
-        return ep_ratio_df
+        logger.info("  > 正在基于第一性原理，计算【权威 ep_ratio】...")
+
+        # 1. 获取分子: TTM归母净利润
+        earnings_ttm_df = self.factor_manager.get_raw_factor('net_profit_ttm')
+
+        # 2. 获取分母: 总市值
+        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+
+        # 3. 对齐与填充
+        earnings_aligned, market_aligned = earnings_ttm_df.align(market_value_df, join='right', axis=None)
+        earnings_aligned_filled = earnings_aligned.ffill()
+
+        # 4. 计算因子
+        market_positive = market_aligned.where(market_aligned > 0)
+        # 对于盈利，分子可以是负数，所以不做 book_positive 类似的筛选
+        ep_ratio_df = earnings_aligned_filled / market_positive
+        return ep_ratio_df.replace([np.inf, -np.inf], np.nan)
 
     def _calculate_sp_ratio(self) -> pd.DataFrame:
         """
-        计算销售收益率 (Sales Yield)，即市销率(PS_TTM)的倒数。
-
-        金融逻辑:
-        衡量投资者每投入一元市值，可以获得多少销售收入。这个指标对于那些
-        处于快速扩张期但尚未盈利的成长型公司（PE为负）尤其有价值。
+        【V2.0 - 第一性原理版】计算销售收益率 (Sales Yield)。
+        S/P = total_revenue_ttm / total_mv
         """
-        print("    > 正在计算因子: sp_ratio...")
-        ps_ttm_df = self.factor_manager.get_raw_factor('ps_ttm')
-        ps_df_positive = ps_ttm_df.where(ps_ttm_df > 0)
-        sp_ratio_df = 1 / ps_df_positive
-        return sp_ratio_df
+        logger.info("  > 正在基于第一性原理，计算【权威 sp_ratio】...")
 
-        # 主要字段：n_cashflow_act：经营活动产生的现金流量净额 进行滚动平均
-        # 代码大篇幅主要处理脏数据！多来自于ipo，因为股票未上市前，用的不准确的数据！
+        # 1. 获取分子: TTM营业总收入
+        sales_ttm_df = self.factor_manager.get_raw_factor('total_revenue_ttm')
+
+        # 2. 获取分母: 总市值
+        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+
+        # 3. 对齐与填充
+        sales_aligned, market_aligned = sales_ttm_df.align(market_value_df, join='right', axis=None)
+        sales_aligned_filled = sales_aligned.ffill()
+
+        # 4. 计算因子
+        market_positive = market_aligned.where(market_aligned > 0)
+        sales_positive = sales_aligned_filled.where(sales_aligned_filled > 0)  # 收入通常为正
+
+        sp_ratio_df = sales_positive / market_positive
+        return sp_ratio_df.replace([np.inf, -np.inf], np.nan)
 
     def _calculate_cfp_ratio(self) -> pd.DataFrame:
         """
-            计算现金流市值比 (cfp_ratio = cashflow_ttm / total_mv)
-            包含风险控制和健壮性处理。
-            """
-        print("    > 正在计算 cfp_ratio...")
-        # --- 步骤一：获取依赖的因子 ---
+        【V2.0 - 第一性原理版】计算现金流市值比 (Cash Flow Yield)。
+        CF/P = cashflow_ttm / total_mv
+        """
+        logger.info("  > 正在基于第一性原理，计算【权威 cfp_ratio】...")
+
+        # 1. 获取分子: TTM经营活动现金流
         cashflow_ttm_df = self.factor_manager.get_raw_factor('cashflow_ttm')
-        total_mv_df = self.factor_manager.get_raw_factor('total_mv')
 
-        # --- 步骤二：对齐数据 (使用 .align) ---
-        mv_aligned, ttm_aligned = total_mv_df.align(cashflow_ttm_df, join='inner', axis=None)
+        # 2. 获取分母: 总市值
+        market_value_df = self.factor_manager.get_raw_factor('total_mv')
 
-        # --- 步骤三：风险控制与预处理 (核心) ---
-        # 1. 过滤小市值公司：这是不可逾越的纪律 （市值小，表示分母小，更容易被操控，比如现金突然多了10w，但是市值为1，那不是猛增10w倍率
-        #    在实盘中，这个阈值甚至可能是20亿(2e9)或30亿(3e9) total_mv单位 万
-        mv_in_yuan = mv_aligned * 10000# 市值筛选建议在“元”单位上做
-        mv_in_yuan[mv_in_yuan < 2e9] = np.nan
+        # 3. 对齐与填充
+        cashflow_aligned, market_aligned = cashflow_ttm_df.align(market_value_df, join='right', axis=None)
+        cashflow_aligned_filled = cashflow_aligned.ffill()
 
-        # 2. 过滤掉退市或长期停牌等市值为0或负的异常情况 ！
-        mv_aligned[mv_aligned <= 0] = np.nan
+        # 4. 计算因子
+        market_positive = market_aligned.where(market_aligned > 0)
 
-        # --- 步骤四：计算因子 ---
-        cfp_ratio_df = ttm_aligned / mv_aligned
-
-        # --- 步骤五：后处理，清除计算过程中产生的inf ---
-        # 在除法运算后，对无穷大值进行处理，统一替换为NaN
-        cfp_ratio_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-        print("    > cfp_ratio 计算完成，已包含风险控制。")
-        return cfp_ratio_df
+        cfp_ratio_df = cashflow_aligned_filled / market_positive
+        return cfp_ratio_df.replace([np.inf, -np.inf], np.nan)
 
     # === 质量 (Quality) ===
 
@@ -497,11 +518,11 @@ class FactorCalculator:
         config = self.factor_manager.data_manager.config['backtest']
         start_date, end_date = config['start_date'], config['end_date']
 
-        buffer_days = int(window * 1.7) + 5
-        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y-%m-%d')
+        # buffer_days = int(window * 1.7) + 5
+        # buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y-%m-%d')
 
-        stock_returns_buffered = stock_returns.loc[buffer_start_date:end_date]
-        market_returns_buffered = market_returns.loc[buffer_start_date:end_date]
+        stock_returns_buffered = stock_returns.loc[start_date:end_date]
+        market_returns_buffered = market_returns.loc[start_date:end_date]
 
         # --- 3. 执行计算 ---
         beta_df_full = calculate_rolling_beta_pure(
@@ -1187,35 +1208,7 @@ class FactorCalculator:
         single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=True)  # 确保公告日和计算值都存在
 
         return single_q_long_df
-    # def _calculate_pct_chg(self):
-        # """
-        #    根据复权收盘价，计算真实的、处理了停牌情况的总回报收益率。
-        #    """
-        # logger.info("  > 正在计算权威的 pct_chg (V13.0)...")
-        #
-        # # 1. 获取权威的、T日的复权收盘价
-        # close_adj = self.factor_manager.get_raw_factor('close_adj') #这里不用做填充，为了的就是 最后：剔除所有在停牌期间被错误计算为0的收益率
-        #
-        # # 2. 【第一步】先对价格序列进行前向填充，以搭建计算复牌日收益的“桥梁”
-        # ##
-        # # 为什么要fill
-        # # 场景：比如1号买的 1元 2 3停牌 4号 卖出1.5。
-        # # --如果不对价格进行fill -->1 nan nan 1.5
-        # #----pct:nan nan nan nan
-        # #--如果对价格fff  1 1  1 1.5
-        # #----pct:nan  nan 0 0 50%
-        # # 关注 pct 各自最后的50% 以及nan。显然50%是我们想要的： 确保我的回测系统能够精确地模拟我管理的资金账户的真实净值变化**。（ 虽然
-        # # #
-        # close_adj_filled = close_adj.ffill(limit=10)#宽表index全交易日！
-        #
-        # # 3. 【第二步】在填充后的价格序列上，计算pct_change
-        # true_pct_chg = close_adj_filled.pct_change()
-        #
-        # # 4. 【第三步】用原始价格序列的notna()作为“面具”，恢复停牌日的NaN状态
-        # #    这会剔除所有在停牌期间被错误计算为0的收益率
-        # final_pct_chg = true_pct_chg.where(close_adj.notna())
-        #
-        # return final_pct_chg
+
     #ok
     def _calculate_pct_chg(self) -> pd.DataFrame:
         """
@@ -1391,18 +1384,18 @@ class FactorCalculator:
     # 经济学假设：一个公司在停牌期间，其估值水平和市值，最合理的估计就是它停牌前的状态。ffill完美地符合这个假设。
     #
     # 风险控制：我们不希望这个假设无限期地延续。如果一只股票停牌超过一个季度（约65个交易日），我们就认为它停牌前的信息已经“陈腐”，不再具有代表性。limit=65正是为了控制这个风险。#
-    def _calculate_ps_ttm_fill_limit65(self):
-        return self.factor_manager.get_raw_factor('ps_ttm').ffill(limit=65)
+    # def _calculate_ps_ttm_fill_limit65(self):
+    #     return self.factor_manager.get_raw_factor('ps_ttm').ffill(limit=65)
     def _calculate_total_mv_fill_limit65(self):
         return self.factor_manager.get_raw_factor('total_mv').ffill(limit=65)
 
     def _calculate_circ_mv_fill_limit65(self):
         return self.factor_manager.get_raw_factor('circ_mv').ffill(limit=65)
 
-    def _calculate_pb_fill_limit65(self):
-        return self.factor_manager.get_raw_factor('pb').ffill(limit=65)
-    def _calculate_pe_ttm_fill_limit65(self):
-        return self.factor_manager.get_raw_factor('pe_ttm').ffill(limit=65)
+    # def _calculate_pb_fill_limit65(self):
+    #     return self.factor_manager.get_raw_factor('pb').ffill(limit=65)
+    # def _calculate_pe_ttm_fill_limit65(self):
+    #     return self.factor_manager.get_raw_factor('pe_ttm').ffill(limit=65)
 
     ##
     # 交易行为类

@@ -916,8 +916,8 @@ class FactorAnalyzer:
                 do_style_correlation_test=True
             )
             single_config_results = {
-                "raw_factor_df": raw_factor_df,
-                "processed_factor_df": proceessed_df,
+                "raw_factor_df": raw_factor_df, #注意 都是经过shift1的
+                "processed_factor_df": proceessed_df,#注意 都是经过shift1的
                 "ic_series_periods_dict_raw": ic_s_raw,
                 "ic_stats_periods_dict_raw": ic_st_raw,
                 "ic_series_periods_dict_processed": ic_s,

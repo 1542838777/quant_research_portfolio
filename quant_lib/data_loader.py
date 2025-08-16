@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Tuple
 from collections import defaultdict
 
+from odbc import noError
+
 from quant_lib import setup_logger
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.config.logger_config import log_warning
@@ -118,7 +120,7 @@ class DataLoader:
 
                 # 构建字段映射
                 for col in columns:
-                    if (col in ['total_mv', 'pe_ttm', 'pb', 'circ_mv','turnover_rate']) & (
+                    if (col in ['total_mv', 'circ_mv','turnover_rate']) & (
                             logical_name != 'daily_basic'):
                         continue
                     if (col in ['list_date','delist_date']) & (
@@ -127,8 +129,10 @@ class DataLoader:
                     if (col in ['close', 'open', 'high', 'low', 'pre_close', 'amount']) & (
                             logical_name != 'daily'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据 #最新修改 手动计算，不依赖不纯洁的hfq
                         continue
-                    if (col in ['adj_factor']):  #
-                        raise ValueError('严谨利用adj_factor数据！请将config 用adj_factor的 from_daily配置 置为false，这样就不会此阶段加载了')
+                        # 'turnover_rate', 'circ_mv', 'total_mv'  这些是“纯净原材料”，它们是每日更新的、不依赖于财报发布时间的随时点（Point-in-Time）数据
+                    not_allow_load_fieds_for_not_fq =  ['adj_factor','pe_ttm', 'pb',  'ps_ttm' ]
+                    if (col in not_allow_load_fieds_for_not_fq):  #
+                        continue #(f'严谨加载依赖报告日发布的数据{col} 非daily数据 ,请将config 用adj_factor的 from_daily配置 置为false，这样就不会此阶段加载了')
                     if col not in field_to_files_map:
                         field_to_files_map[col] = logical_name
             except Exception as e:
@@ -139,7 +143,7 @@ class DataLoader:
     # ok
     def get_raw_dfs_by_require_fields(self,
                                       fields: List[str],
-                                      start_date: str,
+                                      buffer_start_date: str,
                                       end_date: str,
                                       ts_codes: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
         """
@@ -154,10 +158,10 @@ class DataLoader:
         Returns:
             字段到DataFrame的映射字典
         """
-        logger.info(f"开始加载数据: 字段={fields}, 时间范围={start_date}至{end_date}")
+        logger.info(f"开始加载数据: 字段={fields}, 时间范围={buffer_start_date}至{end_date}")
 
         # 检查缓存
-        cache_key = f"{','.join(sorted(fields))}-{start_date}-{end_date}"
+        cache_key = f"{','.join(sorted(fields))}-{buffer_start_date}-{end_date}"
         if self.use_cache and cache_key in self.cache:
             logger.info("从缓存加载数据")
             return self.cache[cache_key]
@@ -195,7 +199,7 @@ class DataLoader:
                 )
 
                 # 时间筛选
-                long_df = self.extract_during_period(long_df, logical_name, start_date, end_date)
+                long_df = self.extract_during_period(long_df, logical_name, buffer_start_date, end_date)
 
                 # 股票池筛选
                 if ts_codes is not None and 'ts_code' in long_df.columns:
@@ -208,7 +212,7 @@ class DataLoader:
                 raise ValueError(f"处理数据集 {logical_name} 失败: {e}")
 
         # --- 3. 将所有数据处理成统一的面板宽表格式 ---
-        trading_dates = self.get_trading_dates(start_date, end_date)
+        trading_dates = self.get_trading_dates(buffer_start_date, end_date)
         for field in sorted(fields):
             logical_name = self.field_map.get(field)
             if not logical_name or logical_name not in raw_long_dfs:

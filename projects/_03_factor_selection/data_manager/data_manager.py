@@ -135,7 +135,7 @@ class DataManager:
 
         # === 一次性加载所有raw数据(互相对齐) ===
         self.raw_dfs = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
-                                                                      start_date=self.buffer_start_date,
+                                                                      buffer_start_date=self.buffer_start_date,
                                                                       end_date=self.backtest_end_date)
         #加载辅助数据，
         self.pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
@@ -214,11 +214,10 @@ class DataManager:
         """获取所有需要的字段"""
         required_fields = set()
 
-        # 基础字段
+        # 基础字段 #核心要求 ，这是最基础的！ 千万不能错！ 只能是日频率更新的数据 ，(因为：   tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
         required_fields.update([
-
             'close',
-            'pb',  # 为了计算价值类因子
+            # 'pb',  # 为了计算价值类因子  前视数据  tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
             'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
             # 'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到
@@ -227,7 +226,7 @@ class DataManager:
             'delist_date',  # 退市日期,用于构建标准动态股票池
 
             'open', 'high', 'low', 'amount',  # 为了计算次日是否一字马涨停
-            'pe_ttm', 'ps_ttm',  # 懒得写calcu 直接在这里生成就好
+            # 'pe_ttm', 'ps_ttm',  # 前视数据  tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
         ])
         # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
         # 解决办法：
@@ -816,33 +815,6 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_成分股指数_filter', index_stock_pool_df)
         return index_stock_pool_df
 
-    def get_factor_data(self) -> pd.DataFrame:
-        """
-        计算目标因子数据
-
-        Returns:
-            因子数据DataFrame
-        """
-        target_factors_for_evaluation = self.config['target_factors_for_evaluation']
-        factor_name = target_factors_for_evaluation['name']
-        fields = target_factors_for_evaluation['fields']
-
-        print(f"\n计算目标因子: {factor_name}")
-
-        # 使用处理后的数据
-        data_source = getattr(self, 'processed_data', self.raw_dfs)
-
-        # 简单的因子计算逻辑
-        if factor_name == 'pe_inv' and 'pe_ttm' in fields:
-            # PE倒数因子
-            pe_data = data_source['pe_ttm']
-            factor_data = 1 / pe_data
-            factor_data = factor_data.replace([np.inf, -np.inf], np.nan)
-        else:
-            # 默认使用第一个字段
-            factor_data = data_source[fields[0]]
-
-        return factor_data
 
     def get_universe(self) -> pd.DataFrame:
         """获取股票池"""
