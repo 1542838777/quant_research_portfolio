@@ -94,7 +94,7 @@
 
 
 
-- factor_name: 'value_composite'
+- factor_name: 'volatility_120d'
   stock_pool_name: 'fast'
 #- factor_name: 'beta'
 #  stock_pool_name: 'dongbei_1000'

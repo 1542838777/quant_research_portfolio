@@ -518,11 +518,11 @@ class FactorCalculator:
         config = self.factor_manager.data_manager.config['backtest']
         start_date, end_date = config['start_date'], config['end_date']
 
-        # buffer_days = int(window * 1.7) + 5
-        # buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y-%m-%d')
+        buffer_days = int(window * 1.7) + 5
+        buffer_start_date = (pd.to_datetime(start_date) - pd.DateOffset(days=buffer_days)).strftime('%Y-%m-%d')
 
-        stock_returns_buffered = stock_returns.loc[start_date:end_date]
-        market_returns_buffered = market_returns.loc[start_date:end_date]
+        stock_returns_buffered = stock_returns.loc[buffer_start_date:end_date] #必须多点前缀数据,后面好进行rolling
+        market_returns_buffered = market_returns.loc[buffer_start_date:end_date]
 
         # --- 3. 执行计算 ---
         beta_df_full = calculate_rolling_beta_pure(

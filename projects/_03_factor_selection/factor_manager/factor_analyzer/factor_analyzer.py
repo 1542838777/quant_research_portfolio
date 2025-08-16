@@ -898,11 +898,11 @@ class FactorAnalyzer:
                 start_date=start_date,
                 end_date=end_date,
                 need_process_factor=False,
-                do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
+                do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False, #do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
                 do_style_correlation_test=False
             )
             # log_flow_start(f"因子{factor_name}处理状态 进入comprehensive_test测试 ")
-            proceessed_df, ic_s, ic_st, q_r, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
+            proceessed_df, ic_s, ic_st, q_r_processed, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
                 = self.comprehensive_test(
                 target_factor_name=factor_name,
                 factor_data_shifted=factor_data_shifted,
@@ -927,7 +927,7 @@ class FactorAnalyzer:
                 "quantile_stats_periods_dict_raw": q_st_raw,
                 "q_daily_returns_df_raw": q_daily_returns_df_raw,
 
-                "quantile_returns_series_periods_dict_processed": q_r,
+                "quantile_returns_series_periods_dict_processed": q_r_processed,
                 "quantile_stats_periods_dict_processed": q_st,
                 "q_daily_returns_df_processed": q_daily_returns_df_proc,
 
@@ -948,7 +948,7 @@ class FactorAnalyzer:
             all_configs_results[calculator_name] = single_config_results
         # overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df, target_factor_name,
         #                                                                      style_category, "standard",
-        #                                                                      ic_s, ic_st, q_r, q_st, fm_r, fm_st, turnover_st, style_corr
+        #                                                                      ic_s, ic_st, q_r_processed, q_st, fm_r, fm_st, turnover_st, style_corr
         #                                                                      )
 
         return all_configs_results
@@ -1243,6 +1243,7 @@ class FactorAnalyzer:
         #用于回归测试的，所以必须shift 提前处理好
         circ_mv_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv', stock_pool_index_name, True).shift(1)
         style_factor_dfs = self.get_style_factors(stock_pool_index_name)
+        style_factor_dfs =  {key: df.shift(1) for key, df in style_factor_dfs.items()}
         return close_df, circ_mv_df_shifted, style_factor_dfs
 
     def prepare_date_for_entity_service(self, factor_name,stock_pool_index_name):
@@ -1277,7 +1278,7 @@ class FactorAnalyzer:
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
         returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
         return factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category_type, returns_calculator_result
-    #factor_data_shifted todo
+
     def test_factor_entity_service_for_composite_factor(self, factor_name, factor_data_shifted, stock_pool_index_name,test_configurations, start_date, end_date, stock_pool_index_code):
         all_configs_results = {}
         for calculator_name, func in test_configurations.items():

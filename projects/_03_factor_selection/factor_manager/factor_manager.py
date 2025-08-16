@@ -110,12 +110,13 @@ class FactorResultsManager:
 
         for period, df in quantile_returns_series_periods_dict_raw.items():
             df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
+        for period, df in quantile_returns_series_periods_dict_processed.items():
+            df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
 
         q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
         q_daily_returns_df_processed.to_parquet(output_path / f'q_daily_returns_df_processed.parquet')
 
-        for period, df in quantile_returns_series_periods_dict_processed.items():
-            df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
+
 
         for period, series in fm_returns_series_periods_dict.items():
             df = series.to_frame(name='fm_returns_series')
@@ -260,7 +261,7 @@ class FactorManager:
             raise ValueError(f"获取因子失败：{factor_request}")
 
         # 4. 存入缓存并返回
-        # self.factors_cache[factor_request] = raw_factor_df #todo 打开
+        self.factors_cache[factor_request] = raw_factor_df
         return raw_factor_df
 
     def register_factor(self,

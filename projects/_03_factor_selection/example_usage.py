@@ -39,15 +39,318 @@ from quant_lib.utils.test import check_step
 # 配置日志
 logger = setup_logger(__name__)
 
+
+def verify_pct_chg(factor_manager):
+    pct_chg=factor_manager.get_raw_factor('pct_chg')
+    pct_chg = pct_chg['000001.SZ']
+
+    daily=pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'daily')
+    daily.index = pd.to_datetime(daily['trade_date'])
+    daily['trade_date'] = daily.index
+    daily = daily[daily['trade_date']>=pd.to_datetime('20230920')]
+    daily.sort_index(inplace=True)
+    daily = daily[daily['ts_code']=='000001.SZ']
+
+    print(1)
+
+
+def verify_volatility_calculation(factor_manager):
+    """验证波动率计算逻辑"""
+    pct_chg = factor_manager.get_raw_factor('pct_chg')
+    volatility_120d = factor_manager.get_raw_factor('volatility_120d')
+
+    # 手工计算某只股票的120日年化波动率
+    stock_code = '000001.SZ'
+    stock_returns = pct_chg[stock_code].dropna()
+
+    # 手工计算120日滚动标准差，然后年化
+    manual_vol = stock_returns.rolling(window=120, min_periods=60).std() * np.sqrt(252)
+    engine_vol = volatility_120d[stock_code]
+
+    # 对比结果
+    comparison = pd.DataFrame({
+        'manual': manual_vol,
+        'engine': engine_vol,
+        'diff': manual_vol - engine_vol
+    }).dropna()
+
+    print("年化波动率计算对比:")
+    print(comparison.tail(10))
+    print(f"最大差异: {comparison['diff'].abs().max()}")
+
+    # 检查是否一致
+    if comparison['diff'].abs().max() < 1e-10:
+        print("✓ 波动率计算逻辑正确")
+    else:
+        print("✗ 波动率计算存在差异")
+
+
+def check_look_ahead_bias(factor_manager):
+    """检查是否存在前瞻偏差"""
+    vol_factor = factor_manager.get_raw_factor('volatility_120d')
+    pct_chg = factor_manager.get_raw_factor('pct_chg')
+
+    # 检查因子计算是否用了未来数据
+    test_date = '2024-12-19'
+
+    print(f"检查 {test_date} 的波动率计算:")
+    print(f"因子值: {vol_factor.loc[test_date, '000001.SZ']}")
+
+    # 手动验证：只用历史数据计算
+    historical_returns = pct_chg.loc[:test_date, '000001.SZ'].iloc[:-1]  # 不包含当天
+    manual_vol = historical_returns.tail(120).std() * np.sqrt(252)
+
+    print(f"手动计算(仅用历史): {manual_vol}")
+    print(f"差异: {abs(vol_factor.loc[test_date, '000001.SZ'] - manual_vol)}")
+
+
+def debug_ic_calculation_detailed(factor_manager):
+    """详细调试IC计算过程"""
+    vol_factor = factor_manager.get_raw_factor('volatility_120d')
+    pct_chg = factor_manager.get_raw_factor('pct_chg')
+
+    # 选择最近的几个交易日
+    recent_dates = vol_factor.index[-5:]
+
+    print("详细IC计算检查:")
+    print("=" * 50)
+
+    for i, date in enumerate(recent_dates[:-1]):  # 最后一天没有下期收益
+        next_date = recent_dates[i + 1]
+
+        # 获取截面数据
+        factor_cross = vol_factor.loc[date].dropna()
+        return_cross = pct_chg.loc[next_date].dropna()
+
+        # 找共同股票
+        common_stocks = factor_cross.index.intersection(return_cross.index)
+
+        if len(common_stocks) >= 10:
+            factor_vals = factor_cross[common_stocks]
+            return_vals = return_cross[common_stocks]
+
+            # 计算相关系数
+            pearson_ic = factor_vals.corr(return_vals)
+            spearman_ic = factor_vals.corr(return_vals, method='spearman')
+
+            print(f"{date} -> {next_date}:")
+            print(f"  样本数: {len(common_stocks)}")
+            print(f"  Pearson IC: {pearson_ic:.4f}")
+            print(f"  Spearman IC: {spearman_ic:.4f}")
+
+            # 检查极端情况
+            if abs(spearman_ic) > 0.5:
+                print(f"  ⚠️  IC过高，检查数据:")
+                print(f"    因子值范围: {factor_vals.min():.4f} - {factor_vals.max():.4f}")
+                print(f"    收益范围: {return_vals.min():.4f} - {return_vals.max():.4f}")
+
+                # 检查是否有异常股票
+                extreme_returns = return_vals[abs(return_vals) > 0.1]
+                if len(extreme_returns) > 0:
+                    print(f"    极端收益股票: {len(extreme_returns)}只")
+                    print(f"    极端收益值: {extreme_returns.values}")
+
+
+def comprehensive_factor_test(factor_manager, factor_name='volatility_120d', test_period=120):
+    """全面的因子测试"""
+    vol_factor = factor_manager.get_raw_factor(factor_name)
+    pct_chg = factor_manager.get_raw_factor('pct_chg')
+
+    # 选择测试期间
+    test_dates = vol_factor.index[-test_period:]
+
+    ic_list = []
+    quantile_results = []
+
+    print(f"开始 {test_period} 天的全面测试...")
+
+    for i in range(len(test_dates) - 1):
+        date = test_dates[i]
+        next_date = test_dates[i + 1]
+
+        # 获取截面数据
+        factor_cross = vol_factor.loc[date].dropna()
+        return_cross = pct_chg.loc[next_date].dropna()
+        common_stocks = factor_cross.index.intersection(return_cross.index)
+
+        if len(common_stocks) >= 100:
+            factor_vals = factor_cross[common_stocks]
+            return_vals = return_cross[common_stocks]
+
+            # 计算IC
+            spearman_ic = factor_vals.corr(return_vals, method='spearman')
+            ic_list.append(spearman_ic)
+
+            # 分位数分析
+            quantiles = pd.qcut(factor_vals, 5, labels=False)
+            q_means = []
+            for q in range(5):
+                mask = quantiles == q
+                if mask.sum() > 0:
+                    q_mean = return_vals[mask].mean()
+                    q_means.append(q_mean)
+                else:
+                    q_means.append(np.nan)
+
+            # 计算单调性
+            if len(q_means) == 5 and not any(np.isnan(q_means)):
+                monotonicity = pd.Series(q_means).corr(pd.Series([0, 1, 2, 3, 4]), method='spearman')
+                quantile_results.append({
+                    'date': date,
+                    'q_means': q_means,
+                    'monotonicity': monotonicity
+                })
+
+    # 汇总结果
+    ic_series = pd.Series(ic_list)
+    print(f"\nIC统计 (n={len(ic_list)}):")
+    print(f"  均值: {ic_series.mean():.4f}")
+    print(f"  标准差: {ic_series.std():.4f}")
+    print(f"  IR: {ic_series.mean() / ic_series.std():.4f}")
+    print(f"  胜率: {(ic_series > 0).mean():.2%}")
+
+    # 单调性统计
+    mono_list = [r['monotonicity'] for r in quantile_results if not np.isnan(r['monotonicity'])]
+    if mono_list:
+        mono_series = pd.Series(mono_list)
+        print(f"\n单调性统计 (n={len(mono_list)}):")
+        print(f"  均值: {mono_series.mean():.4f}")
+        print(f"  标准差: {mono_series.std():.4f}")
+        print(f"  胜率: {(mono_series < 0).mean():.2%}")  # 负相关为胜
+
+        # 显示分布
+        print(f"  分布: <-0.5: {(mono_series < -0.5).sum()}, "
+              f"-0.5~0: {((mono_series >= -0.5) & (mono_series < 0)).sum()}, "
+              f"0~0.5: {((mono_series >= 0) & (mono_series < 0.5)).sum()}, "
+              f">0.5: {(mono_series >= 0.5).sum()}")
+
+    return ic_series, quantile_results
+
+#快速测试ic (未经过中性化
+def analyze_why_better_performance(factor_manager):
+    """分析为什么沪深300表现更好"""
+
+    # 对比沪深300 vs 全市场
+    start_date, end_date = '20241215', '20250624'
+
+    # 沪深300股票池
+    hs300_pool =factor_manager.data_manager.stock_pools_dict['fast']
+
+    # 获取因子数据
+    vol_factor = factor_manager.get_raw_factor('volatility_120d')
+    pct_chg = factor_manager.get_raw_factor('pct_chg')
+
+    # 选择测试日期
+    test_date = vol_factor.index[-10]
+    next_date = vol_factor.index[-9]
+
+    print("沪深300 vs 全市场对比:")
+    print("=" * 50)
+
+    # 全市场数据
+    factor_all = vol_factor.loc[test_date].dropna()
+    return_all = pct_chg.loc[next_date].dropna()
+    common_all = factor_all.index.intersection(return_all.index)
+
+    # 沪深300数据
+    hs300_stocks = list(hs300_pool.columns)
+    factor_hs300 = factor_all[factor_all.index.intersection(hs300_stocks)]
+    return_hs300 = return_all[return_all.index.intersection(hs300_stocks)]
+    common_hs300 = factor_hs300.index.intersection(return_hs300.index)
+
+    print(f"全市场股票数: {len(common_all)}")
+    print(f"沪深300股票数: {len(common_hs300)}")
+
+    # 计算IC对比
+    if len(common_all) > 100:
+        ic_all = factor_all[common_all].corr(return_all[common_all], method='spearman')
+        print(f"全市场Spearman IC: {ic_all:.4f}")
+
+    if len(common_hs300) > 50:
+        ic_hs300 = factor_hs300[common_hs300].corr(return_hs300[common_hs300], method='spearman')
+        print(f"沪深300 Spearman IC: {ic_hs300:.4f}")
+
+    # 分析波动率分布差异
+    print(f"\n波动率分布对比:")
+    print(f"全市场波动率: 均值={factor_all[common_all].mean():.4f}, 标准差={factor_all[common_all].std():.4f}")
+    print(f"沪深300波动率: 均值={factor_hs300[common_hs300].mean():.4f}, 标准差={factor_hs300[common_hs300].std():.4f}")
+
+    # 分析收益率分布差异
+    print(f"\n收益率分布对比:")
+    print(f"全市场收益: 均值={return_all[common_all].mean():.6f}, 标准差={return_all[common_all].std():.4f}")
+    print(f"沪深300收益: 均值={return_hs300[common_hs300].mean():.6f}, 标准差={return_hs300[common_hs300].std():.4f}")
+
+
+def simulate_your_aggregation_method(factor_manager):
+    """模拟你的时间聚合方法"""
+    vol_factor = factor_manager.get_raw_factor('volatility_120d')
+    pct_chg = factor_manager.get_raw_factor('pct_chg')
+
+    # 使用最近30天数据
+    test_dates = vol_factor.index[-30:]
+
+    all_quantile_returns = []
+
+    for i in range(len(test_dates) - 1):
+        date = test_dates[i]
+        next_date = test_dates[i + 1]
+
+        factor_cross = vol_factor.loc[date].dropna()
+        return_cross = pct_chg.loc[next_date].dropna()
+        common_stocks = factor_cross.index.intersection(return_cross.index)
+
+        if len(common_stocks) >= 100:
+            factor_vals = factor_cross[common_stocks]
+            return_vals = return_cross[common_stocks]
+
+            # 分位数分组
+            quantiles = pd.qcut(factor_vals, 5, labels=False)
+
+            # 计算每组收益
+            daily_q_returns = []
+            for q in range(5):
+                mask = quantiles == q
+                if mask.sum() > 0:
+                    q_return = return_vals[mask].mean()
+                    daily_q_returns.append(q_return)
+                else:
+                    daily_q_returns.append(np.nan)
+
+            all_quantile_returns.append(daily_q_returns)
+
+    # 时间聚合（类似你的方法）
+    if all_quantile_returns:
+        aggregated_returns = np.nanmean(all_quantile_returns, axis=0)
+
+        print("时间聚合后的分位数收益:")
+        for i, ret in enumerate(aggregated_returns):
+            print(f"Q{i + 1}: {ret:.6f}")
+
+        # 计算单调性
+        monotonicity = pd.Series(aggregated_returns).corr(pd.Series([0, 1, 2, 3, 4]), method='spearman')
+        print(f"聚合后单调性: {monotonicity:.4f}")
+
+        return monotonicity
+
+
 def main():
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
     data_manager  = DataManager(config_path='factory/config.yaml',experiments_config_path='factory/experiments.yaml')
     data_manager.prepare_basic_data()
-
     factor_manager  = FactorManager(data_manager)
-    # verify_adj_factor_timing(factor_manager)
-    # verify_adj_factor(factor_manager, ts_code_to_check='600519.SH', ex_date_to_check='2024-06-19')
+    # analyze_why_better_performance(factor_manager)
+
+    # 测试时间聚合效果
+    mono_aggregated = simulate_your_aggregation_method(factor_manager)
+    # comprehensive_factor_test(factor_manager)
+    # verify_pct_chg(factor_manager) #通过
+
+    # check_look_ahead_bias(factor_manager)#通过
+    # debug_ic_calculation_detailed(factor_manager)#表现正常 有正有负!
+    # verify_volatility_calculation(factor_manager)通过
+    # verify_adj_factor_timing(factor_manager)通过
+    # verify_adj_factor(factor_manager, ts_code_to_check='600519.SH', ex_date_to_check='2024-06-19')通过
 
     # 3. 创建示例因子
     logger.info("3. 创建目标学术因子...")

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from data.local_data_load import load_suspend_d_df
+from projects._03_factor_selection.config.config_file.debug_temp_fast_config import IS_DEBUG_TEMP
 from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional, _load_file
 from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, FILL_STRATEGY_FFILL_UNLIMITED, \
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
@@ -26,7 +27,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, permanent__day
-from quant_lib.config.logger_config import setup_logger
+from quant_lib.config.logger_config import setup_logger, log_warning
 
 warnings.filterwarnings('ignore')
 
@@ -145,6 +146,9 @@ class DataManager:
 
         # === 第一阶段：基于已加载数据构建权威股票池 ===
         logger.info("第一阶段：构建两个权威股票池（各种过滤！）")
+        if (IS_DEBUG_TEMP):
+            log_warning("debug 用于快速测试数据！ 不加载繁琐的股票池")
+            return None
         self._build_stock_pools_from_loaded_data(self.backtest_start_date, self.backtest_end_date)
         # 强行检查一下数据！完整率！ 不应该在这里检查！，太晚了， 已经被stock_pool_df 动了手脚了（低市值的会被置为nan，
 
