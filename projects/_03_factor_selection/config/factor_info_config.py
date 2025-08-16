@@ -14,7 +14,7 @@
     #
     # pandas的shift, rolling等函数在设计上就能很好地处理NaN。如果输入是NaN，它们的输出也自然是NaN。这是正确且期望的行为。
 #
-# 原则三：填充是最后一步，且服务于特定模型
+# 原则三：填充是最后一步，且服务于特定模型     这里的填充 只服务于这个阶段！！！！！
     #
     # 因子计算完成后，您会得到一个含有“合法NaN”的纯净因子矩阵。
     #
@@ -52,23 +52,27 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # 保持绝对纯净，不在最终阶段填充
     'close_raw': FILL_STRATEGY_NONE,
     'close_raw_ffill': FILL_STRATEGY_NONE,
-    'close_adj_filled': FILL_STRATEGY_NONE,
     'open_raw': FILL_STRATEGY_NONE,
-    'open_adj_filled': FILL_STRATEGY_NONE,
     'high_raw': FILL_STRATEGY_NONE,
-    'high_adj_filled': FILL_STRATEGY_NONE,
     'low_raw': FILL_STRATEGY_NONE,
-    'low_adj_filled': FILL_STRATEGY_NONE,
 
-    'close_adj': FILL_STRATEGY_NONE,
-    'open_adj': FILL_STRATEGY_NONE,
-    'high_adj': FILL_STRATEGY_NONE,
-    'low_adj': FILL_STRATEGY_NONE,
+    'close_adj': FILL_STRATEGY_NONE,#不做任何填充 ，需要填充的，该调用下面的
+    'close_adj_filled': FILL_STRATEGY_NONE,
+
+    'open_adj': FILL_STRATEGY_NONE,#不做任何填充
+    'open_adj_filled': FILL_STRATEGY_NONE,
+
+    'high_adj': FILL_STRATEGY_NONE,#不做任何填充
+    'high_adj_filled': FILL_STRATEGY_NONE,
+    'low_adj': FILL_STRATEGY_NONE,#不做任何填充
+    'low_adj_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
+
+    'vol_adj': FILL_STRATEGY_NONE,#不做任何填充
+    'vol_adj_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
 
     'amount_raw': FILL_STRATEGY_NONE,
 
     'vol_raw': FILL_STRATEGY_NONE,
-    'vol_adj': FILL_STRATEGY_NONE,
 
     'pre_close': FILL_STRATEGY_NONE,
     'pe_ttm': FILL_STRATEGY_NONE,  # pe_ttm等基础估值指标，其填充应在衍生因子层定义
@@ -79,7 +83,7 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
 
     # 交易行为类，依赖一个外部的交易状态flag来实现
     'turnover_rate': FILL_STRATEGY_CONDITIONAL_ZERO,
-    'pct_chg': FILL_STRATEGY_CONDITIONAL_ZERO,
+    'pct_chg': FILL_STRATEGY_NONE,# 状态未知 / 无法计算 很关键的数据，整个测试的基石
 
     # 静态信息类，信息永不或极少变化，使用无限制ffill是安全的
     'industry': FILL_STRATEGY_FFILL_UNLIMITED,
@@ -104,6 +108,12 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
     'net_profit_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
     'total_revenue_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
+    ##
+    # 为什么不能填充:
+    #
+    # NaN在这里是一个非常重要的风险信号，它的意思是：“在当前这个时间点，我没有足够多的近期历史数据，来给你一个关于这只股票系统性风险的、可靠的估计。”
+    #
+    # 如果你用ffill来填充，就等于在说：“既然我今天算不出它的风险，那我就假设它的风险和上一次我能算出来时（可能是一个月前）的风险一模一样。” 这是一个极其危险的假设，尤其是在股票刚刚经历了一次长期停牌重组后，其风险特征很可能已经发生了根本性的变化。#
     'pct_chg_beta': FILL_STRATEGY_NONE,
     'momentum_120d': FILL_STRATEGY_NONE,
     'reversal_21d': FILL_STRATEGY_NONE,
@@ -147,5 +157,6 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
 
     #新增
     'adj_factor':FILL_STRATEGY_NONE,
+    'market_pct_chg':FILL_STRATEGY_NONE, #市场指数涨跌 别贸然填充！
 
 }

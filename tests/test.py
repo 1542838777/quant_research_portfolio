@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import os
 import platform
@@ -137,9 +138,94 @@ def notify(title, message):
         from win10toast_persist import ToastNotifier
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=10)  # 持续10秒
+from pathlib import Path
+
+def verify_pb_lookahead_bias( DATE_TO_CHECK :str = '2024-10-08'):
+
+    """
+    一个独立的验证脚本，用于检验Tushare daily_basic接口中的pb字段
+    是否存在基于财报公告日的未来数据。
+    """
+    # ▼▼▼▼▼ 【请修改】替换成你自己的数据文件路径 ▼▼▼▼▼
+    DAILY_BASIC_PATH = Path( LOCAL_PARQUET_DATA_DIR/'daily_basic')
+    BALANCESHEET_PATH = Path( LOCAL_PARQUET_DATA_DIR/'balancesheet.parquet')
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    # --- 1. 设定我们的“观测”目标 ---
+    STOCK_TO_CHECK = '600519.SH'  # 以贵州茅台为例
+    DATE_TO_CHECK_TS = pd.to_datetime(DATE_TO_CHECK)
+
+    print(f"--- 开始对质实验：检验 {STOCK_TO_CHECK} 在 {DATE_TO_CHECK} 的PB值 ---")
+
+    # --- 2. 加载数据 ---
+    try:
+        daily_basic_df = pd.read_parquet(DAILY_BASIC_PATH)
+        balancesheet_df = pd.read_parquet(BALANCESHEET_PATH)
+        # 转换日期格式以便比较
+        daily_basic_df['trade_date'] = pd.to_datetime(daily_basic_df['trade_date'])
+        balancesheet_df['ann_date'] = pd.to_datetime(balancesheet_df['ann_date'])
+        balancesheet_df['end_date'] = pd.to_datetime(balancesheet_df['end_date'])
+    except FileNotFoundError as e:
+        print(f"✗ 错误：数据文件未找到，请检查路径。 {e}")
+        return
+
+    # --- 3. 获取【方法A：Tushare预计算】的PB值 ---
+    tushare_pb_series = daily_basic_df[
+        (daily_basic_df['ts_code'] == STOCK_TO_CHECK) &
+        (daily_basic_df['trade_date'] == DATE_TO_CHECK_TS)
+        ]
+    if tushare_pb_series.empty:
+        print(f"✗ 错误：在daily_basic中未找到 {STOCK_TO_CHECK} 在 {DATE_TO_CHECK} 的数据。")
+        return
+
+    tushare_pb = tushare_pb_series.iloc[0]['pb']
+    total_mv = tushare_pb_series.iloc[0]['total_mv']  # 单位：万元
+
+    # --- 4. 计算【方法B：我们自己的“第一性原理”】PB值 ---
+
+    # a) 找到在观测日当天，市场上已知的、最新的财报
+    known_reports = balancesheet_df[
+        (balancesheet_df['ts_code'] == STOCK_TO_CHECK) &
+        (balancesheet_df['ann_date'] <= DATE_TO_CHECK_TS)  # 核心：公告日必须早于或等于观测日
+        ].sort_values(by='end_date', ascending=False)  # 按报告期倒序，拿到最新的
+
+    if known_reports.empty:
+        print(f"✗ 错误：在balancesheet中未找到 {STOCK_TO_CHECK} 在 {DATE_TO_CHECK} 之前的任何已公布财报。")
+        return
+
+    latest_known_report = known_reports.iloc[0]
+    book_value = latest_known_report['total_hldr_eqy_exc_min_int']  # 单位：元
+    book_value_in_wanyuan = book_value / 10000.0  # 统一单位为万元
+
+    # b) 手动计算我们自己的PB
+    our_pb = total_mv / book_value_in_wanyuan if book_value_in_wanyuan > 0 else np.nan
+
+    # --- 5. “对质”结果 ---
+    print("\n" + "=" * 20 + " 【对质结果】 " + "=" * 20)
+    print(f"观测日期: {DATE_TO_CHECK}")
+    print(f"方法A (Tushare `daily_basic`): PB = {tushare_pb:.4f}")
+    print(f"方法B (我们基于公告日计算): PB = {our_pb:.4f}")
+    print(f" - 使用的总市值: {total_mv:,.2f} 万元")
+    print(
+        f" - 使用的净资产 (来自 {latest_known_report['end_date']} 财报, 公告于 {latest_known_report['ann_date']}): {book_value_in_wanyuan:,.2f} 万元")
+    print("=" * 50)
+
+    if not np.isclose(tushare_pb, our_pb):
+        print("\n✓ 【结论】存在显著差异！Tushare的PB值很可能提前使用了尚未公布的财报数据。")
+        print("   “幽灵”的藏身之处，已被确认！")
+    else:
+        print("\n✓ 【结论】两者一致。该数据点未发现未来数据。")
 
 
 if __name__ == '__main__':
+    verify_pb_lookahead_bias('2024-07-01')
+    verify_pb_lookahead_bias('2024-06-30')
+    verify_pb_lookahead_bias('2024-06-29')
+    verify_pb_lookahead_bias('2024-08-08')
+    verify_pb_lookahead_bias('2024-08-09')
+    verify_pb_lookahead_bias('2024-08-10')
+    verify_pb_lookahead_bias('2024-05-10')
+
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'daily_hfq')
     df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
     df = df[(df['trade_date'] >= pd.to_datetime('20250415')) and(df['trade_date'] <=pd.to_datetime('20250715') )]

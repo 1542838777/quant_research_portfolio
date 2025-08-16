@@ -651,61 +651,61 @@ class DataManager:
     #         high_df = self.raw_dfs['high']
     #         low_df = self.raw_dfs['low']
     #         pre_close_df = self.raw_dfs['pre_close']  # T日的pre_close就是T-1日的close#
-    def _filter_next_day_limit_up(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:
-        """
-         剔除在T日开盘即一字涨停的股票。
-        这是为了模拟真实交易约束，因为这类股票在开盘时无法买入。
-        Args:
-            stock_pool_df: 动态股票池DataFrame (T-1日决策，用于T日)
-        Returns:
-            过滤后的动态股票池DataFrame
-        """
-        logger.info("    应用次日涨停股票过滤...")
+    # def _filter_next_day_limit_up(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame:#这个实现铁不对！ 要基于复权数据进行才行 todo
+    #     """
+    #      剔除在T日开盘即一字涨停的股票。
+    #     这是为了模拟真实交易约束，因为这类股票在开盘时无法买入。
+    #     Args:
+    #         stock_pool_df: 动态股票池DataFrame (T-1日决策，用于T日)
+    #     Returns:
+    #         过滤后的动态股票池DataFrame
+    #     """
+    #     logger.info("    应用次日涨停股票过滤...")
+    #
+    #     # --- 1. 数据准备与验证 ---
+    #     required_data = ['open_raw', 'high_raw', 'low_raw', 'pre_close']
+    #     for data_key in required_data:
+    #         if data_key not in self.raw_dfs:
+    #             raise RuntimeError(f"缺少行情数据 '{data_key}'，无法过滤次日涨停股票")
+    #
+    #     open_df = self.raw_dfs['open_raw']
+    #     high_df = self.raw_dfs['high_raw']
+    #     low_df = self.raw_dfs['low_raw']
+    #     pre_close_df = self.raw_dfs['close_raw)'].shift(1)  # T日的pre_close就是T-1日的close
+    #
+    #     # --- 2. 向量化计算每日涨停价 ---
+    #     # a) 创建一个与pre_close_df形状相同的、默认值为1.1的涨跌幅限制矩阵
+    #     limit_rate = pd.DataFrame(1.1, index=pre_close_df.index, columns=pre_close_df.columns)
+    #
+    #     # b) 识别科创板(688开头)和创业板(300开头)的股票，将其涨跌幅限制设为1.2
+    #     star_market_stocks = [col for col in limit_rate.columns if str(col).startswith('688')]
+    #     chinext_stocks = [col for col in limit_rate.columns if str(col).startswith('300')]
+    #     limit_rate[star_market_stocks] = 1.2
+    #     limit_rate[chinext_stocks] = 1.2
+    #
+    #     # c) 计算理论涨停价 (这里不需要shift，因为pre_close已经是T-1日的信息)
+    #     limit_up_price = (pre_close_df * limit_rate).round(2)
+    #
+    #     # --- 3. 生成“开盘即涨停”的布尔掩码 (Mask) ---
+    #     # 条件1: T日的开盘价、最高价、最低价三者相等 (一字板的特征)
+    #     is_one_word_board = (open_df == high_df) & (open_df == low_df)
+    #
+    #     # 条件2: T日的开盘价大于或等于理论涨停价
+    #     is_at_limit_price = open_df >= limit_up_price
+    #
+    #     # 最终的掩码：两个条件同时满足
+    #     limit_up_mask = is_one_word_board & is_at_limit_price
+    #
+    #     # --- 4. 应用过滤 ---
+    #     # 将在T日开盘即涨停的股票，在T日的universe中剔除
+    #     # 这个操作是“未来”的，但它是良性的，因为它模拟的是“无法交易”的现实
+    #     # 它不需要.shift(1)，因为我们是拿T日的状态，来过滤T日的池子
+    #     stock_pool_df[limit_up_mask] = False
+    #
+    #     self.show_stock_nums_for_per_day('过滤次日涨停股后--final', stock_pool_df)
+    #     return stock_pool_df
 
-        # --- 1. 数据准备与验证 ---
-        required_data = ['open_raw', 'high_raw', 'low_raw', 'pre_close']
-        for data_key in required_data:
-            if data_key not in self.raw_dfs:
-                raise RuntimeError(f"缺少行情数据 '{data_key}'，无法过滤次日涨停股票")
-
-        open_df = self.raw_dfs['open_raw']
-        high_df = self.raw_dfs['high_raw']
-        low_df = self.raw_dfs['low_raw']
-        pre_close_df = self.raw_dfs['pre_close']  # T日的pre_close就是T-1日的close
-
-        # --- 2. 向量化计算每日涨停价 ---
-        # a) 创建一个与pre_close_df形状相同的、默认值为1.1的涨跌幅限制矩阵
-        limit_rate = pd.DataFrame(1.1, index=pre_close_df.index, columns=pre_close_df.columns)
-
-        # b) 识别科创板(688开头)和创业板(300开头)的股票，将其涨跌幅限制设为1.2
-        star_market_stocks = [col for col in limit_rate.columns if str(col).startswith('688')]
-        chinext_stocks = [col for col in limit_rate.columns if str(col).startswith('300')]
-        limit_rate[star_market_stocks] = 1.2
-        limit_rate[chinext_stocks] = 1.2
-
-        # c) 计算理论涨停价 (这里不需要shift，因为pre_close已经是T-1日的信息)
-        limit_up_price = (pre_close_df * limit_rate).round(2)
-
-        # --- 3. 生成“开盘即涨停”的布尔掩码 (Mask) ---
-        # 条件1: T日的开盘价、最高价、最低价三者相等 (一字板的特征)
-        is_one_word_board = (open_df == high_df) & (open_df == low_df)
-
-        # 条件2: T日的开盘价大于或等于理论涨停价
-        is_at_limit_price = open_df >= limit_up_price
-
-        # 最终的掩码：两个条件同时满足
-        limit_up_mask = is_one_word_board & is_at_limit_price
-
-        # --- 4. 应用过滤 ---
-        # 将在T日开盘即涨停的股票，在T日的universe中剔除
-        # 这个操作是“未来”的，但它是良性的，因为它模拟的是“无法交易”的现实
-        # 它不需要.shift(1)，因为我们是拿T日的状态，来过滤T日的池子
-        stock_pool_df[limit_up_mask] = False
-
-        self.show_stock_nums_for_per_day('过滤次日涨停股后--final', stock_pool_df)
-        return stock_pool_df
-
-    # def _filter_next_day_suspended(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame: #todo 实盘的动态股票池 可能会用到
+    # def _filter_next_day_suspended(self, stock_pool_df: pd.DataFrame) -> pd.DataFrame: #todo 实盘的动态股票池 可能会用到 这个实现铁不对！ 要基于复权数据进行才行
     #     """
     #       剔除次日停牌股票 -
     #
@@ -848,7 +848,7 @@ class DataManager:
         """获取股票池"""
         return self.stock_pool_df
 
-    def get_price_data(self) -> pd.DataFrame:
+    def get_price_data(self) -> pd.DataFrame: #慎用啊 这是没有复权的！
         """获取价格数据"""
         return self.raw_dfs['close_raw']
 

@@ -338,9 +338,9 @@ if __name__ == '__main__':
     selector = FactorSelectorV2()
 
     # 【决策】在这里做出你的战略决策，选择你的主战场
-    TARGET_UNIVERSE = '000906.SH'  # 以中证800为主战场
     TARGET_UNIVERSE = '000300.SH'  # 以中证300为主战场
     TARGET_UNIVERSE = '000852.SH'  # 以中证1000为主战场
+    TARGET_UNIVERSE = '000906.SH'  # 以中证800为主战场
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,

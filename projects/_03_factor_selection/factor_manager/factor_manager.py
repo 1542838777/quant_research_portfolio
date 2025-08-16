@@ -237,7 +237,7 @@ class FactorManager:
             # 你需要根据因子定义，约定好参数名
             if factor_name == 'beta':
                 params = {'benchmark_index': factor_request[1]}
-            if factor_name in ['close_adj_filled','open_adj_filled']:
+            if factor_name in ['close_adj_filled','open_adj_filled','high_adj_filled','low_adj_filled']:
                 params = {'limit': factor_request[1]}
             # 未来可以扩展到其他因子，如 'momentum'
             # elif factor_name == 'momentum':
