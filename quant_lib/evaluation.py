@@ -328,8 +328,9 @@ def calculate_quantile_returns(
         merged_df['rank'] = merged_df.groupby(level=0)['factor'].rank(method='first')
 
         # 因为rank列是唯一的，所以不需要担心duplicates问题。
+        # 修复分组逻辑：使用更稳健的分组方法，避免样本不足导致的分组不均匀
         merged_df['quantile'] = merged_df.groupby(level=0)['rank'].transform(
-            lambda x: pd.qcut(x, n_quantiles, labels=False) + 1
+            lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1 if len(x) >= n_quantiles else np.nan
         )
         # 5. 计算各分位数的平均收益 （时间+组别 为一个group。进行求收益率平均）
         daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])['return'].mean()

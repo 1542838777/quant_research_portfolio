@@ -594,17 +594,32 @@ class FactorProcessor:
         merged_df['final_mean'] = np.where(use_fallback, merged_df['fallback_mean'], merged_df['primary_mean'])
         merged_df['final_std'] = np.where(use_fallback, merged_df['fallback_std'], merged_df['primary_std'])
 
-        # 稳健性处理：如果最终选择的标准差还是0或NaN，则不进行标准化（返回中性值0）
+        # 修复标准化处理：更合理地处理标准差为0的情况
         merged_df['final_std'].fillna(0, inplace=True)
-        merged_df.loc[merged_df['final_std'] < 1e-9, 'final_std'] = 1.0  # 用1替换，避免除零，相当于 (factor - mean)
-        #强制换回索引
+
+        # 对于标准差为0的情况，直接设为0，不进行标准化
+        zero_std_mask = merged_df['final_std'] < 1e-6
         merged_df.set_index('ts_code', inplace=True)
 
-        # 5. 执行Z-Score标准化
-        standardized_factor = (merged_df['factor'] - merged_df['final_mean']) / merged_df['final_std']
+        # 5. 原来方案 Z-Score标准化 ：弊端 万一就是有 天生就是std =1的呢
+        # standardized_factor = (merged_df['factor'] - merged_df['final_mean']) / merged_df['final_std']
 
         # 对于标准差为0导致std被设为1的组，其(factor-mean)可能不为0，需要手动设为0
-        standardized_factor.loc[merged_df['final_std'] == 1.0] = 0
+        # standardized_factor.loc[merged_df['final_std'] == 1.0] = 0
+        # 5. 执行Z-Score标准化
+        standardized_factor = pd.Series(index=merged_df.index, dtype=float)
+
+        # 对于有效标准差的股票进行标准化
+        valid_std_mask = ~zero_std_mask
+        if valid_std_mask.any():
+            standardized_factor.loc[valid_std_mask] = (
+                    (merged_df.loc[valid_std_mask, 'factor'] - merged_df.loc[valid_std_mask, 'final_mean']) /
+                    merged_df.loc[valid_std_mask, 'final_std']
+            )
+
+        # 对于标准差为0的股票，设为0
+        if zero_std_mask.any():
+            standardized_factor.loc[zero_std_mask] = 0
 
         return standardized_factor.reindex(daily_factor_series.index)
 
