@@ -7,7 +7,7 @@ import pandas as pd
 import yaml
 
 from projects._03_factor_selection.config.config_file.local_config_file_definition import \
-    pool_for_massive_test_CSI800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
+    _massive_test_ZZ800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
     dongbei_SETTING, fast_profile
@@ -21,15 +21,14 @@ self_periods = ('20220101','20250710')
 longest_periods = ('20190328','20250710')
 
 
-massive_test_mode = {
+massive_test_ZZ800mode = {
     'mode': 'massive_test',
     'pools': {
-        **pool_for_massive_test_CSI800_profile,
-        **pool_for_massive_test_MICROSTRUCTURE_profile
+        **_massive_test_ZZ800_profile
     },
     'period': longest_periods,
     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
-    'desc': '海量测试环境-用了沪深800 和 全A 股票池 （这是最真实的环境'
+    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
 
 CSI300_most_basic_mode = {
@@ -115,21 +114,7 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-trans_pram =fast_mode
+trans_pram =massive_test_ZZ800mode
 is_debug = False
 
 
