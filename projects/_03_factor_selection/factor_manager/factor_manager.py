@@ -627,10 +627,19 @@ class FactorManager:
 
         factor_with_direction = self.get_factor_by_rule(factor_request)
 
-        # 【时间处理】区分价格数据和因子数据
+        # 【时间处理】更精确地区分价格数据和因子数据
         factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
-        price_data_keywords = ['close', 'open', 'high', 'low', 'price']
-        is_price_data = any(keyword in factor_name_str.lower() for keyword in price_data_keywords)
+
+        # 明确定义价格数据的完整列表
+        price_data_names = {
+            'close_raw', 'close_adj', 'close_adj_filled',
+            'open_raw', 'open_adj', 'open_adj_filled',
+            'high_raw', 'high_adj', 'high_adj_filled',
+            'low_raw', 'low_adj', 'low_adj_filled',
+            'pre_close', 'price'
+        }
+
+        is_price_data = factor_name_str in price_data_names
 
         if is_price_data:
             # 价格数据保持T日值，用于计算收益率

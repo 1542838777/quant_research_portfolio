@@ -405,6 +405,10 @@ class FactorAnalyzer:
         # sys.exit()  # 或者 raise Exception("Debug Point Reached")
 
         logger.info(f"开始测试因子: {target_factor_name}")
+
+        # 【新增】数据质量检查
+        self._validate_data_quality(factor_data_shifted, target_factor_name)
+
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
         trade_dates =factor_data_shifted.index
         stock_codes = factor_data_shifted.columns
@@ -442,6 +446,37 @@ class FactorAnalyzer:
 
         return factor_data_shifted, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
+    def _validate_data_quality(self, factor_data: pd.DataFrame, factor_name: str):
+        """
+        【新增】数据质量检查，防止时间错配导致的虚假单调性
+        """
+        logger.info(f"🔍 开始数据质量检查: {factor_name}")
+
+        # 1. 检查因子值分布
+        factor_flat = factor_data.stack().dropna()
+
+        # 2. 检查是否存在异常的完美分布
+        unique_ratio = factor_flat.nunique() / len(factor_flat)
+        if unique_ratio < 0.1:  # 唯一值比例过低
+            logger.warning(f"⚠️  因子 {factor_name} 唯一值比例过低: {unique_ratio:.3f}")
+
+        # 3. 检查截面标准化的痕迹
+        daily_means = factor_data.mean(axis=1).dropna()
+        daily_stds = factor_data.std(axis=1).dropna()
+
+        # 如果每日均值接近0且标准差接近1，可能是截面标准化的结果
+        mean_close_to_zero = abs(daily_means.mean()) < 0.01
+        std_close_to_one = abs(daily_stds.mean() - 1.0) < 0.1
+
+        if mean_close_to_zero and std_close_to_one:
+            logger.info(f"📊 因子 {factor_name} 检测到截面标准化特征")
+
+        # 4. 检查时间序列的连续性
+        missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
+        if missing_ratio > 0.5:
+            logger.warning(f"⚠️  因子 {factor_name} 缺失值比例过高: {missing_ratio:.3f}")
+
+        logger.info(f"✅ 数据质量检查完成: {factor_name}")
 
     def evaluation_score_dict(self,
                               ic_stats_periods_dict,
