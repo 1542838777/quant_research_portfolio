@@ -485,10 +485,9 @@ class FactorAnalyzer:
 
         # 4. 检查时间序列的连续性
         missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
-        if missing_ratio > 0.5:
+        logger.info(f"⚠️  因子 {factor_name} 缺失值比例: {missing_ratio:.3f}")
+        if missing_ratio > 0.3:
             logger.warning(f"⚠️  因子 {factor_name} 缺失值比例过高: {missing_ratio:.3f}")
-
-        logger.info(f"✅ 数据质量检查完成: {factor_name}")
 
     def _minimal_preprocessing_for_raw_factor(self, factor_df: pd.DataFrame, factor_name: str) -> pd.DataFrame:
         """
@@ -1281,8 +1280,12 @@ class FactorAnalyzer:
         # ]
         for factor_name in style_factor_list:
             #   build_df_dict... 函数可以获取因子数据并应用T-1原则
+            REQUEST = factor_name
+            if  factor_name == 'beta':
+                REQUEST = ('beta',
+                                self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name))
             df = self.factor_manager.get_prepare_aligned_factor_for_analysis(
-                factor_request=factor_name,
+                factor_request=REQUEST,
                 stock_pool_index_name=stock_pool_name,for_test=True)
 
 
@@ -1334,8 +1337,7 @@ class FactorAnalyzer:
             level=industry_level
         )
 
-        index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
-        BETA_REQUEST = ('beta',  index_code)  #
+        BETA_REQUEST = ('beta',  self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name))  #
 
         # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值
         final_neutral_dfs = {

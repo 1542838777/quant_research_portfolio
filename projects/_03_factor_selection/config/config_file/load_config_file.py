@@ -10,7 +10,7 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
     _massive_test_ZZ800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
-    dongbei_SETTING, fast_profile
+    dongbei_SETTING, fast_hs300_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 fast_periods = ('20190328','20190612')
@@ -43,7 +43,7 @@ CSI300_most_basic_mode = {
 fast_mode = {
     'mode': 'fast',
     'pools': {
-        **fast_profile
+        **fast_hs300_profile
     },
     'period':tem_p,
     'evaluation': dongbei_SETTING,  # <--- 【新增】

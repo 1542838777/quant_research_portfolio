@@ -3,7 +3,6 @@ from typing import Callable  # 引入Callable来指定函数类型的参数
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
-from loguru import logger
 
 from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
     load_balancesheet_df, load_dividend_events_long
@@ -654,9 +653,9 @@ class FactorCalculator:
         # 这会使因子信号更稳定，减少日常噪声。
         smoothed_log_amihud_df = log_amihud_df.rolling(window=20, min_periods=12).mean()
 
-        # 【核心修正 III - 新增步骤】: 截面标准化
-        # 对平滑后的因子进行Z-Score标准化
-        final_amihud_df = standardize_cross_sectionally(smoothed_log_amihud_df)
+        # 【修正】移除因子计算阶段的标准化，保持原始经济含义
+        # 标准化应该在预处理阶段统一进行，而不是在因子计算阶段
+        final_amihud_df = smoothed_log_amihud_df
 
         logger.info("    > amihud_liquidity (最终版) 计算完成。")
 
@@ -1530,20 +1529,9 @@ def _broadcast_ann_date_to_daily(
 # print("\n最终得到的 bm_ratio 因子:")
 # print(bm_factor.head())
 
-def standardize_cross_sectionally(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    对DataFrame进行截面Z-Score标准化。
-    确保每一行（一个时间点）的数据均值为0，标准差为1。
-    """
-    # df.subtract(..., axis=0) bedeutet, dass jede Spalte von df von der Series abgezogen wird,
-    # wobei die Ausrichtung entlang des Indexes (axis=0) erfolgt.
-    # df.mean(axis=1) berechnet den Mittelwert für jede Zeile (d.h. über alle Aktien zu einem Zeitpunkt)
-    mean = df.mean(axis=1)
-    std = df.std(axis=1)
-
-    # 使用 .subtract 和 .divide 并指定axis=0，可以保证按行进行广播
-    # 这是pandas中按行进行标准化操作的标准方式
-    return df.subtract(mean, axis=0).divide(std, axis=0)
+# 【已删除】standardize_cross_sectionally 函数
+# 原因：因子计算阶段不应该进行标准化，应该在预处理阶段统一处理
+# 如果需要截面标准化，请使用 FactorProcessor._standardize_robust 方法
 
 
 def calculate_rolling_beta_pure(
