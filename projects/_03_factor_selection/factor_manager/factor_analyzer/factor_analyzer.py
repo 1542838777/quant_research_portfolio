@@ -413,8 +413,7 @@ class FactorAnalyzer:
 
         logger.info(f"开始测试因子: {target_factor_name}")
 
-        # 【新增】数据质量检查
-        self._validate_data_quality(factor_data_shifted, target_factor_name)
+
 
         # target_school = self.factor_manager.get_school_code_by_factor_name(target_factor_name)
         trade_dates =factor_data_shifted.index
@@ -998,6 +997,8 @@ class FactorAnalyzer:
         factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
             = self.prepare_date_for_entity_service(
             factor_name,stock_pool_index_name)
+        # 【新增】数据质量检查
+        self._validate_data_quality(factor_data_shifted, factor_name)
         all_configs_results = {}
         if is_composite_factor:
            return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,stock_pool_index_name, test_configurations, start_date, end_date, stock_pool_index_code)
