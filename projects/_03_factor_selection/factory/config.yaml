@@ -303,7 +303,7 @@ factor_definition:
     style_category: 'return'
     description: '每日收益率（后复权）。'
     action: technical_calcu
-    cal_require_base_fields: [ 'close','adj_factor' ]
+    cal_require_base_fields: [ 'close' ]
     cal_require_base_fields_from_daily: False
   - name: 'bm_ratio'
     style_category: 'value'
@@ -389,27 +389,27 @@ factor_definition:
     style_category: 'momentum'
     description: '过去12个月剔除最近1个月的累计收益率，最经典的截面动量因子，捕捉中期价格惯性。'
     action: 'technical_calcu'
-    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: True
   - name: 'momentum_20d'
     style_category: 'momentum'
     description: '20日动量/收益率，捕捉短期趋势，常用于高频一些的策略。'
     action: 'technical_calcu'
-    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: True
   - name: 'momentum_120d'
     # 【新增】 补充一个中长期动量因子
     style_category: 'momentum'
     description: '120日（约半年）累计收益率，捕捉中期价格惯性。'
     action: 'technical_calcu'
-    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: True
   - name: 'reversal_21d'
     # 【新增】 A股市场效应非常显著的短期反转因子
     style_category: 'momentum' # 类别上仍属动量大类
     description: '21日（约1个月）收益率的负向。A股短期反转效应显著，即前期涨多的股票后期倾向于跌。'
     action: 'technical_calcu'
-    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: True
 
   # === 风险 (Risk / Volatility) ===
@@ -497,14 +497,14 @@ factor_definition:
     style_category: 'sentiment'
     description: '相对强弱指数(Relative Strength Index)。衡量股价在一段时间内的超买超卖状态，是经典的技术分析反转指标。'
     action: 'technical_calcu'
-    cal_require_base_fields: [ 'close' ]
+    cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: True
 
   - name: 'cci'
     style_category: 'sentiment'
     description: '顺势指标(Commodity Channel Index)。衡量股价是否偏离其均价的统计范围，常用于判断趋势的开启、持续或反转。'
     action: 'technical_calcu'
-    cal_require_base_fields: [ 'high', 'low', 'close' ]
+    cal_require_base_fields: [ 'high', 'low', 'close_adj' ]
     cal_require_base_fields_from_daily: True
 
   # === 复合类因子 (Composite) ===

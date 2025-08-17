@@ -126,7 +126,7 @@ class DataLoader:
                     if (col in ['list_date','delist_date']) & (
                             logical_name != 'stock_basic.parquet'):
                         continue
-                    if (col in ['close', 'open', 'high', 'low', 'pre_close', 'amount']) & (
+                    if (col in ['close', 'open', 'high', 'low', 'amount']) & (
                             logical_name != 'daily'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据 #最新修改 手动计算，不依赖不纯洁的hfq
                         continue
                         # 'turnover_rate', 'circ_mv', 'total_mv'  这些是“纯净原材料”，它们是每日更新的、不依赖于财报发布时间的随时点（Point-in-Time）数据

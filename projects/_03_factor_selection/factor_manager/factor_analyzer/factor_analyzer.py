@@ -13,7 +13,7 @@ import sys
 import warnings
 from datetime import datetime
 from functools import partial
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, List
 from typing import Dict, Tuple, Any
 
 import matplotlib.pyplot as plt
@@ -145,6 +145,39 @@ def prepare_industry_dummies(
 
     print(f"  成功生成 {len(dummy_dfs)} 个 {level} 级别的行业哑变量。")
     return dummy_dfs
+
+
+def save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,subfix):
+    # 假设 final_factor_for_test 是最终准备好进入测试的 T-1 因子
+    final_factor_for_test = factor_data_shifted
+
+    # ▼▼▼▼▼ 【终极审计代码】在这里设置“海关检查站” ▼▼▼▼▼
+    from pathlib import Path
+    import sys
+
+    # 我们只对“嫌疑人” volatility_90d 的 raw 测试进行拦截
+    if target_factor_name == 'volatility_120d' :
+
+        debug_dir = Path('./debug_snapshot')
+        debug_dir.mkdir(exist_ok=True)
+
+        # 1. 扣押“嫌疑人”：即将进入测试的 T-1 因子
+        factor_path = debug_dir / f'factor_to_test_{subfix}.parquet'
+        final_factor_for_test.to_parquet(factor_path)
+
+        # 2. 扣押“标尺”：计算未来收益率所需的 close_adj_filled
+        #    我们假设 returns_calculator 是一个 partial 函数，price_df 是它的关键字参数
+        try:
+            price_df_for_returns = returns_calculator.keywords['price_df']
+            price_path = debug_dir / 'price_for_returns.parquet'
+            price_df_for_returns.to_parquet(price_path)
+            logger.info(f"--- [终极审计] 已将测试前的数据快照保存至: {debug_dir.resolve()} ---")
+        except (AttributeError, KeyError):
+            logger.error("--- [终极审计] 无法从returns_calculator中提取price_df。")
+
+        # 3. 拦截后直接退出，我们只需要这份“证物”
+        logger.info("--- [终极审计] 已获取快照，程序将终止。---")
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 
 class FactorAnalyzer:
@@ -378,6 +411,7 @@ class FactorAnalyzer:
 
         (final_neutral_dfs, style_category
          ) = self.prepare_date_for_process_factor(target_factor_name, trade_dates,stock_codes,stock_pool_index_name)
+        # save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,'_raw')
 
 
         if need_process_factor:
@@ -397,7 +431,7 @@ class FactorAnalyzer:
         log_flow_start(
             f"因子 {target_factor_name}（{status_text}）经过预处理之后，进入 core_three_test 测试"
         )
-
+        # save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,'_prcessed')
         ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
             = self.core_three_test(
             factor_data_shifted, target_factor_name, returns_calculator, close_df,
@@ -950,7 +984,6 @@ class FactorAnalyzer:
         #                                                                      style_category, "standard",
         #                                                                      ic_s, ic_st, q_r_processed, q_st, fm_r, fm_st, turnover_st, style_corr
         #                                                                      )
-
         return all_configs_results
 
     def purify_summary_rows_contain_periods(self, comprehensive_results):
@@ -1220,7 +1253,7 @@ class FactorAnalyzer:
         )
 
         index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
-        BETA_REQUEST = ('beta',  index_code)  # 我们需要的是相对沪深300的Beta
+        BETA_REQUEST = ('beta',  index_code)  #
 
         final_neutral_dfs = {
             # 市值因子是必须的，

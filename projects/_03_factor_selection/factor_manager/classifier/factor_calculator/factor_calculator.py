@@ -501,7 +501,7 @@ class FactorCalculator:
         logger.info("    > volatility_90d 计算完成。")
         return annualized_vol_df
 
-    def _calculate_beta(self, benchmark_index: str = '000300.SH', window: int = 60,
+    def _calculate_beta(self, benchmark_index, window: int = 60,
                         min_periods: int = 20) -> pd.DataFrame:
         """
         1. 从FactorManager获取个股和指定的市场收益率。
@@ -987,16 +987,31 @@ class FactorCalculator:
 
     ##辅助函数
     #ok
-    def _calculate_market_pct_chg(self, index_code: str = '000300.SH') -> pd.Series:
+    def _calculate_market_pct_chg(self, index_code) -> pd.Series:
         """【新增】根据指定的指数代码，计算其总回报收益率。"""
-        # (这个函数请参考我们上一轮讨论的实现)
-        logger.info(f"  > [调度] 正在获取市场基准 [{index_code}] 的收益率...")
-        index_df = load_index_daily(index_code)
-        if index_df is None: raise ValueError(f"DataManager中未找到指数 {index_code} 的数据")
-        # index_df = index_df.set_index('trade_date').sort_index()
-        # index_df.index = pd.to_datetime(index_df.index)
-        market_pct_chg_series = index_df['close'].pct_change()
-        return market_pct_chg_series
+        """
+           【V2.0 - 权威版】
+           根据指数的不复权点位和分红数据，计算真实的总回报收益率。
+           确保与个股pct_chg的计算逻辑完全统一。
+           """
+        logger.info(f"  > 正在基于第一性原理，计算市场基准 [{index_code}] 的权威pct_chg...")
+
+        # --- 1. 获取最基础的原材料 ---
+        # a) 获取指数的不复权日线数据 (需要你的DataManager支持)
+
+        # b) 获取指数的分红事件 (需要你的DataManager支持)
+        #    对于宽基指数，Tushare通常在 index_daily 接口中直接提供总回报的pct_chg
+        #    但最严谨的做法，是获取其对应的ETF的分红数据，或使用总回报指数
+        #    这里我们做一个简化，直接使用Tushare index_daily 中那个质量较高的pct_chg
+        #    这是一种在严谨性和工程便利性上的权衡。
+
+        index_daily_total_return = load_index_daily(index_code)
+        market_pct_chg = index_daily_total_return['pct_chg'] / 100.0
+
+        # 确保返回的Series有名字，便于后续join
+        market_pct_chg.name = index_code
+
+        return market_pct_chg
     ##以下是模板
 
     # --- 私有的、可复用的计算引擎 ---

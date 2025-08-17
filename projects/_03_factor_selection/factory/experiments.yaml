@@ -180,11 +180,12 @@
 #  stock_pool_name: 'fast'
 
 #-----
+- factor_name: 'volatility_120d'
+  stock_pool_name: 'fast'
 
-- factor_name: 'gross_margin_ttm'
+- factor_name: 'bm_ratio'
   stock_pool_name: 'fast'
-- factor_name: 'ep_ratio'
-  stock_pool_name: 'fast'
+
 - factor_name: 'bm_ratio'
   stock_pool_name: 'fast'
 - factor_name: 'volatility_120d'

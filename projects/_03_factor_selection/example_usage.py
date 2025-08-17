@@ -151,80 +151,6 @@ def debug_ic_calculation_detailed(factor_manager):
                     print(f"    极端收益值: {extreme_returns.values}")
 
 
-def comprehensive_factor_test(factor_manager, factor_name='volatility_120d', test_period=120):
-    """全面的因子测试"""
-    vol_factor = factor_manager.get_raw_factor(factor_name)
-    pct_chg = factor_manager.get_raw_factor('pct_chg')
-
-    # 选择测试期间
-    test_dates = vol_factor.index[-test_period:]
-
-    ic_list = []
-    quantile_results = []
-
-    print(f"开始 {test_period} 天的全面测试...")
-
-    for i in range(len(test_dates) - 1):
-        date = test_dates[i]
-        next_date = test_dates[i + 1]
-
-        # 获取截面数据
-        factor_cross = vol_factor.loc[date].dropna()
-        return_cross = pct_chg.loc[next_date].dropna()
-        common_stocks = factor_cross.index.intersection(return_cross.index)
-
-        if len(common_stocks) >= 100:
-            factor_vals = factor_cross[common_stocks]
-            return_vals = return_cross[common_stocks]
-
-            # 计算IC
-            spearman_ic = factor_vals.corr(return_vals, method='spearman')
-            ic_list.append(spearman_ic)
-
-            # 分位数分析
-            quantiles = pd.qcut(factor_vals, 5, labels=False)
-            q_means = []
-            for q in range(5):
-                mask = quantiles == q
-                if mask.sum() > 0:
-                    q_mean = return_vals[mask].mean()
-                    q_means.append(q_mean)
-                else:
-                    q_means.append(np.nan)
-
-            # 计算单调性
-            if len(q_means) == 5 and not any(np.isnan(q_means)):
-                monotonicity = pd.Series(q_means).corr(pd.Series([0, 1, 2, 3, 4]), method='spearman')
-                quantile_results.append({
-                    'date': date,
-                    'q_means': q_means,
-                    'monotonicity': monotonicity
-                })
-
-    # 汇总结果
-    ic_series = pd.Series(ic_list)
-    print(f"\nIC统计 (n={len(ic_list)}):")
-    print(f"  均值: {ic_series.mean():.4f}")
-    print(f"  标准差: {ic_series.std():.4f}")
-    print(f"  IR: {ic_series.mean() / ic_series.std():.4f}")
-    print(f"  胜率: {(ic_series > 0).mean():.2%}")
-
-    # 单调性统计
-    mono_list = [r['monotonicity'] for r in quantile_results if not np.isnan(r['monotonicity'])]
-    if mono_list:
-        mono_series = pd.Series(mono_list)
-        print(f"\n单调性统计 (n={len(mono_list)}):")
-        print(f"  均值: {mono_series.mean():.4f}")
-        print(f"  标准差: {mono_series.std():.4f}")
-        print(f"  胜率: {(mono_series < 0).mean():.2%}")  # 负相关为胜
-
-        # 显示分布
-        print(f"  分布: <-0.5: {(mono_series < -0.5).sum()}, "
-              f"-0.5~0: {((mono_series >= -0.5) & (mono_series < 0)).sum()}, "
-              f"0~0.5: {((mono_series >= 0) & (mono_series < 0.5)).sum()}, "
-              f">0.5: {(mono_series >= 0.5).sum()}")
-
-    return ic_series, quantile_results
 
 #快速测试ic (未经过中性化
 def analyze_why_better_performance(factor_manager):
@@ -281,57 +207,6 @@ def analyze_why_better_performance(factor_manager):
     print(f"沪深300收益: 均值={return_hs300[common_hs300].mean():.6f}, 标准差={return_hs300[common_hs300].std():.4f}")
 
 
-def simulate_your_aggregation_method(factor_manager):
-    """模拟你的时间聚合方法"""
-    vol_factor = factor_manager.get_raw_factor('volatility_120d')
-    pct_chg = factor_manager.get_raw_factor('pct_chg')
-
-    # 使用最近30天数据
-    test_dates = vol_factor.index[-30:]
-
-    all_quantile_returns = []
-
-    for i in range(len(test_dates) - 1):
-        date = test_dates[i]
-        next_date = test_dates[i + 1]
-
-        factor_cross = vol_factor.loc[date].dropna()
-        return_cross = pct_chg.loc[next_date].dropna()
-        common_stocks = factor_cross.index.intersection(return_cross.index)
-
-        if len(common_stocks) >= 100:
-            factor_vals = factor_cross[common_stocks]
-            return_vals = return_cross[common_stocks]
-
-            # 分位数分组
-            quantiles = pd.qcut(factor_vals, 5, labels=False)
-
-            # 计算每组收益
-            daily_q_returns = []
-            for q in range(5):
-                mask = quantiles == q
-                if mask.sum() > 0:
-                    q_return = return_vals[mask].mean()
-                    daily_q_returns.append(q_return)
-                else:
-                    daily_q_returns.append(np.nan)
-
-            all_quantile_returns.append(daily_q_returns)
-
-    # 时间聚合（类似你的方法）
-    if all_quantile_returns:
-        aggregated_returns = np.nanmean(all_quantile_returns, axis=0)
-
-        print("时间聚合后的分位数收益:")
-        for i, ret in enumerate(aggregated_returns):
-            print(f"Q{i + 1}: {ret:.6f}")
-
-        # 计算单调性
-        monotonicity = pd.Series(aggregated_returns).corr(pd.Series([0, 1, 2, 3, 4]), method='spearman')
-        print(f"聚合后单调性: {monotonicity:.4f}")
-
-        return monotonicity
-
 
 def verify_data(factor_manager):
     stock_codes=factor_manager.data_manager.stock_pools_dict['fast'].columns
@@ -349,8 +224,10 @@ def main():
     data_manager  = DataManager(config_path='factory/config.yaml',experiments_config_path='factory/experiments.yaml')
     data_manager.prepare_basic_data()
     factor_manager  = FactorManager(data_manager)
+    logger.info("!!! 正在执行“硬重启”：强制清理因子缓存...")
+    factor_manager.factors_cache = {}
     # analyze_why_better_performance(factor_manager)
-    verify_data(factor_manager)
+    # verify_data(factor_manager)
 
     # 测试时间聚合效果
     # mono_aggregated = simulate_your_aggregation_method(factor_manager)
