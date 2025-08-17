@@ -13,6 +13,7 @@ import sys
 import warnings
 from datetime import datetime
 from functools import partial
+from pathlib import Path
 from typing import Callable, Any, Optional, List
 from typing import Dict, Tuple, Any
 
@@ -223,8 +224,14 @@ class FactorAnalyzer:
         self.backtest_start_date = config['backtest']['start_date']
         self.backtest_end_date = config['backtest']['end_date']
         self.backtest_period = f"{pd.to_datetime(self.backtest_start_date).strftime('%Y%m%d')} ~ {pd.to_datetime(self.backtest_end_date).strftime('%Y%m%d')}"
+
+        # 【修复】使用相对路径避免硬编码
+        project_root = Path(__file__).parent.parent.parent
+        visualization_dir = project_root / 'workspace' / 'visualizations'
+        visualization_dir.mkdir(parents=True, exist_ok=True)
+
         self.visualizationManager = VisualizationManager(
-            output_dir='D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\visualizations'
+            output_dir=str(visualization_dir)
         )
 
         # 决定延迟加载
@@ -420,7 +427,7 @@ class FactorAnalyzer:
 
 
         if need_process_factor:
-            # 1. 因子预处理
+            # 1. 完整因子预处理（去极值 + 中性化 + 标准化）
             factor_data_shifted = self.factor_processor.process_factor(
                 factor_df_shifted=factor_data_shifted,
                 target_factor_name=target_factor_name,
@@ -428,6 +435,11 @@ class FactorAnalyzer:
                 style_category=style_category,
                 pit_map=self.factor_manager.data_manager.pit_map,
                 need_standardize = False
+            )
+        else:
+            # 2. 原始因子的最小预处理（仅去极值，保持原始特征）
+            factor_data_shifted = self._minimal_preprocessing_for_raw_factor(
+                factor_data_shifted, target_factor_name
             )
 
         # 数据准备
@@ -477,6 +489,40 @@ class FactorAnalyzer:
             logger.warning(f"⚠️  因子 {factor_name} 缺失值比例过高: {missing_ratio:.3f}")
 
         logger.info(f"✅ 数据质量检查完成: {factor_name}")
+
+    def _minimal_preprocessing_for_raw_factor(self, factor_df: pd.DataFrame, factor_name: str) -> pd.DataFrame:
+        """
+        对原始因子进行最小必要的预处理
+        只去极值，不做中性化和标准化，保持因子的原始特征
+        """
+        logger.info(f"🔧 对原始因子 {factor_name} 进行最小预处理（仅去极值）")
+
+        # 1. 检查是否需要去极值
+        factor_flat = factor_df.stack().dropna()
+
+        # 计算极值比例
+        q01 = factor_flat.quantile(0.01)
+        q99 = factor_flat.quantile(0.99)
+        outlier_ratio = ((factor_flat < q01) | (factor_flat > q99)).mean()
+
+        if outlier_ratio > 0.02:  # 如果极值比例超过2%
+            logger.info(f"  📊 检测到 {outlier_ratio:.1%} 的极值，进行去极值处理")
+
+            # 2. 按日期进行去极值（保持截面内的相对关系）
+            processed_df = factor_df.copy()
+            for date in factor_df.index:
+                daily_values = factor_df.loc[date].dropna()
+                if len(daily_values) > 10:  # 确保有足够的样本
+                    # 使用1%和99%分位数进行winsorize
+                    lower_bound = daily_values.quantile(0.01)
+                    upper_bound = daily_values.quantile(0.99)
+                    processed_df.loc[date] = daily_values.clip(lower=lower_bound, upper=upper_bound)
+
+            logger.info(f"  ✅ 去极值完成，保持因子原始分布特征")
+            return processed_df
+        else:
+            logger.info(f"  ✅ 极值比例较低({outlier_ratio:.1%})，无需处理")
+            return factor_df
 
     def evaluation_score_dict(self,
                               ic_stats_periods_dict,

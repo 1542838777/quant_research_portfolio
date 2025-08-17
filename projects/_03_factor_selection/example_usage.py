@@ -9,6 +9,7 @@
 
 """
 import traceback
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -221,11 +222,33 @@ def verify_data(factor_manager):
 def main():
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
-    data_manager  = DataManager(config_path='factory/config.yaml',experiments_config_path='factory/experiments.yaml')
-    data_manager.prepare_basic_data()
-    factor_manager  = FactorManager(data_manager)
+
+    # 【修复】使用绝对路径避免工作目录问题
+    current_dir = Path(__file__).parent
+    config_path = current_dir / 'factory' / 'config.yaml'
+    experiments_path = current_dir / 'factory' / 'experiments.yaml'
+
+    # 验证配置文件存在
+    if not config_path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+    if not experiments_path.exists():
+        raise FileNotFoundError(f"实验配置文件不存在: {experiments_path}")
+
+    # 【修复】添加异常处理
+    try:
+        data_manager = DataManager(config_path=str(config_path), experiments_config_path=str(experiments_path))
+        data_manager.prepare_basic_data()
+        factor_manager = FactorManager(data_manager)
+    except FileNotFoundError as e:
+        logger.error(f"数据文件缺失: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"数据管理器初始化失败: {e}")
+        raise
+
+    # 【修复】使用正式的缓存清理方法
     logger.info("!!! 正在执行“硬重启”：强制清理因子缓存...")
-    factor_manager.factors_cache = {}
+    factor_manager.clear_cache()
     # analyze_why_better_performance(factor_manager)
     # verify_data(factor_manager)
 
@@ -247,18 +270,32 @@ def main():
     # 6. 批量测试因子
     logger.info("5. 批量测试因子...")
     #读取 实验文件，获取需要做的实验
-    experiments = data_manager.get_experiments_df()
+    experiments_df = data_manager.get_experiments_df()
+    logger.info(f"发现 {len(experiments_df)} 个实验配置")
+
     # 批量测试
     results = []
-    for index, config in experiments.iterrows():
+    for index, config in experiments_df.iterrows():
         try:
+            factor_name = config['factor_name']
+            stock_pool_name = config['stock_pool_name']
+
+            logger.info(f"开始测试因子: {factor_name} (股票池: {stock_pool_name})")
+
             # 执行测试
-            results.append({index: (factor_analyzer.test_factor_entity_service_route(
-                factor_name=config[0],
-                stock_pool_index_name=config[1],
-            ))})
+            test_result = factor_analyzer.test_factor_entity_service_route(
+                factor_name=factor_name,
+                stock_pool_index_name=stock_pool_name,
+            )
+
+            results.append({
+                'factor_name': factor_name,
+                'stock_pool_name': stock_pool_name,
+                'result': test_result
+            })
+
         except Exception as e:
-            raise ValueError(f"✗ 因子{index}测试失败: {e}") from e
+            raise ValueError(f"✗ 因子 {factor_name} 测试失败: {e}") from e
 
     log_success(f"✓ 批量测试完成，成功测试 {len(results)} 个因子")
     return results

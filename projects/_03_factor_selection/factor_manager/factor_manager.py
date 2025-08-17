@@ -197,6 +197,25 @@ class FactorManager:
         self.test_results = {}
 
         logger.info("因子管理器初始化完成")
+
+    def clear_cache(self):
+        """
+        清理因子缓存
+        提供正式的缓存管理接口，避免直接操作内部属性
+        """
+        cache_size = len(self.factors_cache)
+        self.factors_cache.clear()
+        logger.info(f"因子缓存已清理，释放了 {cache_size} 个缓存项")
+
+    def get_cache_info(self) -> Dict[str, Any]:
+        """
+        获取缓存信息
+        """
+        return {
+            'cache_size': len(self.factors_cache),
+            'cached_factors': list(self.factors_cache.keys())
+        }
+
     #带着规则！ 注意用的时候 这个方向 会不会对你有影响 注意2：没有对齐股票池噢，需要对齐 可以调用  get_prepare_aligned_factor_for_analysis
     def get_factor_by_rule(self, factor_request: Union[str, tuple]) -> pd.DataFrame:
         """

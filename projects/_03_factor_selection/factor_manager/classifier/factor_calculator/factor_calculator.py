@@ -3,6 +3,7 @@ from typing import Callable  # 引入Callable来指定函数类型的参数
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
+from loguru import logger
 
 from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
     load_balancesheet_df, load_dividend_events_long
@@ -547,13 +548,25 @@ class FactorCalculator:
         金融逻辑:
         衡量个股在过去约半年内的价格波动风险。经典的“低波动异象”认为，
         低波动率的股票长期来看反而有更高的风险调整后收益。
+
+        数据处理逻辑:
+        - 停牌期间的收益率为NaN，这是正确的，不应该填充为0
+        - rolling.std()会自动忽略NaN值进行计算
+        - min_periods=60确保至少有60个有效交易日才计算波动率
         """
         print("    > 正在计算因子: volatility_120d...")
         pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
-        # pct_chg_df.fillna(0, inplace=True)
+
+        # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
+        # 这样计算出的波动率更准确，只基于实际交易日的收益率
 
         rolling_std_df = pct_chg_df.rolling(window=120, min_periods=60).std()
         annualized_vol_df = rolling_std_df * np.sqrt(252)
+
+        # 【新增】数据质量检查
+        if annualized_vol_df.isna().all().all():
+            raise ValueError("警告：波动率计算结果全为NaN，请检查输入数据")
+
         return annualized_vol_df
 
     # === 流动性 (Liquidity) ===

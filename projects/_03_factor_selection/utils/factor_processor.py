@@ -159,45 +159,72 @@ class FactorProcessor:
     #
     #     return processed_factor
 
-    def _winsorize_mad_series(self, series: pd.Series, threshold: float,min_samples: int = 10) -> pd.Series:
+    def _winsorize_mad_series(self, series: pd.Series, threshold: float, min_samples: int = 10) -> pd.Series:
         """
-           MAD去极值
-           - 新增 min_samples 参数，用于处理小样本组
-           - 假设输入的 series 是已经 dropna() 过的
-           """
-        # 1. 检查有效样本数是否达到阈值
-        if series.size < min_samples:
-            return series  # 样本太少，不处理，直接返回原序列
+        MAD去极值
+        - 新增 min_samples 参数，用于处理小样本组
+        - 【修复】正确处理NaN值和有效样本数检查
+        """
+        # 1. 【修复】先去除NaN，然后检查有效样本数
+        valid_series = series.dropna()
+        if len(valid_series) < min_samples:
+            return series  # 有效样本太少，不处理，直接返回原序列
 
-        # 2. 计算中位数和MAD (此时series已不含NaN)
-        median = series.median()
-        mad = (series - median).abs().median()
+        # 2. 计算中位数和MAD (基于有效值)
+        median = valid_series.median()
+        mad = (valid_series - median).abs().median()
 
-        # 3. 处理零MAD问题
-        if mad == 0:
+        # 3. 处理零MAD问题（所有值都相同）
+        if mad == 0 or pd.isna(mad):
             return series
 
-        # 4. 计算边界并clip
-        const = 1.4826
+        # 4. 【新增】参数验证
+        if threshold <= 0:
+            logger.warning(f"MAD阈值无效: {threshold}，使用默认值5.0")
+            threshold = 5.0
+
+        # 5. 计算边界并clip
+        const = 1.4826  # 正态分布下的MAD调整常数
         upper_bound = median + threshold * const * mad
         lower_bound = median - threshold * const * mad
 
-        return series.clip(lower_bound, upper_bound)
+        # 6. 【修复】只对有效值进行clip，保持NaN不变
+        result = series.copy()
+        mask = ~series.isna()
+        result[mask] = series[mask].clip(lower_bound, upper_bound)
 
-    def _winsorize_quantile_series(self, series: pd.Series, quantile_range: list,min_samples: int = 10) -> pd.Series:
+        return result
+
+    def _winsorize_quantile_series(self, series: pd.Series, quantile_range: list, min_samples: int = 10) -> pd.Series:
         """
         【辅助函数】对单个Series进行分位数去极值。
+        【修复】正确处理NaN值和参数验证
         """
-        # 1. 检查有效样本数是否达到阈值
-        if series.size < min_samples:
+        # 1. 【修复】先去除NaN，然后检查有效样本数
+        valid_series = series.dropna()
+        if len(valid_series) < min_samples:
             return series
 
-        # 2. 计算分位数 (此时series已不含NaN)
-        lower_q, upper_q = min(quantile_range), max(quantile_range)
-        lower_bound = series.quantile(lower_q)
-        upper_bound = series.quantile(upper_q)
+        # 2. 【新增】参数验证
+        if not isinstance(quantile_range, (list, tuple)) or len(quantile_range) != 2:
+            logger.warning(f"分位数范围无效: {quantile_range}，使用默认值[0.01, 0.99]")
+            quantile_range = [0.01, 0.99]
 
-        return series.clip(lower_bound, upper_bound)
+        lower_q, upper_q = min(quantile_range), max(quantile_range)
+        if not (0 <= lower_q < upper_q <= 1):
+            logger.warning(f"分位数范围超出[0,1]: {quantile_range}，使用默认值[0.01, 0.99]")
+            lower_q, upper_q = 0.01, 0.99
+
+        # 3. 计算分位数 (基于有效值)
+        lower_bound = valid_series.quantile(lower_q)
+        upper_bound = valid_series.quantile(upper_q)
+
+        # 4. 【修复】只对有效值进行clip，保持NaN不变
+        result = series.copy()
+        mask = ~series.isna()
+        result[mask] = series[mask].clip(lower_bound, upper_bound)
+
+        return result
         # =========================================================================
         # 【核心修改】新的辅助函数，处理单个截面日的回溯逻辑
         # =========================================================================
