@@ -617,36 +617,52 @@ class FactorManager:
     #
     #     return technical_df_dict, technical_category_dict, technical_school_dict
     #跟股票池对齐，在股票池里面马上进行测试 处于快要到分析阶段，可以调用，因为理解确实需要对齐股票池。目前没发现什么场景不需要对其的，所i无脑掉 没错
-    def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple],stock_pool_index_name, for_test):
+    def get_raw_factor_for_analysis(self, factor_request: Union[str, tuple], for_test: bool = True):
+        """
+        【新架构】获取原始因子数据，不进行股票池对齐
+        保持因子数据的完整性，延迟到分析时再对齐
+        """
         if not for_test:
-            raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
+            raise ValueError('必须是用于测试前做的数据提取')
 
-        factor_with_direction = self.get_factor_by_rule(factor_request)#本质就是get_raw_factor 带了规则而已 目前就规则：比如*-1 or *1
+        factor_with_direction = self.get_factor_by_rule(factor_request)
 
-        # 【关键修正】区分价格数据和因子数据的处理
+        # 【时间处理】区分价格数据和因子数据
         factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
-
-        # 价格数据（用于计算收益率）不需要shift，因子数据需要shift
         price_data_keywords = ['close', 'open', 'high', 'low', 'price']
         is_price_data = any(keyword in factor_name_str.lower() for keyword in price_data_keywords)
 
         if is_price_data:
-            # 价格数据保持T日值，用于计算T日→T+N的收益率
-            factor_final = factor_with_direction
+            # 价格数据保持T日值，用于计算收益率
+            return factor_with_direction
         else:
-            # 因子数据shift到T-1，用于T日的交易决策
-            factor_final = factor_with_direction.shift(1)
+            # 因子数据shift到T-1，用于交易决策
+            return factor_with_direction.shift(1)
 
-        # 2. 获取股票池DataFrame（基于T-1信息构建）
+    def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple], stock_pool_index_name, for_test):
+        """
+        【兼容性保持】获取对齐后的因子数据
+        建议逐步迁移到 get_raw_factor_for_analysis + align_factor_with_pool
+        """
+        if not for_test:
+            raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
+
+        # 1. 获取原始因子数据
+        factor_data = self.get_raw_factor_for_analysis(factor_request, for_test)
+
+        # 2. 与股票池对齐
+        return self.align_factor_with_pool(factor_data, factor_request, stock_pool_index_name)
+
+    def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple], stock_pool_index_name: str):
+        """
+        【新方法】将因子数据与指定股票池对齐
+        """
+        factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
         pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
-
-        # 3. 执行最终的对齐和填充
-        #    因子数据：T-1因子值 + 基于T-1信息的股票池 = 时间完全对齐
-        #    价格数据：T日价格值 + 基于T-1信息的股票池 = 用于计算收益率
 
         return fill_and_align_by_stock_pool(
             factor_name=factor_name_str,
-            df=factor_final,
+            df=factor_data,
             stock_pool_df=pool,
             _existence_matrix=self.data_manager._existence_matrix
         )
