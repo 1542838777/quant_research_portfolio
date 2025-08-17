@@ -409,6 +409,7 @@ class FactorAnalyzer:
         trade_dates =factor_data_shifted.index
         stock_codes = factor_data_shifted.columns
 
+        # 生成t-1的数据 用于因子预处理
         (final_neutral_dfs, style_category
          ) = self.prepare_date_for_process_factor(target_factor_name, trade_dates,stock_codes,stock_pool_index_name)
         # save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,'_raw')
@@ -1232,7 +1233,7 @@ class FactorAnalyzer:
             correlation_results[f'corr_with_{style_name}'] = daily_corr.mean()
 
         return correlation_results
-
+    #生成t-1的数据 用于因子预处理
     def prepare_date_for_process_factor(self, target_factor_name, trade_dates,stock_codes,stock_pool_name):
         # 目标因子基础信息准备
         style_category = self.factor_manager.get_style_category(target_factor_name)
@@ -1255,12 +1256,12 @@ class FactorAnalyzer:
         index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
         BETA_REQUEST = ('beta',  index_code)  #
 
+        # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值
         final_neutral_dfs = {
-            # 市值因子是必须的，
-            'log_circ_mv': self.factor_manager.get_prepare_aligned_factor_for_analysis('log_circ_mv',stock_pool_name,True).shift(1),
-
-            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis(BETA_REQUEST,stock_pool_name,True).shift(1),  # 去beta中性化需要用到
-            # 使用字典解包，将动态生成的行业哑变量添加进来
+            # 获取已经shift并对齐的T-1中性化因子
+            'log_circ_mv': self.factor_manager.get_prepare_aligned_factor_for_analysis('log_circ_mv',stock_pool_name,True),
+            'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis(BETA_REQUEST,stock_pool_name,True),
+            # 行业哑变量需要单独shift
             **{key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()}
         }
         return  final_neutral_dfs, style_category
@@ -1271,24 +1272,31 @@ class FactorAnalyzer:
         #
         # 。close_df计算出的未来收益率矩阵，是后续所有统计检验（IC、分层回测）的**Y变量**。
         # 如果使用带NaN的close_adj，会导致计算出的forward_returns矩阵也充满NaN，从而大幅减少我们统计检验的样本量，降低结果的置信度。#
+        # 价格数据：get_prepare_aligned_factor_for_analysis会自动识别并保持T日值
         close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(('close_adj_filled', 10), stock_pool_index_name, True)
-             # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        #用于回归测试的，所以必须shift 提前处理好
-        circ_mv_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv', stock_pool_index_name, True).shift(1)
+
+        # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值
+        circ_mv_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv', stock_pool_index_name, True)
         style_factor_dfs = self.get_style_factors(stock_pool_index_name)
-        style_factor_dfs =  {key: df.shift(1) for key, df in style_factor_dfs.items()}
         return close_df, circ_mv_df_shifted, style_factor_dfs
 
     def prepare_date_for_entity_service(self, factor_name,stock_pool_index_name):
-        factor_data_shifted = None
+        """
+        【中央指挥部方案】准备T日的所有原材料，然后统一进行时间移位
+        """
+        # --- 步骤一：准备【所有】需要的【T日】原材料 ---
+
         is_composite_factor = self.factor_manager.data_manager.is_composite_factor(factor_name)
 
         if is_composite_factor:
             factorComposite =  FactorSynthesizer(self.factor_manager,self,self.factor_processor)
-            factor_data_shifted  = factorComposite.do_composite(factor_name=factor_name,stock_pool_index_name=stock_pool_index_name) #shift1之后的
+            # 注意：合成因子内部已经处理了shift逻辑，这里直接使用
+            factor_data_t1 = factorComposite.do_composite(factor_name=factor_name,stock_pool_index_name=stock_pool_index_name)
         else:
-            factor_data = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
-            factor_data_shifted = factor_data.shift(1) #强行跟上面shift11 保持一致
+            # a) 获取已经对齐的T-1因子值 (get_prepare...函数现在内部已经shift并对齐)
+            factor_data_t1 = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
+
+            logger.info(f"★★★【时间对齐确认】因子 {factor_name} 已获取T-1值并与股票池对齐 ★★★")
 
         start_date = self.factor_manager.data_manager.config['backtest']['start_date']
         end_date = self.factor_manager.data_manager.config['backtest']['end_date']
@@ -1297,10 +1305,12 @@ class FactorAnalyzer:
             self.factor_manager.data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,
                                                                                                  'style_category').iloc[
                 0]
-        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('close_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)   # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
+
+        # b) 获取T日的价格数据（用于收益率计算，get_prepare_aligned_factor_for_analysis会自动识别并保持T日值）
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('close_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)
         open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('open_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)
 
-        # 准备收益率计算器
+        # 准备收益率计算器（价格数据不需要shift，因为我们要计算T日的收益率）
         c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)
         o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
         # 定义测试配置
@@ -1310,7 +1320,7 @@ class FactorAnalyzer:
         }
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
         returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
-        return factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category_type, returns_calculator_result
+        return factor_data_t1,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category_type, returns_calculator_result
 
     def test_factor_entity_service_for_composite_factor(self, factor_name, factor_data_shifted, stock_pool_index_name,test_configurations, start_date, end_date, stock_pool_index_code):
         all_configs_results = {}

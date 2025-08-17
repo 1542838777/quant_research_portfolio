@@ -27,6 +27,11 @@ class FactorSynthesizer:
             'sp_ratio',
         }
 
+    # get_prepare_aligned_factor_for_analysis 现在智能处理：
+    # - 价格数据（close/open/high/low）返回T日值（用于计算收益率）
+    # - 因子数据返回T-1值（用于交易决策）
+    # 因此这里直接使用返回值即可，无需额外处理
+    #注意啊 ，目前有个大坑，如果你用 close open high low 当成 种子因子来参与的话get_prepare_aligned_factor_for_analysis 里面有个判断 ，会返回t日的数据！ 解决：我们这里兼容一下 ，跟着判断 补充好t-1的逻辑即可！
     def process_sub_factor(self, factor_name: str,stock_pool_index_name:str) -> pd.DataFrame:
         """
         【核心】对单个细分因子，
@@ -38,13 +43,15 @@ class FactorSynthesizer:
         """
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
-        factor_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
-        trade_dates = factor_df.index
-        stock_codes = factor_df.columns
+        # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值（除了价格数据）
+        factor_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
+        trade_dates = factor_df_shifted.index
+        stock_codes = factor_df_shifted.columns
 
+        #生成t-1的数据 用于因子预处理
         (final_neutral_dfs, style_category
          ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, trade_dates, stock_codes, stock_pool_index_name)
-        factor_df_shifted = factor_df.shift(1)# 因为下面的预处理 用的t-1的信息！，只能委屈自己 也用t-1
+        # 【删除】不再需要额外的shift(1)，因为get_prepare_aligned_factor_for_analysis已经处理了
         processed_df = self.processor.process_factor(
             factor_df_shifted=factor_df_shifted,
             target_factor_name=factor_name,

@@ -190,29 +190,6 @@ class DataManager:
     # microstructure_profile = stock_pool_profiles['microstructure_profile']#用于 微观（量价/情绪）因子
     # product_universe =self.product_universe (microstructure_profile,trading_dates)
 
-    # 对于 是先 fill 还是先where 的考量 ：还是别先ffill了：极端例子：停牌了99天的，100。 若先ffill那么 这100天都是借来的数据！  如果先where。那么直接统统nan了。在ffill也是nan，更具真实
-    # ok
-    def _align_many_raw_dfs_by_stock_pool_and_fill(self, raw_dfs: Dict[str, pd.DataFrame],
-                                                   stock_pool_df: pd.DataFrame,
-                                                   ) -> Dict[str, pd.DataFrame]:
-        if stock_pool_df is None or stock_pool_df.empty:
-            raise ValueError("stock_pool_param 必须传入且不能为空的 DataFrame")
-        """
-        第二阶段：使用权威股票池对齐和清洗所有数据
-
-        Args:
-            raw_dfs: 原始数据字典
-            stock_pool_df: 权威股票池DataFrame
-        Returns:
-            对齐和清洗后的数据字典
-        """
-        aligned_data = {}
-        for factor_name, raw_df in raw_dfs.items():
-            # 1. 确定当前因子需要哪个股票池！
-            aligned_df = fill_and_align_by_stock_pool(factor_name=factor_name, df=raw_df,
-                                                      stock_pool_df=stock_pool_df)
-            aligned_data[factor_name] = aligned_df
-        return aligned_data
 
     def _get_required_fields(self) -> List[str]:
         """获取所有需要的字段"""
@@ -589,7 +566,11 @@ class DataManager:
             raise RuntimeError("缺少换手率数据，无法进行流动性过滤")
 
         turnover_df = self.raw_dfs['turnover_rate']
-        turnover_df = turnover_df.shift(1)  # 取用的t日数据，必须前移
+        # 【关键】股票池构建的时间逻辑：
+        # - 我们要构建T日的股票池（决定T日哪些股票可交易）
+        # - 但判断依据必须基于T-1及更早的信息
+        # - 因此这里需要shift(1)来获取T-1的换手率用于T日的决策
+        turnover_df = turnover_df.shift(1)
 
         # 1. 【确定样本】只保留 stock_pool_df 中为 True 的换手率数据
         # “只对当前股票池计算”
@@ -625,6 +606,7 @@ class DataManager:
             raise RuntimeError("缺少市值数据，无法进行市值过滤")
 
         mv_df = self.raw_dfs['circ_mv']
+        # 【关键】同样的逻辑：用T-1的市值数据来决定T日的股票池
         mv_df = mv_df.shift(1)
 
         # 1. 【屏蔽】只保留在当前股票池(stock_pool_df)中的股票市值，其余设为NaN
@@ -907,8 +889,10 @@ class DataManager:
         if 'close_raw' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
-        # 定基准！
-        final_stock_pool_df = self.raw_dfs['close_raw'].notna()  # close 有值的地方 ：true
+        # 【关键修正】定基准！T日的股票池应该基于T-1日的信息
+        # T日下单时，我们只能知道T-1日收盘后的股票状态
+        close_raw_shifted = self.raw_dfs['close_raw'].shift(1)  # 使用T-1日的收盘价信息
+        final_stock_pool_df = close_raw_shifted.notna()  # T-1日有收盘价的股票，T日可以考虑交易
         final_stock_pool_df = final_stock_pool_df.reindex(self.trading_dates)
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
         # 【第一道防线：存在性过滤 - 必须置于最前！】
@@ -1044,7 +1028,7 @@ def fill_self(factor_name, df, _existence_matrix):
 
     raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
 
-
+# 对于 是先 fill 还是先where 的考量 ：还是别先ffill了：极端例子：停牌了99天的，100。 若先ffill那么 这100天都是借来的数据！  如果先where。那么直接统统nan了。在ffill也是nan，更具真实
 # 跟stock——pool对齐，这是铁的防线！，因为市场环境：1000只股票。可能就50能交易的，。我们不跟可交易股票池进行对齐，那么后面的ic、分组，用上无相关的950的股票池做计算，那有什么用，所以一定要对齐过滤！！
 def fill_and_align_by_stock_pool(factor_name=None, df=None,
                                  stock_pool_df: pd.DataFrame = None,
