@@ -1247,14 +1247,33 @@ class FactorCalculator:
         pre_close_raw = close_raw.shift(1)
         dividend_events = load_dividend_events_long()
 
-        cash_div_matrix = dividend_events.pivot_table(index='ex_date', columns='ts_code',
-                                                      values='cash_div_tax').reindex(close_raw.index).fillna(0)
-        stk_div_matrix = dividend_events.pivot_table(index='ex_date', columns='ts_code', values='stk_div').reindex(
+        # 【调试输出】
+        logger.info(f"  > close_raw形状: {close_raw.shape}")
+
+        # 构建分红矩阵（未对齐）
+        cash_div_matrix_raw = dividend_events.pivot_table(index='ex_date', columns='ts_code',
+                                                          values='cash_div_tax').reindex(close_raw.index).fillna(0)
+        stk_div_matrix_raw = dividend_events.pivot_table(index='ex_date', columns='ts_code', values='stk_div').reindex(
             close_raw.index).fillna(0)
+
+        logger.info(f"  > 分红矩阵原始形状: cash_div={cash_div_matrix_raw.shape}, stk_div={stk_div_matrix_raw.shape}")
+
+        # 【关键修复】强制对齐到close_raw的列，避免形状不匹配
+        target_stocks = close_raw.columns
+        cash_div_matrix = cash_div_matrix_raw.reindex(columns=target_stocks, fill_value=0)
+        stk_div_matrix = stk_div_matrix_raw.reindex(columns=target_stocks, fill_value=0)
+
+        logger.info(f"  > 对齐后形状: cash_div={cash_div_matrix.shape}, stk_div={stk_div_matrix.shape}")
+
+        # 验证形状一致性
+        assert close_raw.shape == cash_div_matrix.shape == stk_div_matrix.shape, \
+            f"形状不匹配: close_raw={close_raw.shape}, cash_div={cash_div_matrix.shape}, stk_div={stk_div_matrix.shape}"
 
         # 核心公式: (今日收盘价 * (1 + 送股比例) + 每股派息) / 昨日收盘价 - 1
         numerator = close_raw * (1 + stk_div_matrix) + cash_div_matrix
         true_pct_chg = numerator / pre_close_raw - 1
+
+        logger.info(f"  > 最终结果形状: {true_pct_chg.shape}")
 
         final_pct_chg = true_pct_chg.where(close_raw.notna())
         return final_pct_chg
