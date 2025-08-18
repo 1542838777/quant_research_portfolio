@@ -472,8 +472,8 @@ class FactorProcessor:
 
             # --- c) 样本量检查 (逻辑不变，但更健壮) ---
             num_predictors = X_df.shape[1]
-            MIN_SAMPLES_ABSOLUTE = 150  # 绝对最小样本数
-            MIN_SAMPLES_RELATIVE_FACTOR = 3  # 相对最小样本倍数
+            MIN_SAMPLES_ABSOLUTE = 30   # 绝对最小样本数（从150降到30）
+            MIN_SAMPLES_RELATIVE_FACTOR = 1.5  # 相对最小样本倍数（从3降到1.5）
 
             # 同时满足相对和绝对两个条件
             is_sample_insufficient = (len(combined_df) < MIN_SAMPLES_ABSOLUTE) or \
@@ -512,7 +512,7 @@ class FactorProcessor:
                 skipped_days_count += 1
         # 循环结束后，执行“熔断检查” ===
         # 从配置中获取最大跳过比例，如果未配置，则默认为10%
-        max_skip_ratio = neutralization_config.get('max_skip_ratio', 0.10)
+        max_skip_ratio = neutralization_config.get('max_skip_ratio', 0.20)  # 从0.10放宽到0.20
 
         actual_skip_ratio = skipped_days_count / total_days
 

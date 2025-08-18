@@ -86,7 +86,7 @@ def calculate_ic(
         forward_periods: List[int] = [1, 5, 20],
         method: str = 'spearman',
         returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame] = calcu_forward_returns_close_close,
-        min_stocks: int = 10
+        min_stocks: int = 20
 ) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
     """
     【生产级版本】向量化计算因子IC值及相关统计指标。
@@ -124,6 +124,7 @@ def calculate_ic(
         # --- 2. 计算有效配对数并筛选日期 ---
         paired_valid_counts = (factor_aligned.notna() & returns_aligned.notna()).sum(axis=1)
         valid_dates = paired_valid_counts[paired_valid_counts >= min_stocks].index
+        logger.info(f"calculate_ic 满足最小股票数量要求的日期数量:{len(valid_dates)}")
 
         if valid_dates.empty:
             raise ValueError(f"没有任何日期满足最小股票数量({min_stocks})要求，无法计算IC。")
@@ -346,9 +347,11 @@ def calculate_quantile_returns(
         merged_df['rank'] = merged_df.groupby(level=0)['factor'].rank(method='first')
 
         # 因为rank列是唯一的，所以不需要担心duplicates问题。
-        # 修复分组逻辑：使用更稳健的分组方法，避免样本不足导致的分组不均匀
+        # 【改进】更严格的分组样本要求，确保统计稳定性
+        MIN_SAMPLES_FOR_GROUPING = max(50, n_quantiles * 10)  # 总样本至少50个，或每组至少10个
         merged_df['quantile'] = merged_df.groupby(level=0)['rank'].transform(
-            lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1 if len(x) >= n_quantiles else np.nan
+            lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1
+            if len(x) >= MIN_SAMPLES_FOR_GROUPING else np.nan
         )
         # 5. 计算各分位数的平均收益 （时间+组别 为一个group。进行求收益率平均）
         daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])['return'].mean()

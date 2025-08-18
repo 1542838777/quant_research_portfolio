@@ -271,7 +271,7 @@ class FactorAnalyzer:
         ic_series_periods_dict, stats_periods_dict = calculate_ic(factor_data, close_df,
                                                                   forward_periods=self.test_common_periods,
                                                                   method='spearman',
-                                                                  returns_calculator=returns_calculator, min_stocks=10)
+                                                                  returns_calculator=returns_calculator, min_stocks=30)
 
         return ic_series_periods_dict, stats_periods_dict
     def test_quantile_backtest(self,
