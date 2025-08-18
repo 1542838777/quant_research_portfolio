@@ -1239,7 +1239,6 @@ class FactorCalculator:
     #ok
     def _calculate_pct_chg(self) -> pd.DataFrame:
         """
-           【V14.0 - 终极权威版】
            根据“总回报恒等式”，直接从不复权价和分红送股事件计算真实总回报率。
            """
         logger.info("  > 正在基于第一性原理，计算【最终版】权威 pct_chg...")

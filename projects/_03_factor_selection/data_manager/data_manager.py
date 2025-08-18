@@ -282,12 +282,22 @@ class DataManager:
         delist_dates_filled = delist_date_panel.fillna(future_date)
 
         #    如果 当前日期 < 退市日期, 则为True
+        delist_not_null_count = delist_date_panel.notna().sum().sum()
+        if delist_not_null_count == 0:
+            raise  ValueError('严重数据异常：delist_date_df全为空')
+        # 原有逻辑：使用退市日期
         before_delisting_mask = (dates_matrix < delist_dates_filled)
 
         # 4. 合并掩码，得到最终的“存在性”矩阵
         #    一个股票当天“存在”，当且仅当它“已上市” AND “未退市”
         existence_matrix = after_listing_mask & before_delisting_mask
 
+        # === 🔍 调试输出 - 统计存在性矩阵 ===
+        total_cells = existence_matrix.size
+        true_cells = existence_matrix.sum().sum()
+        false_cells = total_cells - true_cells
+        print(f"存在性矩阵统计: 总单元格={total_cells}, True={true_cells}, False={false_cells}")
+        print(f"False比例: {false_cells/total_cells:.1%} (这些是'不存在'的股票-日期对)")
         logger.info("    股票“存在性”矩阵构建完毕。")
         # 缓存起来，因为它在一次回测中是不变的
         self._existence_matrix = existence_matrix
@@ -854,12 +864,17 @@ class DataManager:
 
         print(f"数据摘要已保存到: {summary_path}")
 
-    def show_stock_nums_for_per_day(self, describe_text, index_stock_pool_df):
-        daily_count = index_stock_pool_df.sum(axis=1)
+    def show_stock_nums_for_per_day(self, describe_text, pool_df):
+        daily_count = pool_df.sum(axis=1)
         logger.info(f"    {describe_text}动态股票池:")
         logger.info(f"      平均每日股票数: {daily_count.mean():.0f}")
         logger.info(f"      最少每日股票数: {daily_count.min():.0f}")
         logger.info(f"      最多每日股票数: {daily_count.max():.0f}")
+        # 统计过滤后的覆盖度
+        total_cells = pool_df.size
+        valid_cells = (pool_df!=False).sum().sum()
+        coverage = valid_cells / total_cells if total_cells > 0 else 0
+        logger.info(f"  {describe_text}: 后形状 {pool_df.shape}, 为true状态股票覆盖度 {coverage:.1%}")
 
     # 输入学术因子，返回计算所必须的base 因子
     def get_base_require_factors(self, target_factors_name: list[str]) -> set:
@@ -889,16 +904,17 @@ class DataManager:
         if 'close_raw' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
-        # 【关键修正】定基准！T日的股票池应该基于T-1日的信息
-        # T日下单时，我们只能知道T-1日收盘后的股票状态
+        # 【简化修复】价格数据的连续性已经隐含处理了退市股票，无需重复过滤
+
+        # 基于T-1日的价格数据构建股票池
         close_raw_shifted = self.raw_dfs['close_raw'].shift(1)  # 使用T-1日的收盘价信息
         final_stock_pool_df = close_raw_shifted.notna()  # T-1日有收盘价的股票，T日可以考虑交易
         final_stock_pool_df = final_stock_pool_df.reindex(self.trading_dates)
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)
-        # 【第一道防线：存在性过滤 - 必须置于最前！】
-        # -------------------------------------------------------------------------
-        if stock_pool_config_profile.get('remove_not_existence', True):
-            final_stock_pool_df = self._filter_by_existence(final_stock_pool_df)
+
+        # 注释掉存在性过滤，因为它与价格过滤重复
+        # if stock_pool_config_profile.get('remove_not_existence', True):
+        #     final_stock_pool_df = self._filter_by_existence(final_stock_pool_df)
         # 第二步：各种过滤！
         # --基础过滤 指数成分股过滤（如果启用）
         index_config = stock_pool_config_profile.get('index_filter', {})
@@ -908,6 +924,7 @@ class DataManager:
             # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
             valid_stocks = final_stock_pool_df.columns[final_stock_pool_df.any(axis=0)]
             final_stock_pool_df = final_stock_pool_df[valid_stocks]
+            logger.info(f"根据指数裁剪股票池：为true状态股票覆盖度:{(final_stock_pool_df!=False).sum().sum()/final_stock_pool_df.size}")
         # 其他各种指标过滤条件
         universe_filters = stock_pool_config_profile['filters']
 
@@ -1039,11 +1056,15 @@ def fill_and_align_by_stock_pool(factor_name=None, df=None,
 
     df = fill_self(factor_name, df, _existence_matrix)
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
+    return my_align(df,stock_pool_df)
+
+
+def my_align(df,stock_pool_df):
+    # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
     aligned_df = df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
     aligned_df = aligned_df.sort_index()
     aligned_df = aligned_df.where(stock_pool_df)
     return aligned_df
-
 
 def create_data_manager(config_path: str) -> DataManager:
     """

@@ -457,37 +457,6 @@ class FactorAnalyzer:
 
         return factor_data_shifted, ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict
 
-    def _validate_data_quality(self, factor_data: pd.DataFrame, factor_name: str):
-        """
-        【新增】数据质量检查，防止时间错配导致的虚假单调性
-        """
-        logger.info(f"🔍 开始数据质量检查: {factor_name}")
-
-        # 1. 检查因子值分布
-        factor_flat = factor_data.stack().dropna()
-
-        # 2. 检查是否存在异常的完美分布
-        unique_ratio = factor_flat.nunique() / len(factor_flat)
-        if unique_ratio < 0.1:  # 唯一值比例过低
-            logger.warning(f"⚠️  因子 {factor_name} 唯一值比例过低: {unique_ratio:.3f}")
-
-        # 3. 检查截面标准化的痕迹
-        daily_means = factor_data.mean(axis=1).dropna()
-        daily_stds = factor_data.std(axis=1).dropna()
-
-        # 如果每日均值接近0且标准差接近1，可能是截面标准化的结果
-        mean_close_to_zero = abs(daily_means.mean()) < 0.01
-        std_close_to_one = abs(daily_stds.mean() - 1.0) < 0.1
-
-        if mean_close_to_zero and std_close_to_one:
-            logger.info(f"📊 因子 {factor_name} 检测到截面标准化特征")
-
-        # 4. 检查时间序列的连续性
-        missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
-        logger.info(f"⚠️  因子 {factor_name} 缺失值比例: {missing_ratio:.3f}")
-        if missing_ratio > 0.3:
-            logger.warning(f"⚠️  因子 {factor_name} 缺失值比例过高: {missing_ratio:.3f}")
-
     def _minimal_preprocessing_for_raw_factor(self, factor_df: pd.DataFrame, factor_name: str) -> pd.DataFrame:
         """
         对原始因子进行最小必要的预处理
@@ -997,8 +966,7 @@ class FactorAnalyzer:
         factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
             = self.prepare_date_for_entity_service(
             factor_name,stock_pool_index_name)
-        # 【新增】数据质量检查
-        self._validate_data_quality(factor_data_shifted, factor_name)
+
         all_configs_results = {}
         if is_composite_factor:
            return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,stock_pool_index_name, test_configurations, start_date, end_date, stock_pool_index_code)
@@ -1281,12 +1249,9 @@ class FactorAnalyzer:
         # ]
         for factor_name in style_factor_list:
             #   build_df_dict... 函数可以获取因子数据并应用T-1原则
-            REQUEST = factor_name
-            if  factor_name == 'beta':
-                REQUEST = ('beta',
-                                self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name))
+
             df = self.factor_manager.get_prepare_aligned_factor_for_analysis(
-                factor_request=REQUEST,
+                factor_request=factor_name,
                 stock_pool_index_name=stock_pool_name,for_test=True)
 
 

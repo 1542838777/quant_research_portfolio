@@ -256,7 +256,25 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
         if not any(np.isnan(q) for q in quantile_means):
             # 计算组别序号 [1, 2, 3, 4, 5] 与 组别平均收益 的等级相关性
             # spearmanr 返回 (相关系数, p值)，我们只需要相关系数
-            monotonicity_spearman, _ = spearmanr(np.arange(1, n_quantiles + 1), quantile_means)
+            monotonicity_spearman, p_value = spearmanr(np.arange(1, n_quantiles + 1), quantile_means)
+
+            # 【新增】异常单调性检测
+            if abs(monotonicity_spearman) > 0.95:
+                logger.warning(f"⚠️  检测到异常单调性: {monotonicity_spearman:.6f} (p={p_value:.6f})")
+                logger.warning(f"   分位数收益: {[f'{q:.4f}' for q in quantile_means]}")
+
+                # 检查是否所有收益都相同
+                unique_returns = len(set(quantile_means))
+                if unique_returns <= 2:
+                    logger.error(f"❌ 严重问题：只有{unique_returns}个不同的分位数收益！")
+
+                # 检查收益差异是否过大
+                return_range = max(quantile_means) - min(quantile_means)
+                if return_range > 0.05:  # 5%
+                    logger.warning(f"   收益差异过大: {return_range:.4f}")
+
+            elif abs(monotonicity_spearman) > 0.8:
+                logger.info(f"✅ 强单调性: {monotonicity_spearman:.3f} - 这可能是高质量因子的表现")
 
         # --- 存储结果 ---
         # 'period' 变量用于创建描述性的键，如 '5d'

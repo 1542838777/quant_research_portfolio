@@ -12,6 +12,8 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 import numpy as np
 import pandas as pd
 from numpyencoder import NumpyEncoder
+from tushare.stock.trading import factor_adj
+from websockets.legacy.handshake import check_request
 
 from quant_lib import setup_logger
 from quant_lib.config.logger_config import log_warning
@@ -21,7 +23,7 @@ from .classifier.factor_classifier import FactorClassifier
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .storage.single_storage import add_single_factor_test_result
 from ..config.factor_direction_config import FACTOR_DIRECTIONS
-from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool
+from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool, my_align
 
 logger = setup_logger(__name__)
 
@@ -71,7 +73,6 @@ class FactorResultsManager:
         turnover_stats_periods_dict = results.get("turnover_stats_periods_dict", {})
         style_correlation_dict = results.get("style_correlation_dict", {})
 
-
         summary_stats = {
             'ic_analysis_raw': ic_stats_periods_dict_raw,
             'ic_analysis_processed': ic_stats_periods_dict_processed,
@@ -79,7 +80,7 @@ class FactorResultsManager:
             'quantile_backtest_processed': quantile_stats_periods_dict_processed,
             'fama_macbeth': fm_stat_results_periods_dict,
             'turnover': turnover_stats_periods_dict,
-            'style_correlation':style_correlation_dict
+            'style_correlation': style_correlation_dict
         }
         with open(output_path / 'summary_stats.json', 'w') as f:
             # 使用自定义的Encoder来处理numpy类型
@@ -91,13 +92,12 @@ class FactorResultsManager:
         ic_series_periods_dict_raw = results.get("ic_series_periods_dict_raw", {})
         ic_series_periods_dict_processed = results.get("ic_series_periods_dict_processed", {})
 
-
-
         q_daily_returns_df_raw = results.get("q_daily_returns_df_raw", pd.DataFrame())
         q_daily_returns_df_processed = results.get("q_daily_returns_df_processed", pd.DataFrame())
 
         quantile_returns_series_periods_dict_raw = results.get("quantile_returns_series_periods_dict_raw", {})
-        quantile_returns_series_periods_dict_processed = results.get("quantile_returns_series_periods_dict_processed", {})
+        quantile_returns_series_periods_dict_processed = results.get("quantile_returns_series_periods_dict_processed",
+                                                                     {})
         fm_returns_series_periods_dict = results.get("fm_returns_series_periods_dict", {})
 
         # b) 保存时间序列数据 (以 Parquet 格式，更高效)
@@ -115,8 +115,6 @@ class FactorResultsManager:
 
         q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
         q_daily_returns_df_processed.to_parquet(output_path / f'q_daily_returns_df_processed.parquet')
-
-
 
         for period, series in fm_returns_series_periods_dict.items():
             df = series.to_frame(name='fm_returns_series')
@@ -216,7 +214,7 @@ class FactorManager:
             'cached_factors': list(self.factors_cache.keys())
         }
 
-    #带着规则！ 注意用的时候 这个方向 会不会对你有影响 注意2：没有对齐股票池噢，需要对齐 可以调用  get_prepare_aligned_factor_for_analysis
+    # 带着规则！ 注意用的时候 这个方向 会不会对你有影响 注意2：没有对齐股票池噢，需要对齐 可以调用  get_prepare_aligned_factor_for_analysis
     def get_factor_by_rule(self, factor_request: Union[str, tuple]) -> pd.DataFrame:
         """
         【核心】获取因子的统一接口。
@@ -236,7 +234,8 @@ class FactorManager:
             final_factor_df = raw_factor_df
 
         return final_factor_df.copy()
-    #最原始的因子获取，未经过任何处理，目前被使用于 因子计算
+
+    # 最原始的因子获取，未经过任何处理，目前被使用于 因子计算
     def get_raw_factor(self, factor_request: Union[str, tuple]) -> pd.DataFrame:
         """
         【V3.0 - 参数化版】获取纯净的原始因子。
@@ -257,7 +256,8 @@ class FactorManager:
             # 你需要根据因子定义，约定好参数名
             if factor_name == 'beta':
                 params = {'benchmark_index': factor_request[1]}
-            elif factor_name in ['close_adj_filled','open_adj_filled','high_adj_filled','low_adj_filled']: #元凶 这里 if 导致 命中下一个else
+            elif factor_name in ['close_adj_filled', 'open_adj_filled', 'high_adj_filled',
+                                 'low_adj_filled']:  # 元凶 这里 if 导致 命中下一个else
                 params = {'limit': factor_request[1]}
             # 未来可以扩展到其他因子，如 'momentum'
             # elif factor_name == 'momentum':
@@ -274,7 +274,8 @@ class FactorManager:
             # 【关键】将解析出的参数传递给计算函数
             raw_factor_df = method_to_call(**params)
         elif factor_name in self.data_manager.raw_dfs and not params:
-            log_warning("高度重视---这是宽表 index为全交易日，所以：停牌期的行全是nan，请思考这突如其来的nan对下面公式计算是否有影响，有影响是否ffill解决，参考adj_close计算")
+            log_warning(
+                f"{factor_name}高度重视---这是宽表 index为全交易日，所以：停牌期的行全是nan，请思考这突如其来的nan对下面公式计算是否有影响，有影响是否ffill解决，参考adj_close计算")
             raw_factor_df = self.data_manager.raw_dfs[factor_name]
         else:
             raise ValueError(f"获取因子失败：{factor_request}")
@@ -635,7 +636,7 @@ class FactorManager:
     #         technical_school_dict.update({target_factor_name: school})
     #
     #     return technical_df_dict, technical_category_dict, technical_school_dict
-    #跟股票池对齐，在股票池里面马上进行测试 处于快要到分析阶段，可以调用，因为理解确实需要对齐股票池。目前没发现什么场景不需要对其的，所i无脑掉 没错
+    # 跟股票池对齐，在股票池里面马上进行测试 处于快要到分析阶段，可以调用，因为理解确实需要对齐股票池。目前没发现什么场景不需要对其的，所i无脑掉 没错
     def get_raw_factor_for_analysis(self, factor_request: Union[str, tuple], for_test: bool = True):
         """
         【新架构】获取原始因子数据，不进行股票池对齐
@@ -667,27 +668,64 @@ class FactorManager:
             # 因子数据shift到T-1，用于交易决策
             return factor_with_direction.shift(1)
 
-    def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple], stock_pool_index_name, for_test):
+    def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple], stock_pool_index_name,
+                                                for_test):
         """
         【兼容性保持】获取对齐后的因子数据
         建议逐步迁移到 get_raw_factor_for_analysis + align_factor_with_pool
         """
         if not for_test:
             raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
-
+        REQUEST = self.check_and_return_right_request(factor_request, stock_pool_index_name)
         # 1. 获取原始因子数据
-        factor_data = self.get_raw_factor_for_analysis(factor_request, for_test)
+        factor_data = self.get_raw_factor_for_analysis(REQUEST, for_test)
+        #
+        self._validate_data_quality(factor_data, REQUEST, des='原生数据')
 
         # 2. 与股票池对齐
-        return self.align_factor_with_pool(factor_data, factor_request, stock_pool_index_name)
+        ret = self.align_factor_with_pool(factor_data, factor_request, stock_pool_index_name)
+        self._validate_data_quality(factor_data, REQUEST, des='原生数据最终完全对齐股票池之后')
+        return ret
 
-    def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple], stock_pool_index_name: str):
+    def _validate_data_quality(self, factor_data: pd.DataFrame, factor_name: str, des):
+        """
+        【新增】数据质量检查，防止时间错配导致的虚假单调性
+        """
+        # logger.info(f"🔍 开始数据质量检查: {factor_name}--{des}")
+
+        # 1. 检查因子值分布
+        factor_flat = factor_data.stack().dropna()
+
+        # 2. 检查是否存在异常的完美分布
+        unique_ratio = factor_flat.nunique() / len(factor_flat)
+        if unique_ratio < 0.1:  # 唯一值比例过低
+            logger.warning(f"⚠️  因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
+
+        # 3. 检查截面标准化的痕迹
+        daily_means = factor_data.mean(axis=1).dropna()
+        daily_stds = factor_data.std(axis=1).dropna()
+
+        # 如果每日均值接近0且标准差接近1，可能是截面标准化的结果
+        mean_close_to_zero = abs(daily_means.mean()) < 0.01
+        std_close_to_one = abs(daily_stds.mean() - 1.0) < 0.1
+
+        if mean_close_to_zero and std_close_to_one:
+            logger.info(f"📊 因子 {factor_name} 检测到截面标准化特征")
+
+        # 4. 检查时间序列的连续性
+        missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
+        log_warning(f"因子-{factor_name}-{des}- 缺失值比例: {missing_ratio:.3f}")
+
+    def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple],
+                               stock_pool_index_name: str):
         """
         【新方法】将因子数据与指定股票池对齐
         """
         factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
         pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
 
+        temp_date = my_align(factor_data, self.get_raw_factor('close_raw').notna())
+        self._validate_data_quality(temp_date,factor_name_str,'原生数据 仅对齐未停牌的close_df ')
         return fill_and_align_by_stock_pool(
             factor_name=factor_name_str,
             df=factor_data,
@@ -734,7 +772,6 @@ class FactorManager:
             'sector': 'fundamentals',
             'event': 'fundamentals',
 
-
             # === 趋势派 (trend) ===
             # 反映了价格在历史序列中的行为模式和风险特征。
             'momentum': 'trend',
@@ -764,9 +801,9 @@ class FactorManager:
     #         return INDEX_CODES['ALL_A']
     #     return index_filter_config['index_code']
 
-
     def get_style_category(self, factor_name):
         return self.data_manager.get_factor_definition(factor_name)['style_category'].iloc[0]
+
     #
     #
     # def generate_structuer_base_on_diff_pool_name(self, factor_name_data: Union[str, list]):
@@ -910,6 +947,27 @@ class FactorManager:
     #         self.data_manager.config['backtest']['end_date'],
     #         master_stock_list
     #     )
+    # 鉴于部分因子，必须传递参数！ 这里强加判断！ ，没有传递参数，我们尽可能补充上
+    def check_and_return_right_request(self, factor_request, stock_pool_index_name):
+        must_need_params = ['beta']
+        REQUEST = None
+        # 如果是str类型， 判断是否必要加传参数 不加的话 直接return，
+        # 如果是元组类型。   判断是否已有参数 有 直接return
+        # 上面条件都不满足 统一补上
+        if isinstance(factor_request, str):
+            if factor_request not in must_need_params:
+                return factor_request
+
+
+        elif isinstance(factor_request, tuple):
+            if len(factor_request) > 1:  # 证明传入参数了
+                return factor_request
+
+        # 统一补参数
+        if factor_request == 'beta':
+            REQUEST = ('beta',
+                       self.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name))
+        return REQUEST
 
 
 if __name__ == '__main__':

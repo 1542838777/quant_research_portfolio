@@ -46,8 +46,6 @@ class DataLoader:
             use_cache: 是否使用内存缓存
         """
         self.data_path = data_path or LOCAL_PARQUET_DATA_DIR
-        self.use_cache = use_cache
-        self.cache = {}
 
         if not self.data_path.exists():
             os.makedirs(self.data_path, exist_ok=True)
@@ -160,12 +158,6 @@ class DataLoader:
         """
         logger.info(f"开始加载数据: 字段={fields}, 时间范围={buffer_start_date}至{end_date}")
 
-        # 检查缓存
-        cache_key = f"{','.join(sorted(fields))}-{buffer_start_date}-{end_date}"
-        if self.use_cache and cache_key in self.cache:
-            logger.info("从缓存加载数据")
-            return self.cache[cache_key]
-
         # 确定需要加载的数据集和字段
         file_to_fields = defaultdict(list)
         base_fields = ['ts_code', 'trade_date']
@@ -263,48 +255,67 @@ class DataLoader:
         # 对齐数据
         aligned_data = self._align_dataframes(raw_wide_dfs)
 
-        # 更新缓存
-        if self.use_cache:
-            self.cache[cache_key] = aligned_data
-        # 小tip 为了警惕自己 不用错数据，对一些容易混错的name进行rename。
         aligned_data = self.rename_for_safe(aligned_data)
         return aligned_data
 
     def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:  # ok
         """
-        对齐多个DataFrame
-        
+        【修复版】对齐多个DataFrame - 以主要数据表为基准，避免过度数据丢失
+
         Args:
             dfs: 字段到DataFrame的映射字典
-            
+
         Returns:
             对齐后的DataFrame字典
         """
         if not dfs:
             raise ValueError("居然所传需对齐数据是空的")
 
-        # 找出共同的日期和股票
-        common_dates = None
-        common_stocks = None
+        # 【修复】选择基准表 - 优先选择价格数据，其次选择覆盖度最高的表
+        primary_candidates = [ 'close', 'open', 'low']#primary_candidates = ['close_raw', 'close', 'open_raw', 'open', 'high_raw', 'low_raw']
+        base_key = None
+        base_df = None
 
-        for name, df in dfs.items():
-            if common_dates is None:
-                common_dates = df.index
-                common_stocks = df.columns
-            else:
-                common_dates = common_dates.intersection(df.index)
-                common_stocks = common_stocks.intersection(df.columns)
+        # 首先尝试找到价格数据作为基准
+        for candidate in primary_candidates:
+            if candidate in dfs:
+                base_key = candidate
+                base_df = dfs[candidate]
+                break
 
-        # 对齐数据（不进行填充，保持原始缺失值）
+        # 如果没有价格数据，选择覆盖度最高的表
+        if base_df is None:
+            max_coverage = 0
+            for name, df in dfs.items():
+                coverage = df.notna().sum().sum()
+                if coverage > max_coverage:
+                    max_coverage = coverage
+                    base_key = name
+                    base_df = df
+
+        logger.info(f"📊 数据对齐: 使用 '{base_key}' 作为基准表 {base_df.shape}")
+
+        target_dates = base_df.index
+        target_stocks = base_df.columns
+
+        # 【修复】以基准表为准对齐所有数据，而不是取交集
         aligned_data = {}
         for name, df in dfs.items():
-            aligned_df = df.reindex(index=common_dates, columns=common_stocks)
+            aligned_df = df.reindex(index=target_dates, columns=target_stocks)
             aligned_df = aligned_df.sort_index()
+
+            # 统计对齐后的覆盖度
+            total_cells = aligned_df.size
+            valid_cells = aligned_df.notna().sum().sum()
+            coverage = valid_cells / total_cells if total_cells > 0 else 0
+            logger.info(f"  {name}: 对齐后形状 {aligned_df.shape}, 覆盖度 {coverage:.1%}")
+
             # 不进行填充，保持原始缺失值，上层DataManager配合universe决定填充策略
             aligned_data[name] = aligned_df
 
-        logger.info(f"数据对齐完成: {len(common_dates)}个交易日, {len(common_stocks)}只股票")
+        logger.info(f"数据对齐完成: {len(target_dates)}个交易日, {len(target_stocks)}只股票")
         return aligned_data
+
 
     def clear_cache(self):
         """清除缓存"""

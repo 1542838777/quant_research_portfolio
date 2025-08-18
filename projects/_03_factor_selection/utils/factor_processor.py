@@ -92,6 +92,17 @@ class FactorProcessor:
         #
         # print("=" * 80 + "\n")
         log_flow_start(f"{target_factor_name}因子进入因子预处理...")
+
+        # 【调试输出】添加详细的数据统计
+        print(f"\n=== 🔍 调试 {target_factor_name} 预处理流程 ===")
+        print(f"输入数据形状: {factor_df_shifted.shape}")
+        print(f"输入非空值数量: {factor_df_shifted.notna().sum().sum()}")
+        print(f"输入非空值比例: {factor_df_shifted.notna().sum().sum() / (factor_df_shifted.shape[0] * factor_df_shifted.shape[1]):.3f}")
+
+        # 检查每日股票数量
+        daily_counts = factor_df_shifted.notna().sum(axis=1)
+        print(f"每日有效股票数统计: 均值={daily_counts.mean():.1f}, 最小={daily_counts.min()}, 最大={daily_counts.max()}")
+
         processed_target_factor_df = factor_df_shifted.copy()
 
         if pit_map is None:
@@ -622,11 +633,11 @@ class FactorProcessor:
         merged_df['final_std'] = np.where(use_fallback, merged_df['fallback_std'], merged_df['primary_std'])
 
         # 修复标准化处理：更合理地处理标准差为0的情况
-        merged_df['final_std'].fillna(0, inplace=True)
-
-        # 对于标准差为0的情况，直接设为0，不进行标准化
-        zero_std_mask = merged_df['final_std'] < 1e-6
+        merged_df['final_std'] = merged_df['final_std'].fillna(0)
         merged_df.set_index('ts_code', inplace=True)
+
+        # 对于标准差为0的情况，直接设为0，不进行标准化（在设置索引后创建mask）
+        zero_std_mask = merged_df['final_std'] < 1e-6
 
         # 5. 原来方案 Z-Score标准化 ：弊端 万一就是有 天生就是std =1的呢
         # standardized_factor = (merged_df['factor'] - merged_df['final_mean']) / merged_df['final_std']
@@ -639,10 +650,14 @@ class FactorProcessor:
         # 对于有效标准差的股票进行标准化
         valid_std_mask = ~zero_std_mask
         if valid_std_mask.any():
-            standardized_factor.loc[valid_std_mask] = (
-                    (merged_df.loc[valid_std_mask, 'factor'] - merged_df.loc[valid_std_mask, 'final_mean']) /
-                    merged_df.loc[valid_std_mask, 'final_std']
-            )
+            # 确保索引操作返回Series而不是scalar
+            factor_values = merged_df.loc[valid_std_mask, 'factor']
+            mean_values = merged_df.loc[valid_std_mask, 'final_mean']
+            std_values = merged_df.loc[valid_std_mask, 'final_std']
+
+            # 计算标准化值
+            standardized_values = (factor_values - mean_values) / std_values
+            standardized_factor.loc[valid_std_mask] = standardized_values
 
         # 对于标准差为0的股票，设为0
         if zero_std_mask.any():

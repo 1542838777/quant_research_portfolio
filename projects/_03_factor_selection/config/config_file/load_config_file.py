@@ -9,17 +9,19 @@ import yaml
 from projects._03_factor_selection.config.config_file.local_config_file_definition import \
     _massive_test_ZZ800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
-    CSI1000_more_filter_profile, CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
-    dongbei_SETTING, fast_hs300_profile
+    CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
+    dongbei_SETTING, fast_hs300_profile, ZZ1000_more_filter_profile, ZZ1000_no_filter_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
-fast_periods = ('20190328','20190612')
-tem_p = ('20231215','20250624')
-# fast_periods = ('20190328','20190612')
-fast_periods_2 = ('20240301','20250710')
-self_periods = ('20220101','20250710')
-longest_periods = ('20190328','20250710')
 
+fast_periods = ('20190328', '20190612')
+tem_p = ('20231215', '20250624')
+period_东北研报 = ('20220101','20250710')
+fast_periods_2 = ('20240301', '20250710')
+period_six_year = ('20190710', '20250710')
+period_two_year = ('20230601', '20250710')
+period_half_year = ('20250101', '20250710')
+longest_periods = ('20190328', '20250710')
 
 massive_test_ZZ800mode = {
     'mode': 'massive_test',
@@ -36,7 +38,7 @@ CSI300_most_basic_mode = {
     'pools': {
         **CSI300_most_basic_profile
     },
-    'period':self_periods,
+    'period': period_东北研报,
     'desc': '但是只用了沪深300股票池（）只有普适性过滤，除此之外，没有任何过滤'
 }
 
@@ -45,18 +47,17 @@ fast_mode = {
     'pools': {
         **fast_hs300_profile
     },
-    'period':tem_p,
+    'period': tem_p,
     'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
-
 
 fast_mode_2 = {
     'mode': 'fast',
     'pools': {
         **CSI300_none_FFF_most_basic_profile
     },
-    'period':tem_p,
+    'period': tem_p,
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
 
@@ -66,7 +67,7 @@ fast_mode_two_pools = {
         **CSI300_none_FFF_most_basic_profile,
         **CSI500_none_FFF_most_basic_profile
     },
-    'period':tem_p,
+    'period': tem_p,
     'desc': 'fast_mode_two_pools ，没有任何过滤 fast'
 }
 
@@ -75,7 +76,7 @@ CSI300_more_filter_mode = {
     'pools': {
         **CSI300_more_filter_profile
     },
-    'period':self_periods,
+    'period': period_东北研报,
     'desc': '但是只用了沪深300股票池（）普适性过滤+流动率过滤'
 }
 
@@ -84,41 +85,46 @@ CSI300_more_filter_mode = {
     'pools': {
         **CSI300_more_filter_profile
     },
-    'period':self_periods,
+    'period': period_东北研报,
     'desc': '但是只用了沪深300股票池（）普适性过滤+流动率过滤'
 }
 
 东北证券_CSI1000_more_filter_mode = {
     'mode': '东北证券_CSI1000_more_filter_mode',
     'pools': {
-        **CSI1000_more_filter_profile
+        **ZZ1000_more_filter_profile
     },
-    'period':self_periods,
+    'period': period_东北研报,
     'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': 'CSI1000（）普适性过滤+流动率过滤'
+}
+
+东北证券_ZZ1000_no_filter_mode = {
+    'mode': '东北证券_CSI1000_more_filter_mode',
+    'pools': {
+        **ZZ1000_no_filter_profile
+    },
+    'period': period_six_year,
+    'evaluation': dongbei_SETTING,  # <--- 【新增】
+    'desc': '东北证券_ZZ1000_no_filter_mode'
 }
 CSI300_FFF_most_basic_mode = {
     'mode': 'CSI300_FFF_most_basic_mode',
     'pools': {
         **CSI300_none_FFF_most_basic_profile
     },
-    'period':self_periods,
+    'period': period_东北研报,
     'desc': '但是只用了沪深300股票池（）无普适性过滤，，没有任何过滤'
 }
+
 
 def check_backtest_periods(start_date, end_date):
     if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):
         raise ValueError("回测时间太短")
 
 
-
-
-
-trans_pram =massive_test_ZZ800mode
+trans_pram = 东北证券_ZZ1000_no_filter_mode
 is_debug = False
-
-
-
 
 
 def _load_file(config_path: str) -> Dict[str, Any]:
@@ -133,10 +139,11 @@ def _load_file(config_path: str) -> Dict[str, Any]:
         raise RuntimeError("未找到config文件")
     return config
 
+
 def _load_local_config_functional(config_path: str) -> Dict[str, Any]:
     # confirm_production_mode(massive_test_mode)
     """加载配置文件"""
-    config  = _load_file(config_path)
+    config = _load_file(config_path)
 
     # 根据debug模式 修改内容
     # 在这里，根据总开关来决定你的过滤器配置
@@ -145,13 +152,13 @@ def _load_local_config_functional(config_path: str) -> Dict[str, Any]:
     start, end = trans_pram['period']
 
     dynamic_config = generate_dynamic_config(
-        start_date=  start,end_date=end,
-        pool_profiles =  trans_pram['pools']  # 直接取用 dict
+        start_date=start, end_date=end,
+        pool_profiles=trans_pram['pools']  # 直接取用 dict
     )
     config['backtest']['start_date'] = start
-    config['backtest']['end_date'] =end
+    config['backtest']['end_date'] = end
 
-    config['stock_pool_profiles']=dynamic_config['stock_pool_profiles']
+    config['stock_pool_profiles'] = dynamic_config['stock_pool_profiles']
 
     # --- 【核心新增】动态更新 evaluation 配置 ---
     if 'evaluation' in trans_pram:
@@ -160,6 +167,7 @@ def _load_local_config_functional(config_path: str) -> Dict[str, Any]:
         # 比如模式中只定义了 forward_periods，则只会更新它，n_groups等会保持YAML中的默认值
         config['evaluation'].update(trans_pram['evaluation'])
     return config
+
 
 def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子测试"):
     """
@@ -192,5 +200,8 @@ def confirm_production_mode(is_debug_mode: bool, task_name: str = "批量因子�
             print("\\n操作已由用户终止。")
             exit()  # 直接退出程序
         print("继续执行调试模式任务...")
+
+
 if __name__ == '__main__':
-    config = _load_local_config_functional('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\factory\\config.yaml')
+    config = _load_local_config_functional(
+        'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\factory\\config.yaml')
