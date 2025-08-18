@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import platform
 
-from data.local_data_load import load_income_df
+from data.local_data_load import load_income_df, load_dividend_events_long
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, parquet_file_names, every_day_parquet_file_names, \
     need_fix
 from quant_lib.config.logger_config import setup_logger
@@ -216,15 +216,98 @@ def verify_pb_lookahead_bias( DATE_TO_CHECK :str = '2024-10-08'):
     else:
         print("\n✓ 【结论】两者一致。该数据点未发现未来数据。")
 
+def find_dividend_and_bonus_stocks():
+    dividend_events = load_dividend_events_long()
+    """
+    找出某天同时有送股 + 分红的股票，方便你人工对比验证
+    dividend_events: 必须包含 ['ex_date', 'ts_code', 'cash_div_tax', 'stk_div']
+    """
+    # 过滤掉同时现金分红>0 且 送股>0 的情况
+    df = dividend_events[
+        (dividend_events['cash_div_tax'] > 0) &
+        (dividend_events['stk_div'] > 0)
+    ].copy()
+
+    # 排序方便看
+    df = df.sort_values(['ex_date', 'ts_code'])
+
+    return df[['ex_date', 'ts_code', 'cash_div_tax', 'stk_div']]
+
+def look_daily_pct_chg():
+    daily_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily')
+    daily_df['trade_date'] = pd.to_datetime(daily_df['trade_date'])
+    pct_chg_wide = pd.pivot_table(
+        daily_df,
+        index='trade_date',  # 行索引：交易日
+        columns='ts_code',  # 列索引：股票代码
+        values='pct_chg'  # 值：收盘价
+    )
+    _0721 = pct_chg_wide['300721.SZ']
+    print(1)
+def check_dividend_and_bonus(stock_code, target_date: str):
+    """
+    在 target_date 找出同时有现金分红+送股的股票，
+    并计算手工总回报率，用来和 debug 状态的 pct_chg 对比
+    """
+    # 确保时间是 datetime
+    # 读取长表
+    daily_long_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily')
+    # 转换成长 -> 宽
+    close_df = pd.pivot_table(
+        daily_long_df,
+        index='trade_date',  # 行索引：交易日
+        columns='ts_code',  # 列索引：股票代码
+        values='close'  # 值：收盘价
+    )
+
+    # 确保日期是 datetime 并排序
+    close_df.index = pd.to_datetime(close_df.index)
+    close_df = close_df.sort_index()
+
+    dividend_events = load_dividend_events_long()
+
+    # 取目标日事件
+    dividend_event_ann_ex = dividend_events[dividend_events['ann_date'] > dividend_events['ex_date']]
+    dividend_event_ann_eq_ex = dividend_events[dividend_events['ann_date'] == dividend_events['ex_date']]
+    dividend_event_ann_less_ex = dividend_events[dividend_events['ann_date'] < dividend_events['ex_date']]
+    df = dividend_events[
+        (dividend_events['ex_date'] == pd.to_datetime(target_date)) &
+        # (dividend_events['ts_code'] == stock_code) &
+        (dividend_events['cash_div_tax'] > 0) &
+        (dividend_events['stk_div'] > 0)
+        ].copy()
+
+    results = []
+    for _, row in df.iterrows():
+        ts_code = row['ts_code']
+        cash_div = row['cash_div_tax']
+        stk_div = row['stk_div']
+
+        # 前一日价格 & 当日价格
+        pre_close = close_df.loc[pd.to_datetime(target_date) - pd.Timedelta(days=1), ts_code]
+        close_today = close_df.loc[pd.to_datetime(target_date), ts_code]
+
+        # 公式: (今日收盘 * (1+送股比例) + 派息) / 昨日收盘 - 1
+        pct_chg_manual = (close_today * (1 + stk_div) + cash_div) / pre_close - 1
+
+        results.append({
+            "date": target_date,
+            "ts_code": ts_code,
+            "pre_close": pre_close,
+            "close_today": close_today,
+            "cash_div": cash_div,
+            "stk_div": stk_div,
+            "pct_chg_manual": pct_chg_manual
+        })
+
+    return pd.DataFrame(results)
+
+
 
 if __name__ == '__main__':
-    verify_pb_lookahead_bias('2024-07-01')
-    verify_pb_lookahead_bias('2024-06-30')
-    verify_pb_lookahead_bias('2024-06-29')
-    verify_pb_lookahead_bias('2024-08-08')
-    verify_pb_lookahead_bias('2024-08-09')
-    verify_pb_lookahead_bias('2024-08-10')
-    verify_pb_lookahead_bias('2024-05-10')
+    look_daily_pct_chg()
+    df_check = check_dividend_and_bonus( '300971.SZ','2023-03-22')
+    print(df_check)
 
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'daily_hfq')
     df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')

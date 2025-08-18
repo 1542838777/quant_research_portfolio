@@ -20,6 +20,7 @@ period_东北研报 = ('20220101','20250710')
 fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')
 period_two_year = ('20230601', '20250710')
+period_one_year = ('20240601', '20250710')
 period_half_year = ('20250101', '20250710')
 longest_periods = ('20190328', '20250710')
 
@@ -104,7 +105,7 @@ CSI300_more_filter_mode = {
     'pools': {
         **ZZ1000_no_filter_profile
     },
-    'period': period_six_year,
+    'period': period_one_year,
     'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': '东北证券_ZZ1000_no_filter_mode'
 }

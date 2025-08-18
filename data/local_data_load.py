@@ -61,6 +61,7 @@ def load_balancesheet_df():
 def load_dividend_events_long():
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'dividend.parquet')
     df['ex_date'] = pd.to_datetime(df['ex_date'])
+    df['ann_date'] = pd.to_datetime(df['ann_date'])
     df = df.drop_duplicates()
     df.sort_values(by=['ex_date'], inplace=True)
     # df =  df[df['ts_code'].isin(['000001.SZ','000002.SZ','000003.SZ'])]

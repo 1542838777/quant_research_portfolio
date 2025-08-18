@@ -281,7 +281,7 @@ class FactorManager:
             raise ValueError(f"获取因子失败：{factor_request}")
 
         # 4. 存入缓存并返回
-        self.factors_cache[factor_request] = raw_factor_df
+        # self.factors_cache[factor_request] = raw_factor_df #排查问题中 先关了 todo
         return raw_factor_df
 
     def register_factor(self,

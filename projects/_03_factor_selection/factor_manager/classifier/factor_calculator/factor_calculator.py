@@ -1236,7 +1236,7 @@ class FactorCalculator:
 
         return single_q_long_df
 
-    #ok
+    #ok 对的上
     def _calculate_pct_chg(self) -> pd.DataFrame:
         """
            根据“总回报恒等式”，直接从不复权价和分红送股事件计算真实总回报率。
