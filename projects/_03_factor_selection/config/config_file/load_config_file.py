@@ -146,7 +146,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = ALL_FFF_most_basic_mode
+trans_pram = massive_test_ZZ800mode
 is_debug = False
 
 

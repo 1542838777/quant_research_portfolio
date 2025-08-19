@@ -315,7 +315,7 @@ class DataManager:
                 "self._tradeable_matrix_by_suspend_resume 之前以及被初始化，无需再次加载（这是全量数据，一次加载即可")
             return self._tradeable_matrix_by_suspend_resume
         # 数据准备 获取所有股票和交易日期
-        ts_codes = list(set(self.get_stock_codes().columns))
+        ts_codes = list(set(self.get_stock_codes()))
         trading_dates = self.data_loader.get_trading_dates(start_date=self.backtest_start_date,
                                                            end_date=self.backtest_end_date)
 
@@ -386,7 +386,7 @@ class DataManager:
             return self.st_matrix
         logger.info("正在根据名称变更历史，重建每日‘已知风险’状态st矩阵...")
         # 数据准备 获取所有股票和交易日期
-        ts_codes = list(set(self.get_stock_codes().columns))
+        ts_codes = list(set(self.get_stock_codes()))
         trading_dates = self.data_loader.get_trading_dates(start_date=self.backtest_start_date,
                                                            end_date=self.backtest_end_date)
         namechange_df = self.get_namechange_data()
@@ -822,8 +822,8 @@ class DataManager:
         return self.stock_pool_df
 
     def get_stock_codes(self) -> pd.DataFrame:
-        return self.raw_dfs[0].columns.tolist()
-
+        first_df = next(iter(self.raw_dfs.values()))  # 取第一个 DataFrame
+        return first_df.columns.tolist()
     def get_namechange_data(self) -> pd.DataFrame:
         """获取name改变的数据"""
         namechange_path = LOCAL_PARQUET_DATA_DIR / 'namechange.parquet'
