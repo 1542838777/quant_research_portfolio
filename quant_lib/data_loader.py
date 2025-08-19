@@ -283,8 +283,8 @@ class DataLoader:
             raise ValueError("居然所传需对齐数据是空的")
 
         # 【修复】选择基准表 - 优先选择价格数据，其次选择覆盖度最高的表
-        primary_candidates = ['close', 'open',
-                              'low']  # primary_candidates = ['close_raw', 'close', 'open_raw', 'open', 'high_raw', 'low_raw']
+        primary_candidates = ['close_hfq', 'open_hfq',
+                              'low_hfq']  # primary_candidates = ['close_raw', 'close', 'open_raw', 'open', 'high_raw', 'low_raw']
         base_key = None
         base_df = None
 
