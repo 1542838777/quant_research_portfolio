@@ -79,14 +79,7 @@ python run_backtest.py --config config.yaml
 ```python
 from quant_lib.factor_factory import BaseFactor
 
-class MyCustomFactor(BaseFactor):
-    def __init__(self, name='my_factor'):
-        super().__init__(name)
-    
-    def compute(self, data_dict):
-        # 自定义因子计算逻辑
-        return factor_df
-```
+ 
 
 ### 加载数据
 

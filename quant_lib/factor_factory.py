@@ -114,47 +114,7 @@ class MomentumFactor(BaseFactor):
         """
         super().__init__(name)
         self.lookback_periods = lookback_periods
-    
-    def compute(self, data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """
-        计算动量因子
-        
-        Args:
-            data_dict: 包含 'close' 数据的字典
-            
-        Returns:
-            动量因子值
-        """
-        logger.info("计算动量因子...")
-        
-        # 检查必要的数据是否存在
-        if 'close_raw' not in data_dict:
-            logger.error("缺少计算动量因子所需的数据: close_raw")
-            return pd.DataFrame()
-        
-        close = data_dict['close_raw']
-        
-        # 计算不同周期的收益率
-        returns = {}
-        for period in self.lookback_periods:
-            returns[period] = close / close.shift(period) - 1
-        
-        # 标准化处理
-        std_returns = {}
-        for period, ret in returns.items():
-            std_returns[period] = self._standardize_by_date(ret)
-        
-        # 合成因子
-        weights = [0.5, 0.3, 0.2]  # 权重可以根据实际需求调整
-        momentum_factor = pd.DataFrame(0, index=close.index, columns=close.columns)
-        
-        for i, period in enumerate(self.lookback_periods):
-            if i < len(weights):
-                momentum_factor += std_returns[period] * weights[i]
-        
-        logger.info("动量因子计算完成")
-        return momentum_factor
-    
+
     def _standardize_by_date(self, df: pd.DataFrame) -> pd.DataFrame:
         """按日期标准化"""
         result = df.copy()

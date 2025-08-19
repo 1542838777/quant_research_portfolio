@@ -105,7 +105,7 @@ CSI300_more_filter_mode = {
     'pools': {
         **ZZ1000_no_filter_profile
     },
-    'period': period_one_year,
+    'period': period_half_year,
     'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': '东北证券_ZZ1000_no_filter_mode'
 }
@@ -123,7 +123,7 @@ def check_backtest_periods(start_date, end_date):
     if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):
         raise ValueError("回测时间太短")
 
-
+################################################################################################################
 trans_pram = 东北证券_ZZ1000_no_filter_mode
 is_debug = False
 

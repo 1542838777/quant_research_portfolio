@@ -1236,7 +1236,8 @@ class FactorCalculator:
 
         return single_q_long_df
 
-    #ok 对的上
+    #ok 对的上daily的pct_chg字段（ pct_chg, float, 涨跌幅【基于除权后的昨收计算的涨跌幅：（今收-除权昨收）/除权昨收
+    #也能和 t_bao_pct_chg 计算出来的数据对上！
     def _calculate_pct_chg(self) -> pd.DataFrame:
         """
            根据“总回报恒等式”，直接从不复权价和分红送股事件计算真实总回报率。
@@ -1278,32 +1279,48 @@ class FactorCalculator:
         final_pct_chg = true_pct_chg.where(close_raw.notna())
         return final_pct_chg
 
-    def _calculate_close_adj(self):
+    # 涨跌幅能对的上
+    def _calculate_close_adj(self) -> pd.DataFrame:
         """
-           【V5.0 - 派生版】
-           通过对权威的pct_chg进行累积乘积，来构建一个连续的、
-           与总回报一致的复权价格序列。
-           """
-        logger.info("  > 正在从权威pct_chg派生close_adj...")
+        【return 后复权 close】
+        使用真实的“总回报率”和“不复权收盘价”来计算后复权价格序列。
+        """
+        # 1. 获取最关键的两个输入数据
+        true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')  # 我们之前计算的真实总回报率 (涨跌幅)
+        close_raw = self.factor_manager.get_raw_factor('close_raw')  # 当天真实价格 (不复权)
 
-        # 1. 获取权威的、T日的真实总回报率
-        true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')
+        # 2. 处理边界情况：如果输入为空，则返回空DataFrame
+        if close_raw.empty:
+            raise  ValueError('价格data为空')
 
-        # 2. 将收益率序列转换为净值曲线 (以1为基准)
-        #    (1 + true_pct_chg) 创建了每日的增长系数
-        #    .cumprod() 计算了从开始到当日的累积增长系数
-        net_value_curve = (1 + true_pct_chg).cumprod()
+        # 3. 计算每日的增长因子 (1 + 收益率)
+        # 第一天的pct_chg是NaN，因为没有前一日的数据
+        growth_factor = 1 + true_pct_chg
 
-        # 3. 将净值曲线“锚定”到真实的价格水平
-        #    为了让复权价的“量级”与真实价格保持一致，我们用第一天的价格作为基准价
-        close_raw = self.factor_manager.get_raw_factor('close_raw')
-        # ffill().iloc[0] 是一个稳健的获取每只股票第一个有效价格的方法
-        base_prices = close_raw.ffill().iloc[0]
+        # 4. 使用.cumprod()计算自第一天以来的累积收益因子
+        # cumprod() 会自动忽略开头的NaN值，从第一个有效数字开始累乘
+        cumulative_growth_factor = growth_factor.cumprod()
 
-        # 用净值曲线乘以基准价，得到与真实价格水平可比的复权价序列
-        close_adj_df = net_value_curve * base_prices
+        # 5. 获取计算的基准价格 (即第一天的真实收盘价)
+        base_price = close_raw.iloc[0]
 
-        return close_adj_df
+        # 6. 后复权价 = 基准价格 * 累积收益因子
+        close_hfq = base_price * cumulative_growth_factor
+
+        # 7. 【关键修正】第一天的累积收益因子是NaN，导致第一天的后复权价也是NaN。
+        # 我们必须将其修正为基准价格本身。
+        close_hfq.iloc[0] = base_price
+
+        return close_hfq
+
+    # def _calculate_close_hfq(self) -> pd.DataFrame:
+    #     """
+    #     【return 后复权 close
+    #     """
+    #     true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')#我们刚才讨论的总回报率 涨跌幅
+    #     close_raw = self.factor_manager.get_raw_factor('close_raw')#当天真实价格
+
+
 
     def _calculate_open_adj(self) -> pd.DataFrame:
         """【V6.0 - 统一版】根据通用复权乘数计算复权开盘价"""

@@ -677,7 +677,7 @@ class FactorManager:
         if not for_test:
             raise ValueError('必须是用于测试前做的数据提取 因为这里的填充就在专门只给测试自身因子做的填充策略')
         REQUEST = self.check_and_return_right_request(factor_request, stock_pool_index_name)
-        # 1. 获取原始因子数据
+        # 1. 获取原始因子数据 t-1
         factor_data = self.get_raw_factor_for_analysis(REQUEST, for_test)
         #
         self._validate_data_quality(factor_data, REQUEST, des='原生数据')
@@ -724,7 +724,7 @@ class FactorManager:
         factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
         pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
 
-        temp_date = my_align(factor_data, self.get_raw_factor('close_raw').notna())
+        temp_date = my_align(factor_data, self.get_raw_factor('close_raw').notna().shift(1))
         self._validate_data_quality(temp_date,factor_name_str,'原生数据 仅对齐未停牌的close_df ')
         return fill_and_align_by_stock_pool(
             factor_name=factor_name_str,

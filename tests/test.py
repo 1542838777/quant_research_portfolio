@@ -3,6 +3,9 @@ import pandas as pd
 import os
 import platform
 
+import baostock as bs
+import pandas as pd
+
 from data.local_data_load import load_income_df, load_dividend_events_long
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR, parquet_file_names, every_day_parquet_file_names, \
     need_fix
@@ -244,6 +247,20 @@ def look_daily_pct_chg():
     )
     _0721 = pct_chg_wide['300721.SZ']
     print(1)
+
+import akshare as ak
+
+# 获取后复权数据
+def get_from_akshare():
+    # hfq_long_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
+    # hfq_long_df['trade_date'] = pd.to_datetime(hfq_long_df['trade_date'])
+    #
+    # close_adj_df = pd.pivot_table(hfq_long_df,index='trade_date', columns='ts_code', values='close')
+    # close_adj_df = close_adj_df['000001.SZ']
+    hfq = ak.stock_zh_a_hist(symbol="000008",start_date='20230302', period="daily", adjust="hfq")
+    qfq = ak.stock_zh_a_hist(symbol="000008",start_date='20230302', period="daily", adjust="qfq")
+    print(1)
+
 def check_dividend_and_bonus(stock_code, target_date: str):
     """
     在 target_date 找出同时有现金分红+送股的股票，
@@ -302,10 +319,41 @@ def check_dividend_and_bonus(stock_code, target_date: str):
 
     return pd.DataFrame(results)
 
+def t_bao_pct_chg():
+    # 登录系统
+    lg = bs.login()
+    print('login respond error_code:' + lg.error_code)
+    print('login respond  error_msg:' + lg.error_msg)
 
+    # 获取贵州茅台历史K线数据
+    # 字段说明：date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,isST
+    rs = bs.query_history_k_data_plus("sz.003017",
+                                      "date,code,close,preclose,pctChg,adjustflag",
+                                      start_date='2023-10-09', end_date='2025-07-10',
+                                      frequency="d", adjustflag="1")  #复权类型，默认不复权：3；    1：后复权；   2：前复权
+
+    print('query_history_k_data_plus respond error_code:' + rs.error_code)
+    print('query_history_k_data_plus respond  error_msg:' + rs.error_msg)
+
+    # 打印结果
+    data_list = []
+    while (rs.error_code == '0') & rs.next():
+        data_list.append(rs.get_row_data())
+    result = pd.DataFrame(data_list, columns=rs.fields)
+
+    # 退出系统
+    bs.logout()
+
+    # Baostock返回的pctChg单位是%，需要转换为小数
+    result['pctChg'] = pd.to_numeric(result['pctChg']) / 100
+    print("\nBaostock数据:")
+    print(result)
+
+    # 重点关注2023-06-29这一行的pctChg
 
 if __name__ == '__main__':
-    look_daily_pct_chg()
+    t_bao_pct_chg()
+    find_dividend_and_bonus_stocks()
     df_check = check_dividend_and_bonus( '300971.SZ','2023-03-22')
     print(df_check)
 
