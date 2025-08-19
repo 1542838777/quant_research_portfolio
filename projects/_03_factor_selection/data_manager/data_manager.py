@@ -750,7 +750,7 @@ class DataManager:
 
         # 时间范围过滤
         # 大坑啊 ，start_date必须提前6个月！！！  两条数据时间跨度间隔（新老数据间隔最长可达6个月！）。后面逐日填充成分股信息：原理就是取上次数据进行填充的！
-        extended_start_date = pd.Timestamp(start_date) - pd.DateOffset(months=6)
+        extended_start_date = pd.Timestamp(start_date) - pd.DateOffset(months=12)
         mask = (components_df['trade_date'] >= extended_start_date) & \
                (components_df['trade_date'] <= pd.Timestamp(end_date))
         components_df = components_df[mask]
@@ -797,16 +797,20 @@ class DataManager:
 
             # --- 后续逻辑与你原先的相同，它们是正确的 ---
 
-            # a) 获取当前基础股票池和成分股的交集
-            valid_stocks = index_stock_pool_df.columns.intersection(daily_components)
+            # --- 【以下是简洁、高效的优化版逻辑】 ---
 
-            # b) 清理并填充当日股票池
-            current_universe = index_stock_pool_df.loc[date].copy()
-            index_stock_pool_df.loc[date, :] = False
+            # a) 获取T日的基础股票池状态（一个布尔值的Series）
+            current_universe_mask = index_stock_pool_df.loc[date]
 
-            # c) valid_stocks 是股票池所有 与当天成分股的并集，现在细看到每一天的股票池，如果股票池：也是true：if current_universe[stock] 则视为当天可 加入到final_valid_stocks
-            final_valid_stocks = [stock for stock in valid_stocks if current_universe[stock]]
-            index_stock_pool_df.loc[date, final_valid_stocks] = True
+            # b) 创建第二个布尔掩码：判断股票是否在当日成分股列表中
+            is_in_index_mask = index_stock_pool_df.columns.isin(daily_components)
+
+            # c) 【核心】使用逻辑“与”(&)运算，合并两个条件
+            #    得到最终的股票列表，当且仅当一个股票在两个掩码中都为True时，结果才为True
+            final_mask = current_universe_mask & is_in_index_mask
+
+            # d) 将计算出的最终结果应用回当天的股票池
+            index_stock_pool_df.loc[date, :] = final_mask
 
         self.show_stock_nums_for_per_day(f'by_成分股指数_filter', index_stock_pool_df)
         return index_stock_pool_df

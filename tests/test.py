@@ -141,17 +141,19 @@ def notify(title, message):
         from win10toast_persist import ToastNotifier
         toaster = ToastNotifier()
         toaster.show_toast(title, message, duration=10)  # 持续10秒
+
+
 from pathlib import Path
 
-def verify_pb_lookahead_bias( DATE_TO_CHECK :str = '2024-10-08'):
 
+def verify_pb_lookahead_bias(DATE_TO_CHECK: str = '2024-10-08'):
     """
     一个独立的验证脚本，用于检验Tushare daily_basic接口中的pb字段
     是否存在基于财报公告日的未来数据。
     """
     # ▼▼▼▼▼ 【请修改】替换成你自己的数据文件路径 ▼▼▼▼▼
-    DAILY_BASIC_PATH = Path( LOCAL_PARQUET_DATA_DIR/'daily_basic')
-    BALANCESHEET_PATH = Path( LOCAL_PARQUET_DATA_DIR/'balancesheet.parquet')
+    DAILY_BASIC_PATH = Path(LOCAL_PARQUET_DATA_DIR / 'daily_basic')
+    BALANCESHEET_PATH = Path(LOCAL_PARQUET_DATA_DIR / 'balancesheet.parquet')
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     # --- 1. 设定我们的“观测”目标 ---
@@ -219,6 +221,7 @@ def verify_pb_lookahead_bias( DATE_TO_CHECK :str = '2024-10-08'):
     else:
         print("\n✓ 【结论】两者一致。该数据点未发现未来数据。")
 
+
 def find_dividend_and_bonus_stocks():
     dividend_events = load_dividend_events_long()
     """
@@ -229,12 +232,13 @@ def find_dividend_and_bonus_stocks():
     df = dividend_events[
         (dividend_events['cash_div_tax'] > 0) &
         (dividend_events['stk_div'] > 0)
-    ].copy()
+        ].copy()
 
     # 排序方便看
     df = df.sort_values(['ex_date', 'ts_code'])
 
     return df[['ex_date', 'ts_code', 'cash_div_tax', 'stk_div']]
+
 
 def look_daily_pct_chg():
     daily_df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily')
@@ -248,7 +252,9 @@ def look_daily_pct_chg():
     _0721 = pct_chg_wide['300721.SZ']
     print(1)
 
+
 import akshare as ak
+
 
 # 获取后复权数据
 def get_from_akshare():
@@ -257,9 +263,10 @@ def get_from_akshare():
     #
     # close_adj_df = pd.pivot_table(hfq_long_df,index='trade_date', columns='ts_code', values='close')
     # close_adj_df = close_adj_df['000001.SZ']
-    hfq = ak.stock_zh_a_hist(symbol="000008",start_date='20230302', period="daily", adjust="hfq")
-    qfq = ak.stock_zh_a_hist(symbol="000008",start_date='20230302', period="daily", adjust="qfq")
+    hfq = ak.stock_zh_a_hist(symbol="000008", start_date='20230302', period="daily", adjust="hfq")
+    qfq = ak.stock_zh_a_hist(symbol="000008", start_date='20230302', period="daily", adjust="qfq")
     print(1)
+
 
 def check_dividend_and_bonus(stock_code, target_date: str):
     """
@@ -319,6 +326,7 @@ def check_dividend_and_bonus(stock_code, target_date: str):
 
     return pd.DataFrame(results)
 
+
 def t_bao_pct_chg():
     # 登录系统
     lg = bs.login()
@@ -330,7 +338,7 @@ def t_bao_pct_chg():
     rs = bs.query_history_k_data_plus("sz.003017",
                                       "date,code,close,preclose,pctChg,adjustflag",
                                       start_date='2023-10-09', end_date='2025-07-10',
-                                      frequency="d", adjustflag="1")  #复权类型，默认不复权：3；    1：后复权；   2：前复权
+                                      frequency="d", adjustflag="1")  # 复权类型，默认不复权：3；    1：后复权；   2：前复权
 
     print('query_history_k_data_plus respond error_code:' + rs.error_code)
     print('query_history_k_data_plus respond  error_msg:' + rs.error_msg)
@@ -347,20 +355,110 @@ def t_bao_pct_chg():
     # Baostock返回的pctChg单位是%，需要转换为小数
     result['pctChg'] = pd.to_numeric(result['pctChg']) / 100
     print("\nBaostock数据:")
-    print(result)
+    return result
 
     # 重点关注2023-06-29这一行的pctChg
 
+
+def check_sus(stock_code):
+    suspend_d = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
+    suspend_d.index = pd.to_datetime(suspend_d['trade_date'])
+    suspend_d = suspend_d.sort_index()
+    suspend_d = suspend_d[suspend_d['ts_code'] == stock_code]
+    return suspend_d
+
+
+def read_close(stock_code, start_date, end_date):
+    long = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily')
+    close_df = pd.pivot_table(long, index='trade_date', columns='ts_code', values='close')
+    close_df.index = pd.to_datetime(close_df.index)
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+    close_df = close_df[(close_df.index >= start_date) & (close_df.index <= end_date)]
+
+    close_df = close_df.sort_index()
+    close_df = close_df[stock_code]
+    return close_df
+
+
+def _load_dynamic_index_components(index_code: str,
+                                   start_date: str, end_date: str) -> pd.DataFrame:
+    """加载动态指数成分股数据"""
+    # print(f"    加载 {index_code} 动态成分股数据...")
+
+    index_file_name = index_code.replace('.', '_')
+    index_data_path = LOCAL_PARQUET_DATA_DIR / 'index_weights' / index_file_name
+
+    if not index_data_path.exists():
+        raise ValueError(f"未找到指数 {index_code} 的成分股数据，请先运行downloader下载")
+
+    # 直接读取分区数据，pandas会自动合并所有year=*分区
+    components_df = pd.read_parquet(index_data_path)
+    components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
+
+    # 时间范围过滤
+    # 大坑啊 ，start_date必须提前6个月！！！  两条数据时间跨度间隔（新老数据间隔最长可达6个月！）。后面逐日填充成分股信息：原理就是取上次数据进行填充的！
+    extended_start_date = pd.Timestamp(start_date) - pd.DateOffset(months=6)
+    mask = (components_df['trade_date'] >= extended_start_date) & \
+           (components_df['trade_date'] <= pd.Timestamp(end_date))
+    components_df = components_df[mask]
+
+    # print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
+    return components_df
+
+
+def _load_dynamic_index_components_by_stock_code(sotck_code: str,
+                                                 start_date: str, end_date: str) -> pd.DataFrame:
+    """加载动态指数成分股数据"""
+    # print(f"    加载 {index_code} 动态成分股数据...")
+
+    index_data_path = LOCAL_PARQUET_DATA_DIR / 'index_weights/000852_SH'
+
+    # 直接读取分区数据，pandas会自动合并所有year=*分区
+    components_df = pd.read_parquet(index_data_path)
+    components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
+
+    # 时间范围过滤
+    # 大坑啊 ，start_date必须提前6个月！！！  两条数据时间跨度间隔（新老数据间隔最长可达6个月！）。后面逐日填充成分股信息：原理就是取上次数据进行填充的！
+    extended_start_date = pd.Timestamp(start_date) - pd.DateOffset(months=6)
+    extended_end_date = pd.Timestamp(end_date)
+    mask = ((components_df['trade_date'] >= extended_start_date) & (
+                components_df['trade_date'] <= pd.Timestamp(extended_end_date)) & (
+                        components_df['con_code'] == sotck_code))
+    components_df = components_df[mask]
+
+    # print(f"    成功加载符合当前回测时间段： {len(components_df)} 条成分股记录")
+    return components_df
+
+
+def t_hfq(stock_code, start_date, end_date, column):
+    long = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
+    clode_hfq = pd.pivot_table(long, index='trade_date', columns='ts_code', values=f'{column}')
+    clode_hfq.index = pd.to_datetime(clode_hfq.index, format='%Y%m%d')
+    clode_hfq = clode_hfq[(
+        (clode_hfq.index >= pd.to_datetime(start_date)) & (clode_hfq.index <= pd.to_datetime(end_date)))]
+    clode_hfq = clode_hfq[stock_code]
+    return clode_hfq
+
+
 if __name__ == '__main__':
     t_bao_pct_chg()
-    find_dividend_and_bonus_stocks()
-    df_check = check_dividend_and_bonus( '300971.SZ','2023-03-22')
+    t_hfq('003017.SZ', '20231105', '20250705','close')
+    t_hfq('003017.SZ', '20231105', '20250705','pct_chg')
+    # find_dividend_and_bonus_stocks()
+
+    check_sus('000006.SZ')
+
+    _load_dynamic_index_components_by_stock_code('000006.SH', '21930601', '20250710')
+    read_close('000006.SZ', '20230601', '20250710')
+
+    df_check = check_dividend_and_bonus('300971.SZ', '2023-03-22')
     print(df_check)
 
-    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR/'daily_hfq')
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily_hfq')
     df['trade_date'] = pd.to_datetime(df['trade_date'], format='%Y%m%d')
-    df = df[(df['trade_date'] >= pd.to_datetime('20250415')) and(df['trade_date'] <=pd.to_datetime('20250715') )]
-    df = call_ts_tushare_api("pro_bar", ts_code="000008.SZ",start_date='20180101',adj = 'hfq', end_date='20180501'
+    df = df[(df['trade_date'] >= pd.to_datetime('20250415')) and (df['trade_date'] <= pd.to_datetime('20250715'))]
+    df = call_ts_tushare_api("pro_bar", ts_code="000008.SZ", start_date='20180101', adj='hfq', end_date='20180501'
                              )
     local_df = load_income_df()
     local_df = local_df[local_df['ts_code'] == '000806.SZ']
