@@ -256,8 +256,8 @@ class FactorManager:
             # 你需要根据因子定义，约定好参数名
             if factor_name == 'beta':
                 params = {'benchmark_index': factor_request[1]}
-            elif factor_name in ['close_adj_filled', 'open_adj_filled', 'high_adj_filled',
-                                 'low_adj_filled']:  # 元凶 这里 if 导致 命中下一个else
+            elif factor_name in ['close_hfq_filled', 'open_hfq_filled', 'high_hfq_filled',
+                                 'low_hfq_filled']:  # 元凶 这里 if 导致 命中下一个else
                 params = {'limit': factor_request[1]}
             # 未来可以扩展到其他因子，如 'momentum'
             # elif factor_name == 'momentum':
@@ -652,10 +652,10 @@ class FactorManager:
 
         # 明确定义价格数据的完整列表
         price_data_names = {
-            'close_raw', 'close_adj', 'close_adj_filled',
-            'open_raw', 'open_adj', 'open_adj_filled',
-            'high_raw', 'high_adj', 'high_adj_filled',
-            'low_raw', 'low_adj', 'low_adj_filled',
+            'close_raw', 'close_hfq', 'close_hfq_filled',
+            'open_raw', 'open_hfq', 'open_hfq_filled',
+            'high_raw', 'high_hfq', 'high_hfq_filled',
+            'low_raw', 'low_hfq', 'low_hfq_filled',
             'pre_close', 'price'
         }
 
@@ -724,7 +724,7 @@ class FactorManager:
         factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
         pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
 
-        temp_date = my_align(factor_data, self.get_raw_factor('close_raw').notna().shift(1))
+        temp_date = my_align(factor_data, self.get_raw_factor('close_hfq').notna().shift(1))
         self._validate_data_quality(temp_date,factor_name_str,'原生数据 仅对齐未停牌的close_df ')
         return fill_and_align_by_stock_pool(
             factor_name=factor_name_str,

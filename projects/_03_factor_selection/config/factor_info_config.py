@@ -56,23 +56,21 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     'high_raw': FILL_STRATEGY_NONE,
     'low_raw': FILL_STRATEGY_NONE,
 
-    'close_adj': FILL_STRATEGY_NONE,#不做任何填充 ，需要填充的，该调用下面的
-    'close_adj_filled': FILL_STRATEGY_NONE,
+    'close_hfq': FILL_STRATEGY_NONE,#不做任何填充 ，需要填充的，该调用下面的
+    'close_hfq_filled': FILL_STRATEGY_NONE,
 
-    'open_adj': FILL_STRATEGY_NONE,#不做任何填充
-    'open_adj_filled': FILL_STRATEGY_NONE,
+    'open_hfq': FILL_STRATEGY_NONE,#不做任何填充
+    'open_hfq_filled': FILL_STRATEGY_NONE,
 
-    'high_adj': FILL_STRATEGY_NONE,#不做任何填充
-    'high_adj_filled': FILL_STRATEGY_NONE,
-    'low_adj': FILL_STRATEGY_NONE,#不做任何填充
-    'low_adj_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
+    'high_hfq': FILL_STRATEGY_NONE,#不做任何填充
+    'high_hfq_filled': FILL_STRATEGY_NONE,
+    'low_hfq': FILL_STRATEGY_NONE,#不做任何填充
+    'low_hfq_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
 
-    'vol_adj': FILL_STRATEGY_NONE,#不做任何填充
-    'vol_adj_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
+    'vol_hfq': FILL_STRATEGY_NONE,#不做任何填充
+    'vol_hfq_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
 
-    'amount_raw': FILL_STRATEGY_NONE,
 
-    'vol_raw': FILL_STRATEGY_NONE,
 
     'pre_close': FILL_STRATEGY_NONE,
     'pe_ttm': FILL_STRATEGY_NONE,  # pe_ttm等基础估值指标，其填充应在衍生因子层定义

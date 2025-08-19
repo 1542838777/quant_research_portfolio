@@ -143,36 +143,36 @@ class VolatilityFactor(BaseFactor):
         super().__init__(name)
         self.window = window
     
-    def compute(self, data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """
-        计算波动率因子
-        
-        Args:
-            data_dict: 包含 'close' 数据的字典
-            
-        Returns:
-            波动率因子值
-        """
-        logger.info("计算波动率因子...")
-        
-        # 检查必要的数据是否存在
-        if 'close_raw' not in data_dict:
-            logger.error("缺少计算波动率因子所需的数据: close")
-            return pd.DataFrame()
-        
-        close = data_dict['close_raw']
-        
-        # 计算日收益率
-        daily_returns = close / close.shift(1) - 1
-        
-        # 计算滚动波动率
-        volatility = daily_returns.rolling(window=self.window).std()
-        
-        # 标准化处理，并取负值（低波动率更好）
-        volatility_factor = -self._standardize_by_date(volatility)
-        
-        logger.info("波动率因子计算完成")
-        return volatility_factor
+    # def compute(self, data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    #     """
+    #     计算波动率因子
+    #
+    #     Args:
+    #         data_dict: 包含 'close' 数据的字典
+    #
+    #     Returns:
+    #         波动率因子值
+    #     """
+    #     logger.info("计算波动率因子...")
+    #
+    #     # 检查必要的数据是否存在
+    #     if 'close_raw' not in data_dict:
+    #         logger.error("缺少计算波动率因子所需的数据: close")
+    #         return pd.DataFrame()
+    #
+    #     close = data_dict['close_raw']
+    #
+    #     # 计算日收益率
+    #     daily_returns = close / close.shift(1) - 1
+    #
+    #     # 计算滚动波动率
+    #     volatility = daily_returns.rolling(window=self.window).std()
+    #
+    #     # 标准化处理，并取负值（低波动率更好）
+    #     volatility_factor = -self._standardize_by_date(volatility)
+    #
+    #     logger.info("波动率因子计算完成")
+    #     return volatility_factor
     
     def _standardize_by_date(self, df: pd.DataFrame) -> pd.DataFrame:
         """按日期标准化"""
@@ -303,42 +303,42 @@ class FactorCombiner:
             log_warning(f"权重和不为1: {total_weight}，将进行归一化处理")
             for factor_name in weights:
                 self.weights[factor_name] /= total_weight
-    
-    def compute(self, data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """
-        计算组合因子
-        
-        Args:
-            data_dict: 输入数据字典
-            
-        Returns:
-            组合因子值
-        """
-        logger.info("计算组合因子...")
-        
-        # 计算各个因子
-        factor_values = {}
-        for factor_name, factor in self.factors.items():
-            factor_values[factor_name] = factor.compute(data_dict)
-        
-        # 检查是否有因子计算失败
-        for factor_name, factor_df in factor_values.items():
-            if factor_df.empty:
-                logger.error(f"因子 {factor_name} 计算失败")
-                return pd.DataFrame()
-        
-        # 组合因子
-        combined_factor = None
-        for factor_name, factor_df in factor_values.items():
-            weight = self.weights.get(factor_name, 0)
-            if weight > 0:
-                if combined_factor is None:
-                    combined_factor = factor_df * weight
-                else:
-                    combined_factor += factor_df * weight
-        
-        logger.info("组合因子计算完成")
-        return combined_factor
+    #
+    # def compute(self, data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    #     """
+    #     计算组合因子
+    #
+    #     Args:
+    #         data_dict: 输入数据字典
+    #
+    #     Returns:
+    #         组合因子值
+    #     """
+    #     logger.info("计算组合因子...")
+    #
+    #     # 计算各个因子
+    #     factor_values = {}
+    #     for factor_name, factor in self.factors.items():
+    #         factor_values[factor_name] = factor.compute(data_dict)
+    #
+    #     # 检查是否有因子计算失败
+    #     for factor_name, factor_df in factor_values.items():
+    #         if factor_df.empty:
+    #             logger.error(f"因子 {factor_name} 计算失败")
+    #             return pd.DataFrame()
+    #
+    #     # 组合因子
+    #     combined_factor = None
+    #     for factor_name, factor_df in factor_values.items():
+    #         weight = self.weights.get(factor_name, 0)
+    #         if weight > 0:
+    #             if combined_factor is None:
+    #                 combined_factor = factor_df * weight
+    #             else:
+    #                 combined_factor += factor_df * weight
+    #
+    #     logger.info("组合因子计算完成")
+    #     return combined_factor
 
 
 # 工厂函数，方便创建各类因子
@@ -366,30 +366,3 @@ def create_factor(factor_type: str, **kwargs) -> BaseFactor:
     else:
         raise ValueError(f"不支持的因子类型: {factor_type}")
 
-
-def create_factor_combiner(factor_types: List[str], 
-                          weights: List[float], 
-                          **kwargs) -> FactorCombiner:
-    """
-    创建因子组合器
-    
-    Args:
-        factor_types: 因子类型列表
-        weights: 权重列表
-        **kwargs: 其他参数
-        
-    Returns:
-        因子组合器对象
-    """
-    if len(factor_types) != len(weights):
-        raise ValueError("因子类型列表和权重列表长度不一致")
-    
-    factors = {}
-    weights_dict = {}
-    
-    for i, factor_type in enumerate(factor_types):
-        factor_name = factor_type
-        factors[factor_name] = create_factor(factor_type, **kwargs)
-        weights_dict[factor_name] = weights[i]
-    
-    return FactorCombiner(factors, weights_dict)

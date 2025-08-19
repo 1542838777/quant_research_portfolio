@@ -118,19 +118,28 @@ class DataLoader:
 
                 # 构建字段映射
                 for col in columns:
-                    if (col in ['total_mv', 'circ_mv','turnover_rate']) & (
+                    if (col in ['total_mv', 'circ_mv', 'turnover_rate']) & (
                             logical_name != 'daily_basic'):
                         continue
-                    if (col in ['list_date','delist_date']) & (
+                    if (col in ['list_date', 'delist_date']) & (
                             logical_name != 'stock_basic.parquet'):
                         continue
-                    if (col in ['close', 'open', 'high', 'low', 'amount']) & (
-                            logical_name != 'daily'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据 #最新修改 手动计算，不依赖不纯洁的hfq
+                    if (col in ['close', 'open', 'high', 'low']) & (  # 实测 amount 和vol 在daily和 在daily_hfq数值一模一样！
+                            logical_name == 'daily_hfq'):  # ，我们需要daily_hfq(后复权的数据)表里面的数据 #最新修改 手动计算，不依赖不纯洁的hfq
+                        field_to_files_map[col + '_hfq'] = logical_name
+                        continue
+                    if (col in ['close', 'vol']) & (
+                            logical_name == 'daily'):
+                        field_to_files_map[col + '_raw'] = logical_name
+                        continue
+                    if (col in ['amount']) & (
+                            logical_name == 'daily'):
+                        field_to_files_map[col] = logical_name
                         continue
                         # 'turnover_rate', 'circ_mv', 'total_mv'  这些是“纯净原材料”，它们是每日更新的、不依赖于财报发布时间的随时点（Point-in-Time）数据
-                    not_allow_load_fieds_for_not_fq =  ['adj_factor','pe_ttm', 'pb',  'ps_ttm' ]
+                    not_allow_load_fieds_for_not_fq = ['adj_factor', 'pe_ttm', 'pb', 'ps_ttm']
                     if (col in not_allow_load_fieds_for_not_fq):  #
-                        continue #(f'严谨加载依赖报告日发布的数据{col} 非daily数据 ,请将config 用adj_factor的 from_daily配置 置为false，这样就不会此阶段加载了')
+                        continue  # (f'严谨加载依赖报告日发布的数据{col} 非daily数据 ,请将config 用adj_factor的 from_daily配置 置为false，这样就不会此阶段加载了')
                     if col not in field_to_files_map:
                         field_to_files_map[col] = logical_name
             except Exception as e:
@@ -177,6 +186,7 @@ class DataLoader:
                 file_path = self.data_path / logical_name
 
                 # 检查文件中实际存在的字段
+                columns_to_need_load =  self.fix_names_for_origin(columns_to_need_load,logical_name)
                 available_columns = pd.read_parquet(file_path).columns
                 columns_can_read = list(set(columns_to_need_load + base_fields) & set(available_columns))
 
@@ -225,7 +235,8 @@ class DataLoader:
 
                 # 确认没有重复项后，可以安全地进行转换
                 #  此时可以直接使用 pivot()，它比 pivot_table() 略快，且能再次验证唯一性
-                wide_df = unique_long_df.pivot(index='trade_date', columns='ts_code', values=field)
+                field_for_origin =   self.fix_name_for_origin(field, logical_name)
+                wide_df = unique_long_df.pivot(index='trade_date', columns='ts_code', values=field_for_origin)
             else:
                 # b) 对于需要“广播”到每日的静态属性数据 (如name, industry)
                 logger.info(f"  正在将静态字段 '{field}' 广播到每日面板...")
@@ -255,8 +266,8 @@ class DataLoader:
         # 对齐数据
         aligned_data = self._align_dataframes(raw_wide_dfs)
 
-        aligned_data = self.rename_for_safe(aligned_data)
-        return aligned_data
+        # aligned_data = self.rename_for_safe(aligned_data)
+        return aligned_data #close ——raw 已经 hfq 通过聚宽 比对 数据完全对上
 
     def _align_dataframes(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:  # ok
         """
@@ -272,7 +283,8 @@ class DataLoader:
             raise ValueError("居然所传需对齐数据是空的")
 
         # 【修复】选择基准表 - 优先选择价格数据，其次选择覆盖度最高的表
-        primary_candidates = [ 'close', 'open', 'low']#primary_candidates = ['close_raw', 'close', 'open_raw', 'open', 'high_raw', 'low_raw']
+        primary_candidates = ['close', 'open',
+                              'low']  # primary_candidates = ['close_raw', 'close', 'open_raw', 'open', 'high_raw', 'low_raw']
         base_key = None
         base_df = None
 
@@ -315,7 +327,6 @@ class DataLoader:
 
         logger.info(f"数据对齐完成: {len(target_dates)}个交易日, {len(target_stocks)}只股票")
         return aligned_data
-
 
     def clear_cache(self):
         """清除缓存"""
@@ -382,31 +393,40 @@ class DataLoader:
 
         pass
 
-    def rename_for_safe(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
-        """
-        对加载的数据字典进行安全的重命名，将通用价格字段统一加上 _raw 后缀。
-        确保下游模块接收到的是含义明确的数据。
-        """
-        # 创建一个新的字典来存储结果， 避免修改原始传入的对象
-        renamed_data = aligned_data.copy()
+    #
+    # def rename_for_safe(self, aligned_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+    #     """
+    #     对加载的数据字典进行安全的重命名，将通用价格字段统一加上 _raw 后缀。
+    #     确保下游模块接收到的是含义明确的数据。
+    #     """
+    #     # 创建一个新的字典来存储结果， 避免修改原始传入的对象
+    #     renamed_data = aligned_data.copy()
+    #
+    #     # 定义需要被重命名的目标列
+    #     cols_to_rename = ['close', 'open', 'high', 'low']
+    #
+    #     for old_name in cols_to_rename:
+    #         # 检查旧的名称是否存在于字典中
+    #         if old_name in renamed_data:
+    #             new_name = f"{old_name}_hfq"
+    #             # 使用 .pop() 方法，将旧键的值赋给新键，并从字典中移除旧键
+    #             renamed_data[new_name] = renamed_data.pop(old_name)
+    #
+    #
+    #     ##
+    #     # 为什么 amount (成交额) 要用 raw 的？
+    #     # 一句话概括：因为amount（成交额）是一个名义价值（Nominal Value）指标，它衡量的是“今天有多少钱在交易”，而这个问题的答案与历史上的分红送股无关。#
+    #     if 'amount' in renamed_data:
+    #         renamed_data['amount'] = renamed_data.pop('amount')
+    #
+    #     return renamed_data
+    def fix_name_for_origin(self, field, logical_name):
+        if field.endswith('_hfq') & logical_name.endswith('_hfq'):
+            return field.replace('_hfq', '')
+        if field.endswith('_raw') & (logical_name == 'daily'):
+            return field.replace('_raw', '')
+        return field
 
-        # 定义需要被重命名的目标列
-        cols_to_rename = ['close', 'open', 'high', 'low']
+    def fix_names_for_origin(self, columns_to_need_load, logical_name):
+       return  [self.fix_name_for_origin(column,logical_name) for column in columns_to_need_load]
 
-        for old_name in cols_to_rename:
-            # 检查旧的名称是否存在于字典中
-            if old_name in renamed_data:
-                new_name = f"{old_name}_raw"
-                # 使用 .pop() 方法，将旧键的值赋给新键，并从字典中移除旧键
-                renamed_data[new_name] = renamed_data.pop(old_name)
-        #   vol也应该被命名为 vol_raw
-        if 'vol' in renamed_data:
-            renamed_data['vol_raw'] = renamed_data.pop('vol')
-
-        ##
-        # 为什么 amount (成交额) 要用 raw 的？
-        # 一句话概括：因为amount（成交额）是一个名义价值（Nominal Value）指标，它衡量的是“今天有多少钱在交易”，而这个问题的答案与历史上的分红送股无关。#
-        if 'amount' in renamed_data:
-            renamed_data['amount_raw'] = renamed_data.pop('amount')
-
-        return renamed_data

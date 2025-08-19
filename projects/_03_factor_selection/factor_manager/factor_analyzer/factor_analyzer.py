@@ -166,7 +166,7 @@ def save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,sub
         factor_path = debug_dir / f'factor_to_test_{subfix}.parquet'
         final_factor_for_test.to_parquet(factor_path)
 
-        # 2. 扣押“标尺”：计算未来收益率所需的 close_adj_filled
+        # 2. 扣押“标尺”：计算未来收益率所需的 close_hfq_filled
         #    我们假设 returns_calculator 是一个 partial 函数，price_df 是它的关键字参数
         try:
             price_df_for_returns = returns_calculator.keywords['price_df']
@@ -203,7 +203,7 @@ class FactorAnalyzer:
             raise RuntimeError("config 没有传递过来！")
         self.factor_manager = factor_manager
         data_manager = factor_manager.data_manager
-        if self.factor_manager.data_manager is None or 'close_raw' not in self.factor_manager.data_manager.raw_dfs:
+        if self.factor_manager.data_manager is None or 'close_hfq' not in self.factor_manager.data_manager.raw_dfs:
             raise ValueError('close的df是必须的，请写入！')
 
         config = data_manager.config
@@ -1321,8 +1321,8 @@ class FactorAnalyzer:
         #
         # 。close_df计算出的未来收益率矩阵，是后续所有统计检验（IC、分层回测）的**Y变量**。
         # 如果使用带NaN的close_adj，会导致计算出的forward_returns矩阵也充满NaN，从而大幅减少我们统计检验的样本量，降低结果的置信度。#
-        # 价格数据：get_prepare_aligned_factor_for_analysis会自动识别并保持T日值
-        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(('close_adj_filled', 10), stock_pool_index_name, True)
+        # 价格数据：get_prepare_aligned_factor_for_analysis会自动识别并保持T日值 #缺失并不多
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis('close_hfq', stock_pool_index_name, True)#todo 考虑 非要 fill吗 ，看看原来的 缺失率高不高
 
         # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值
         circ_mv_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv', stock_pool_index_name, True)
@@ -1356,8 +1356,8 @@ class FactorAnalyzer:
                 0]
 
         # b) 获取T日的价格数据（用于收益率计算，get_prepare_aligned_factor_for_analysis会自动识别并保持T日值）
-        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('close_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)
-        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request=('open_adj_filled', 10),stock_pool_index_name=stock_pool_index_name,for_test=True)
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='close_hfq',stock_pool_index_name=stock_pool_index_name,for_test=True)
+        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='open_hfq',stock_pool_index_name=stock_pool_index_name,for_test=True)
 
         # 准备收益率计算器（价格数据不需要shift，因为我们要计算T日的收益率）
         c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)

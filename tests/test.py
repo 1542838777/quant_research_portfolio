@@ -440,11 +440,24 @@ def t_hfq(stock_code, start_date, end_date, column):
     clode_hfq = clode_hfq[stock_code]
     return clode_hfq
 
+def t_daily(stock_code, start_date, end_date, column):
+    long = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'daily')
+    clode_hfq = pd.pivot_table(long, index='trade_date', columns='ts_code', values=f'{column}')
+    clode_hfq.index = pd.to_datetime(clode_hfq.index, format='%Y%m%d')
+    clode_hfq = clode_hfq[(
+        (clode_hfq.index >= pd.to_datetime(start_date)) & (clode_hfq.index <= pd.to_datetime(end_date)))]
+    clode_hfq = clode_hfq[stock_code]
+    return clode_hfq
 
 if __name__ == '__main__':
-    t_bao_pct_chg()
+
+    t_daily('003017.SZ', '20231105', '20250705','vol')
     t_hfq('003017.SZ', '20231105', '20250705','close')
-    t_hfq('003017.SZ', '20231105', '20250705','pct_chg')
+    t_hfq('003017.SZ', '20231105', '20250705','high')
+    t_hfq('003017.SZ', '20231105', '20250705','low')
+    t_hfq('003017.SZ', '20231105', '20250705','open')
+    t_hfq('003017.SZ', '20231105', '20250705','pct_chg')#小数点不准确！
+    t_hfq('003017.SZ', '20231105', '20250705','amount')
     # find_dividend_and_bonus_stocks()
 
     check_sus('000006.SZ')

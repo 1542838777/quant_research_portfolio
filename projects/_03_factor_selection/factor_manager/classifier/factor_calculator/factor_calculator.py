@@ -394,15 +394,15 @@ class FactorCalculator:
     #
     # 计算特性: 它们的核心逻辑是 price(t) / price(t-N) - 1。这类计算对价格的绝对时间间隔非常敏感。
     #
-    # 推荐使用: self.factor_manager.get_raw_factor('close_adj') (未经填充的版本)
+    # 推荐使用: self.factor_manager.get_raw_factor('close_hfq') (未经填充的版本)
     #
     # 理由:
     #
-    # 想象一下momentum_12_1的计算：close_adj.shift(21) / close_adj.shift(252) - 1。
+    # 想象一下momentum_12_1的计算：close_hfq.shift(21) / close_hfq.shift(252) - 1。
     #
-    # 如果一只股票在t-252之后停牌了半年，然后复牌。如果你使用了close_adj_filled，那么close_adj.shift(252)取到的就是一个非常“陈腐”的、半年前的价格。用这个陈腐价格计算出的动量值，其经济学意义是存疑的。
+    # 如果一只股票在t-252之后停牌了半年，然后复牌。如果你使用了close_hfq_filled，那么close_hfq.shift(252)取到的就是一个非常“陈腐”的、半年前的价格。用这个陈腐价格计算出的动量值，其经济学意义是存疑的。
     #
-    # 更稳健的做法是使用未经填充的close_adj。如果在t-21或t-252的任一时间点，股票是停牌的（值为NaN），那么最终的动量因子值也应该是NaN。我们宁愿在没有可靠数据时得到一个NaN，也不要一个基于陈腐数据计算出的错误值。#
+    # 更稳健的做法是使用未经填充的close_hfq。如果在t-21或t-252的任一时间点，股票是停牌的（值为NaN），那么最终的动量因子值也应该是NaN。我们宁愿在没有可靠数据时得到一个NaN，也不要一个基于陈腐数据计算出的错误值。#
     def _calculate_momentum_120d(self) -> pd.DataFrame:
         """
         计算120日（约半年）动量/累计收益率。
@@ -413,7 +413,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: momentum_120d...")
         # 1. 获取基础数据：后复权收盘价
-        close_df = self.factor_manager.get_raw_factor('close_adj').copy()
+        close_df = self.factor_manager.get_raw_factor('close_hfq').copy()
 
         # 2. 计算120个交易日前的价格到今天的收益率
         #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
@@ -433,7 +433,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: reversal_21d...")
         # 1. 获取基础数据：后复权收盘价
-        close_df = self.factor_manager.get_raw_factor('close_adj').copy()
+        close_df = self.factor_manager.get_raw_factor('close_hfq').copy()
 
         # 2. 计算21日收益率
         return_21d = close_df.pct_change(periods=21)
@@ -453,7 +453,7 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: momentum_12_1...")
         # 1. 获取收盘价
-        close_df = self.factor_manager.get_raw_factor('close_adj').copy(deep=True)
+        close_df = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
         # close_df.ffill(axis=0, inplace=True) #反驳：如果人家停牌一年，你非fill前一年的数据，那误差太大了 不行！
         # 2. 计算 T-21 (约1个月前) 的价格 与 T-252 (约1年前) 的价格之间的收益率
         #    shift(21) 获取的是约1个月前的价格
@@ -469,7 +469,7 @@ class FactorCalculator:
         捕捉短期（约一个月）的价格惯性，即所谓的“强者恒强”。
         """
         print("    > 正在计算因子: momentum_20d...")
-        close_df = self.factor_manager.get_raw_factor('close_adj').copy(deep=True)
+        close_df = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
         # close_df.reset_index(trading_index = self.factor_manager.data_manager.trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
         # close_df.ffill(axis=0, inplace=True)
         momentum_df = close_df.pct_change(periods=20)
@@ -605,7 +605,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: ln_turnover_value_90d...")
         # 1. 获取日成交额数据 (单位：元)
-        amount_df = self.factor_manager.get_raw_factor('amount_raw_fill_zero').copy()
+        amount_df = self.factor_manager.get_raw_factor('amount_fill_zero').copy()
 
         # 2. 计算90日滚动平均成交额
         mean_amount_df = amount_df.rolling(window=90, min_periods=60).mean()
@@ -637,7 +637,7 @@ class FactorCalculator:
 
         # 步骤 1: 计算原始日度Amihud
         pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
-        amount_df = self.factor_manager.get_raw_factor('amount_raw').copy()
+        amount_df = self.factor_manager.get_raw_factor('amount').copy()
 
         amount_in_yuan = amount_df * 1000.0
         amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0)
@@ -857,7 +857,7 @@ class FactorCalculator:
     #
     # 计算特性: 它们的算法（尤其是在pandas_ta这样的库中）通常假定输入的时间序列是连续的。数据的中断（NaN）会导致指标计算中断，产生非常稀疏的因子值。
     #
-    # 推荐使用: self.factor_manager.get_raw_factor(('close_adj_filled', 10)) (经过填充的版本)
+    # 推荐使用: self.factor_manager.get_raw_factor(('close_hfq_filled', 10)) (经过填充的版本)
     #
     # 理由:
     #
@@ -872,7 +872,7 @@ class FactorCalculator:
         衡量股价的超买超卖状态，是经典的反转信号。
         """
         logger.info(f"    > 正在计算因子: RSI (window={window})...")
-        close_df = self.factor_manager.get_raw_factor(('close_adj_filled', 10))
+        close_df = self.factor_manager.get_raw_factor(('close_hfq_filled', 10))
 
         # 使用 pandas_ta 库，通过 .apply 在每一列（每只股票）上独立计算
         rsi_df = close_df.apply(lambda x: ta.rsi(x, length=window), axis=0)
@@ -885,9 +885,9 @@ class FactorCalculator:
         衡量股价是否超出其正常波动范围，可用于捕捉趋势的开启或反转。
         """
         logger.info(f"    > 正在计算因子: CCI (window={window})...")
-        high_df = self.factor_manager.get_raw_factor(('high_adj_filled',10))
-        low_df = self.factor_manager.get_raw_factor(('low_adj_filled',10))
-        close_df = self.factor_manager.get_raw_factor(('close_adj_filled',10))
+        high_df = self.factor_manager.get_raw_factor(('high_hfq_filled',10))
+        low_df = self.factor_manager.get_raw_factor(('low_hfq_filled',10))
+        close_df = self.factor_manager.get_raw_factor(('close_hfq_filled',10))
         # CCI需要三列数据，我们按股票逐一计算
         cci_results = {}
         for stock_code in close_df.columns:
@@ -1235,83 +1235,89 @@ class FactorCalculator:
         single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=True)  # 确保公告日和计算值都存在
 
         return single_q_long_df
-
-    #ok 对的上daily的pct_chg字段（ pct_chg, float, 涨跌幅【基于除权后的昨收计算的涨跌幅：（今收-除权昨收）/除权昨收
-    #也能和 t_bao_pct_chg 计算出来的数据对上！
+    #ok 能对上 聚宽数据
     def _calculate_pct_chg(self) -> pd.DataFrame:
-        """
-           根据“总回报恒等式”，直接从不复权价和分红送股事件计算真实总回报率。
-           """
-        logger.info("  > 正在基于第一性原理，计算【最终版】权威 pct_chg...")
+        close_hfq = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
+        ret  = close_hfq.pct_change()
+        return  ret
 
-        close_raw = self.factor_manager.get_raw_factor('close_raw')
-        pre_close_raw = close_raw.shift(1)
-        dividend_events = load_dividend_events_long()
+    #daily_hfq亲测 后复权的close是可用的，因为涨跌幅跟聚宽一模一样！ 我们直接用，不需要下面这样复杂的计算！
+    # #ok 对的上daily的pct_chg字段（ pct_chg, float, 涨跌幅【基于除权后的昨收计算的涨跌幅：（今收-除权昨收）/除权昨收
+    # #也能和 t_bao_pct_chg 计算出来的数据对上！
+    # def _calculate_pct_chg(self) -> pd.DataFrame:
+    #     """
+    #        根据“总回报恒等式”，直接从不复权价和分红送股事件计算真实总回报率。
+    #        """
+    #     logger.info("  > 正在基于第一性原理，计算【最终版】权威 pct_chg...")
+    # 
+    #     close_raw = self.factor_manager.get_raw_factor('close_raw')
+    #     pre_close_raw = close_raw.shift(1)
+    #     dividend_events = load_dividend_events_long()
+    # 
+    #     # 【调试输出】
+    #     logger.info(f"  > close_raw形状: {close_raw.shape}")
+    # 
+    #     # 构建分红矩阵（未对齐）
+    #     cash_div_matrix_raw = dividend_events.pivot_table(index='ex_date', columns='ts_code',
+    #                                                       values='cash_div_tax').reindex(close_raw.index).fillna(0)
+    #     stk_div_matrix_raw = dividend_events.pivot_table(index='ex_date', columns='ts_code', values='stk_div').reindex(
+    #         close_raw.index).fillna(0)
+    # 
+    #     logger.info(f"  > 分红矩阵原始形状: cash_div={cash_div_matrix_raw.shape}, stk_div={stk_div_matrix_raw.shape}")
+    # 
+    #     # 【关键修复】强制对齐到close_raw的列，避免形状不匹配
+    #     target_stocks = close_raw.columns
+    #     cash_div_matrix = cash_div_matrix_raw.reindex(columns=target_stocks, fill_value=0)
+    #     stk_div_matrix = stk_div_matrix_raw.reindex(columns=target_stocks, fill_value=0)
+    # 
+    #     logger.info(f"  > 对齐后形状: cash_div={cash_div_matrix.shape}, stk_div={stk_div_matrix.shape}")
+    # 
+    #     # 验证形状一致性
+    #     assert close_raw.shape == cash_div_matrix.shape == stk_div_matrix.shape, \
+    #         f"形状不匹配: close_raw={close_raw.shape}, cash_div={cash_div_matrix.shape}, stk_div={stk_div_matrix.shape}"
+    # 
+    #     # 核心公式: (今日收盘价 * (1 + 送股比例) + 每股派息) / 昨日收盘价 - 1
+    #     numerator = close_raw * (1 + stk_div_matrix) + cash_div_matrix
+    #     true_pct_chg = numerator / pre_close_raw - 1
+    # 
+    #     logger.info(f"  > 最终结果形状: {true_pct_chg.shape}")
+    # 
+    #     final_pct_chg = true_pct_chg.where(close_raw.notna())
+    #     return final_pct_chg
 
-        # 【调试输出】
-        logger.info(f"  > close_raw形状: {close_raw.shape}")
-
-        # 构建分红矩阵（未对齐）
-        cash_div_matrix_raw = dividend_events.pivot_table(index='ex_date', columns='ts_code',
-                                                          values='cash_div_tax').reindex(close_raw.index).fillna(0)
-        stk_div_matrix_raw = dividend_events.pivot_table(index='ex_date', columns='ts_code', values='stk_div').reindex(
-            close_raw.index).fillna(0)
-
-        logger.info(f"  > 分红矩阵原始形状: cash_div={cash_div_matrix_raw.shape}, stk_div={stk_div_matrix_raw.shape}")
-
-        # 【关键修复】强制对齐到close_raw的列，避免形状不匹配
-        target_stocks = close_raw.columns
-        cash_div_matrix = cash_div_matrix_raw.reindex(columns=target_stocks, fill_value=0)
-        stk_div_matrix = stk_div_matrix_raw.reindex(columns=target_stocks, fill_value=0)
-
-        logger.info(f"  > 对齐后形状: cash_div={cash_div_matrix.shape}, stk_div={stk_div_matrix.shape}")
-
-        # 验证形状一致性
-        assert close_raw.shape == cash_div_matrix.shape == stk_div_matrix.shape, \
-            f"形状不匹配: close_raw={close_raw.shape}, cash_div={cash_div_matrix.shape}, stk_div={stk_div_matrix.shape}"
-
-        # 核心公式: (今日收盘价 * (1 + 送股比例) + 每股派息) / 昨日收盘价 - 1
-        numerator = close_raw * (1 + stk_div_matrix) + cash_div_matrix
-        true_pct_chg = numerator / pre_close_raw - 1
-
-        logger.info(f"  > 最终结果形状: {true_pct_chg.shape}")
-
-        final_pct_chg = true_pct_chg.where(close_raw.notna())
-        return final_pct_chg
-
-    # 涨跌幅能对的上
-    def _calculate_close_adj(self) -> pd.DataFrame:
-        """
-        【return 后复权 close】
-        使用真实的“总回报率”和“不复权收盘价”来计算后复权价格序列。
-        """
-        # 1. 获取最关键的两个输入数据
-        true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')  # 我们之前计算的真实总回报率 (涨跌幅)
-        close_raw = self.factor_manager.get_raw_factor('close_raw')  # 当天真实价格 (不复权)
-
-        # 2. 处理边界情况：如果输入为空，则返回空DataFrame
-        if close_raw.empty:
-            raise  ValueError('价格data为空')
-
-        # 3. 计算每日的增长因子 (1 + 收益率)
-        # 第一天的pct_chg是NaN，因为没有前一日的数据
-        growth_factor = 1 + true_pct_chg
-
-        # 4. 使用.cumprod()计算自第一天以来的累积收益因子
-        # cumprod() 会自动忽略开头的NaN值，从第一个有效数字开始累乘
-        cumulative_growth_factor = growth_factor.cumprod()
-
-        # 5. 获取计算的基准价格 (即第一天的真实收盘价)
-        base_price = close_raw.iloc[0]
-
-        # 6. 后复权价 = 基准价格 * 累积收益因子
-        close_hfq = base_price * cumulative_growth_factor
-
-        # 7. 【关键修正】第一天的累积收益因子是NaN，导致第一天的后复权价也是NaN。
-        # 我们必须将其修正为基准价格本身。
-        close_hfq.iloc[0] = base_price
-
-        return close_hfq
+    # # 涨跌幅能对的上
+    # def _calculate_close_hfq(self) -> pd.DataFrame:
+    #     """
+    #     【return 后复权 close】
+    #     使用真实的“总回报率”和“不复权收盘价”来计算后复权价格序列。
+    #     """
+    #     # 1. 获取最关键的两个输入数据
+    #     true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')  # 我们之前计算的真实总回报率 (涨跌幅)
+    #     close_raw = self.factor_manager.get_raw_factor('close_raw')  # 当天真实价格 (不复权)
+    #
+    #     # 2. 处理边界情况：如果输入为空，则返回空DataFrame
+    #     if close_raw.empty:
+    #         raise  ValueError('价格data为空')
+    #
+    #     # 3. 计算每日的增长因子 (1 + 收益率)
+    #     # 第一天的pct_chg是NaN，因为没有前一日的数据
+    #     growth_factor = 1 + true_pct_chg
+    #
+    #     # 4. 使用.cumprod()计算自第一天以来的累积收益因子
+    #     # cumprod() 会自动忽略开头的NaN值，从第一个有效数字开始累乘
+    #     cumulative_growth_factor = growth_factor.cumprod()
+    #
+    #     # 5. 获取计算的基准价格 (即第一天的真实收盘价)
+    #     base_price = close_raw.iloc[0]
+    #
+    #     # 6. 后复权价 = 基准价格 * 累积收益因子
+    #     close_hfq = base_price * cumulative_growth_factor
+    #
+    #     # 7. 【关键修正】第一天的累积收益因子是NaN，导致第一天的后复权价也是NaN。
+    #     # 我们必须将其修正为基准价格本身。
+    #     close_hfq.iloc[0] = base_price
+    #
+    #     return close_hfq
 
     # def _calculate_close_hfq(self) -> pd.DataFrame:
     #     """
@@ -1320,30 +1326,21 @@ class FactorCalculator:
     #     true_pct_chg = self.factor_manager.get_raw_factor('pct_chg')#我们刚才讨论的总回报率 涨跌幅
     #     close_raw = self.factor_manager.get_raw_factor('close_raw')#当天真实价格
 
-
-
-    def _calculate_open_adj(self) -> pd.DataFrame:
-        """【V6.0 - 统一版】根据通用复权乘数计算复权开盘价"""
-        open_raw = self.factor_manager.get_raw_factor('open_raw')
-        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
-        return open_raw * multiplier
-
-    def _calculate_high_adj(self) -> pd.DataFrame:
-        """【V6.0 - 统一版】根据通用复权乘数计算复权最高价"""
-        high_raw = self.factor_manager.get_raw_factor('high_raw')
-        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
-        return high_raw * multiplier
-
-    def _calculate_low_adj(self) -> pd.DataFrame:
-        """【V6.0 - 统一版】根据通用复权乘数计算复权最低价"""
-        low_raw = self.factor_manager.get_raw_factor('low_raw')
-        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
-        return low_raw * multiplier
-
-    def _calculate_vol_adj(self) -> pd.DataFrame:
+    def _calculate_hfq_adj_factor(self) -> pd.DataFrame:
+        close_raw  = self.factor_manager.get_raw_factor('close_raw').copy(deep=True)
+        close_hfq  = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
+        ret = close_hfq/close_raw
+        return ret
+    def _calculate_vol_hfq(self) -> pd.DataFrame:
+        ##
+        # 复权成交量 = 原始成交量 / 复权因子
+        #
+        # # 其中复权因子 = 复权价格 / 原始价格
+        # 复权因子 = close_adj / close_raw
+        # vol_adj = vol_raw / 复权因子#
         """【V3.0 - 统一版】根据通用复权乘数计算【反向】复权成交量"""
         vol_raw = self.factor_manager.get_raw_factor('vol_raw')
-        multiplier = self.factor_manager.get_raw_factor('price_adj_multiplier')
+        hfq_adj_factor = self.factor_manager.get_raw_factor('hfq_adj_factor')
         # 价格乘数是 < 1 的“折扣”，所以成交量要【除以】它，实现反向调整
         ##
         # 为什么 vol (成交量) 是要反向的？（for：确保跨时间历史数据的可比性
@@ -1354,7 +1351,8 @@ class FactorCalculator:
         #  次日因为分红，把现金给出去。股价：1元 ，但是每天成交额都是1w左右 （基于这个假设。 所以今天量：10000的量，显然无法跟昨天相比，跨倍数太多！。所以需要除以复权因子
         #
         # #
-        return vol_raw.div(multiplier).where(multiplier != 0)
+        ret =  vol_raw/hfq_adj_factor
+        return ret
 
     #ok
     # def _calculatesss_adj_factor(self) -> pd.DataFrame:
@@ -1406,24 +1404,23 @@ class FactorCalculator:
     #填充好 ，供于重复使用！ （目前场景 计算cci 要求必须是连续的价格数据！且是后复权
 
 
-    def _calculate_close_adj_filled(self,limit: int) -> pd.DataFrame:
-        open_adj_unfilled = self.factor_manager.get_raw_factor('close_adj')
-        return open_adj_unfilled.ffill(limit=limit)
+    def _calculate_close_hfq_filled(self,limit: int) -> pd.DataFrame:
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('close_hfq')
+        return open_hfq_unfilled.ffill(limit=limit)
 
-    def _calculate_open_adj_filled(self,limit: int ) -> pd.DataFrame:
-        open_adj_unfilled = self.factor_manager.get_raw_factor('open_adj')
-        return open_adj_unfilled.ffill(limit=limit)
+    def _calculate_open_hfq_filled(self,limit: int ) -> pd.DataFrame:
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('open_hfq')
+        return open_hfq_unfilled.ffill(limit=limit)
 
-    def _calculate_high_adj_filled(self,limit: int ) -> pd.DataFrame:
-        open_adj_unfilled = self.factor_manager.get_raw_factor('high_adj')
-        return open_adj_unfilled.ffill(limit=limit)
+    def _calculate_high_hfq_filled(self,limit: int ) -> pd.DataFrame:
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('high_hfq')
+        return open_hfq_unfilled.ffill(limit=limit)
 
-    def _calculate_low_adj_filled(self,limit: int ) -> pd.DataFrame:
-        open_adj_unfilled = self.factor_manager.get_raw_factor('low_adj')
-        return open_adj_unfilled.ffill(limit=limit)
+    def _calculate_low_hfq_filled(self,limit: int ) -> pd.DataFrame:
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('low_hfq')
+        return open_hfq_unfilled.ffill(limit=limit)
 
     ###标准内部件
-
 
 
     ##
@@ -1461,7 +1458,7 @@ class FactorCalculator:
 
     ##
     # 交易行为类
-    # 字段: turnover_rate, amount_raw
+    # 字段: turnover_rate, amount
     #
     # 金融含义: NaN代表停牌，当天没有发生任何交易行为。
     #
@@ -1479,8 +1476,8 @@ class FactorCalculator:
         """【标准件】生产一个将停牌日NaN处理为0的换手率序列"""
         turnover_df = self.factor_manager.get_raw_factor('turnover_rate')
         return (turnover_df / 100.0).fillna(0)
-    def _calculate_amount_raw_fill_zero(self):
-        return self.factor_manager.get_raw_factor('amount_raw').fillna(0) * 1000.0
+    def _calculate_amount_fill_zero(self):
+        return self.factor_manager.get_raw_factor('amount').fillna(0) * 1000.0
 
 
     ##
@@ -1500,24 +1497,24 @@ class FactorCalculator:
         return self.factor_manager.get_raw_factor('list_date').ffill()
 
 
-    ###标准件
-
-    def _calculate_price_adj_multiplier(self) -> pd.DataFrame:
-        """
-        【新增核心组件】
-        根据权威的 close_adj 和 close_raw，计算每日通用的复权乘数。
-        这是所有其他复权价和复权量的基础。
-        """
-        logger.info("  > 正在生产核心标准件: price_adj_multiplier...")
-
-        # 依赖于我们之前已经定义好的、最权威的两个“标准件”
-        close_adj = self.factor_manager.get_raw_factor('close_adj')
-        close_raw = self.factor_manager.get_raw_factor('close_raw')
-
-        # 为防止除零错误，在close_raw为0的地方返回NaN
-        price_adj_multiplier = close_adj.div(close_raw).where(close_raw > 0)
-
-        return price_adj_multiplier
+    # ###标准件
+    #
+    # def _calculate_price_adj_multiplier(self) -> pd.DataFrame:
+    #     """
+    #     【新增核心组件】
+    #     根据权威的 close_hfq 和 close_raw，计算每日通用的复权乘数。
+    #     这是所有其他复权价和复权量的基础。
+    #     """
+    #     logger.info("  > 正在生产核心标准件: price_adj_multiplier...")
+    #
+    #     # 依赖于我们之前已经定义好的、最权威的两个“标准件”
+    #     close_hfq = self.factor_manager.get_raw_factor('close_hfq')
+    #     close_raw = self.factor_manager.get_raw_factor('close_raw')
+    #
+    #     # 为防止除零错误，在close_raw为0的地方返回NaN
+    #     price_adj_multiplier = close_hfq.div(close_raw).where(close_raw > 0)
+    #
+    #     return price_adj_multiplier
 def _broadcast_ann_date_to_daily(
                                  sparse_wide_df: pd.DataFrame,
                                  trading_dates: pd.DatetimeIndex) -> pd.DataFrame:

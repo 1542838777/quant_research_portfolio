@@ -73,9 +73,11 @@ def _get_nan_comment(field: str, rate: float) -> str:
 
     if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
         return "正常现象：不需要care 多少缺失率"
-    if field in ['circ_mv', 'close_raw', 'total_mv',
-                 'turnover_rate', 'open_raw', 'high_raw', 'low_raw',
-                 'pre_close', 'amount_raw'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+    if field in ['circ_mv',  'total_mv',
+                 'turnover_rate', 
+                 'close_raw','open_raw', 'high_raw', 'low_raw','vol_raw',
+                 'close_hfq','open_hfq', 'high_hfq', 'low_hfq',
+                 'pre_close', 'amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         return "正常现象：不需要care 多少缺失率"
     if field in ['list_date'] and rate <= 0.01:
         return "正常现象：不需要care 多少缺失率"
@@ -83,7 +85,6 @@ def _get_nan_comment(field: str, rate: float) -> str:
         return "正常"
     if field in ['ps_ttm'] and rate <= 0.20:
         return "正常"
-
 
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
@@ -167,7 +168,7 @@ class DataManager:
         # print("1. 验证股票池构建所需数据...")
 
         # 验证必需字段是否已加载
-        required_fields_for_universe = ['close_raw', 'circ_mv', 'turnover_rate', 'list_date']
+        required_fields_for_universe = ['close_hfq', 'circ_mv', 'turnover_rate', 'list_date']
         missing_fields = [field for field in required_fields_for_universe if field not in self.raw_dfs]
 
         if missing_fields:
@@ -197,7 +198,6 @@ class DataManager:
 
         # 基础字段 #核心要求 ，这是最基础的！ 千万不能错！ 只能是日频率更新的数据 ，(因为：   tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
         required_fields.update([
-            'close',
             # 'pb',  # 为了计算价值类因子  前视数据  tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
             'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
             # 'industry',  # 用于计算中性化
@@ -205,8 +205,9 @@ class DataManager:
             'total_mv',
             'list_date',  # 上市日期,
             'delist_date',  # 退市日期,用于构建标准动态股票池
-
-            'open', 'high', 'low', 'amount',  # 为了计算次日是否一字马涨停
+            'close_raw',  # 为了计算出adj_factor
+            'vol_raw',
+            'close_hfq','open_hfq', 'high_hfq', 'low_hfq',
             # 'pe_ttm', 'ps_ttm',  # 前视数据  tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
         ])
         # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
@@ -904,13 +905,13 @@ class DataManager:
                 """
         logger.info(f"  构建{pool_name}动态股票池...")
         # 第一步：基础股票池 - 有价格数据的股票
-        if 'close_raw' not in self.raw_dfs:
+        if 'close_hfq' not in self.raw_dfs:
             raise ValueError("缺少价格数据，无法构建股票池")
 
         # 【简化修复】价格数据的连续性已经隐含处理了退市股票，无需重复过滤
 
         # 基于T-1日的价格数据构建股票池
-        close_raw_shifted = self.raw_dfs['close_raw'].shift(1)  # 使用T-1日的收盘价信息
+        close_raw_shifted = self.raw_dfs['close_hfq'].shift(1)  # 使用T-1日的收盘价信息
         final_stock_pool_df = close_raw_shifted.notna()  # T-1日有收盘价的股票，T日可以考虑交易
         final_stock_pool_df = final_stock_pool_df.reindex(self.trading_dates)
         self.show_stock_nums_for_per_day('根据收盘价notna生成的', final_stock_pool_df)

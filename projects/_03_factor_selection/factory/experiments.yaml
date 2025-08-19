@@ -101,4 +101,4 @@
 #- factor_name: 'cci'
 #  stock_pool_name: 'HS300'
 - factor_name: 'volatility_120d'
-  stock_pool_name: 'ZZ1000'
+  stock_pool_name: 'HS300'

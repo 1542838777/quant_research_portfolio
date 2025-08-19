@@ -10,7 +10,8 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
     _massive_test_ZZ800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
-    dongbei_SETTING, fast_hs300_profile, ZZ1000_more_filter_profile, ZZ1000_no_filter_profile
+    dongbei_SETTING, fast_hs300_profile, ZZ1000_more_filter_profile, ZZ1000_no_filter_profile, fast_eva_SETTING, \
+    HS300_no_filter_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 
@@ -101,13 +102,25 @@ CSI300_more_filter_mode = {
 }
 
 东北证券_ZZ1000_no_filter_mode = {
-    'mode': '东北证券_CSI1000_more_filter_mode',
+    'mode': '东北证券_ZZ1000_no_filter_mode',
     'pools': {
         **ZZ1000_no_filter_profile
     },
-    'period': period_half_year,
+    'period': period_two_year,
     'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': '东北证券_ZZ1000_no_filter_mode'
+}
+
+
+
+东北证券_HS300_no_filter_mode = {
+    'mode': '东北证券_HS300_no_filter_mode',
+    'pools': {
+        **HS300_no_filter_profile
+    },
+    'period': period_one_year,
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
+    'desc': '东北证券_HS300_no_filter_mode'
 }
 CSI300_FFF_most_basic_mode = {
     'mode': 'CSI300_FFF_most_basic_mode',
@@ -124,7 +137,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = 东北证券_ZZ1000_no_filter_mode
+trans_pram = 东北证券_HS300_no_filter_mode
 is_debug = False
 
 
