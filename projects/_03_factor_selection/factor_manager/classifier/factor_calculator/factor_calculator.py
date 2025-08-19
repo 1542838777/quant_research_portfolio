@@ -10,7 +10,7 @@ from quant_lib import logger
 
 
 ## 数据统一 tushare 有时候给元 千元 万元!  现在需要达成:统一算元!
-#remind:pct_chg turnover_rate 具体处理 都要除以100
+#remind:  turnover_rate 具体处理 都要/100
 # total_mv, circ_mv 具体处理 *10000
 # amount 具体处理  *1000
 class FactorCalculator:
@@ -531,14 +531,7 @@ class FactorCalculator:
             window=window,
             min_periods=min_periods
         )
-
-        # --- 4. 收尾工作 ---
-        # a) 截取最终需要的日期范围
-        beta_df = beta_df_full.loc[start_date:end_date]
-
-        # b) 【关键】执行 T-1 移位，确保返回的是合规的、可用于决策的因子
-        logger.info("  > [调度] Beta计算完成，。")
-        return beta_df
+        return beta_df_full
 
     def _calculate_volatility_120d(self) -> pd.DataFrame:
         """
@@ -560,6 +553,29 @@ class FactorCalculator:
         # 这样计算出的波动率更准确，只基于实际交易日的收益率
 
         rolling_std_df = pct_chg_df.rolling(window=120, min_periods=60).std()
+        annualized_vol_df = rolling_std_df * np.sqrt(252)
+
+        return annualized_vol_df
+    def _calculate_volatility_40d(self) -> pd.DataFrame:
+        """
+        计算120日年化波动率。
+
+        金融逻辑:
+        衡量个股在过去约半年内的价格波动风险。经典的“低波动异象”认为，
+        低波动率的股票长期来看反而有更高的风险调整后收益。
+
+        数据处理逻辑:
+        - 停牌期间的收益率为NaN，这是正确的，不应该填充为0
+        - rolling.std()会自动忽略NaN值进行计算
+        - min_periods=60确保至少有60个有效交易日才计算波动率
+        """
+        print("    > 正在计算因子: volatility_120d...")
+        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
+
+        # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
+        # 这样计算出的波动率更准确，只基于实际交易日的收益率
+
+        rolling_std_df = pct_chg_df.rolling(window=40, min_periods=20).std()
         annualized_vol_df = rolling_std_df * np.sqrt(252)
 
         # 【新增】数据质量检查
@@ -1420,6 +1436,23 @@ class FactorCalculator:
         open_hfq_unfilled = self.factor_manager.get_raw_factor('low_hfq')
         return open_hfq_unfilled.ffill(limit=limit)
 
+    ##基础换算！
+    def _calculate_circ_mv(self):
+        circ_mv = self.factor_manager.data_manager.raw_dfs['circ_mv'].copy(deep=True)#这里会递归啊，所以一定要开缓存，这样下此调用会走缓存！
+        circ_mv = circ_mv * 10000
+        return circ_mv
+    def _calculate_total_mv(self):
+        total_mv = self.factor_manager.data_manager.raw_dfs['total_mv'].copy(deep=True)#这里会递归啊，所以一定要开缓存，这样下此调用会走缓存！
+        total_mv = total_mv * 10000
+        return total_mv
+    def _calculate_amount(self):
+        amount = self.factor_manager.data_manager.raw_dfs['amount'].copy(deep=True)#这里会递归啊，所以一定要开缓存，这样下此调用会走缓存！
+        amount = amount * 1000
+        return amount
+    def _calculate_turnover_rate(self):
+        turnover_rate = self.factor_manager.data_manager.raw_dfs['turnover_rate'].copy(deep=True)#这里会递归啊，所以一定要开缓存，这样下此调用会走缓存！
+        turnover_rate = turnover_rate / 100
+        return turnover_rate
     ###标准内部件
 
 

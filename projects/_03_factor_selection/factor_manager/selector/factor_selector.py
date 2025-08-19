@@ -147,7 +147,7 @@ class FactorSelectorV2:
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c'  # 或 'c2c'
+               default_config='o2c'
            )
            # 调用新的归因分析面板函数
            self.visualization_manager.plot_attribution_panel(

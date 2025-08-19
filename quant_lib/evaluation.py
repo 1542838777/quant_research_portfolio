@@ -63,21 +63,57 @@ def calcu_forward_returns_open_close(period: int,
 
 
 # ok
-def calcu_forward_returns_close_close(period, price_df):
-    # 1. 定义起点和终点价格 (严格遵循T-1原则)
-    start_price = price_df.shift(1)
-    end_price = price_df.shift(1 - period)
-
-    # 2. 创建“未来存续”掩码 (确保在持有期首尾股价都存在)
-    survived_mask = start_price.notna() & end_price.notna()
-
-    # 3. 计算原始收益率，并应用掩码过滤
-    forward_returns_raw = end_price / start_price - 1
-    forward_returns = forward_returns_raw.where(survived_mask)
-
-    # clip 操作应该在所有计算和过滤完成后进行
-    return forward_returns.clip(-0.15, 0.15)
-
+##
+#
+#
+# 你的策略是在 T-1日收盘后 做出决策。
+#
+# 真实的交易执行，最早只能在 T日开盘时 发生。
+#
+# 所以，一个基于 T-1 决策的收益，它的衡量起点也必须是 T日。
+#
+# 如果用这个代码，却匹配了一个从 T-1日 就已经开始计算的收益！ ，在T-1日决策的瞬间，就已经“偷看”到了T-1日到未来的收益，它没有模拟“持有”这个真实世界中的、需要时间流逝的过程。
+#
+# 所以，这个对齐方式虽然看起来 T-1 对上了 T-1，但它违反了真实世界“决策”与“执行”之间的时间差，是一个隐蔽的未来函数。#
+##
+# 太坑了，！！！！害我排查两天！这个经常搞出极度异常的单调性！（尤其是volatility相关因子！，而切换成o2c 骤降！瞬间恢复正常
+# #
+# def calcu_forward_returns_close_close(period, price_df):
+#     # 1. 定义起点和终点价格 (严格遵循T-1原则)
+#     start_price = price_df.shift(1)
+#     end_price = price_df.shift(1 - period)
+#
+#     # 2. 创建“未来存续”掩码 (确保在持有期首尾股价都存在)
+#     survived_mask = start_price.notna() & end_price.notna()
+#
+#     # 3. 计算原始收益率，并应用掩码过滤
+#     forward_returns_raw = end_price / start_price - 1
+#     forward_returns = forward_returns_raw.where(survived_mask)
+#
+#     # clip 操作应该在所有计算和过滤完成后进行
+#     return forward_returns.clip(-0.15, 0.15)
+# if __name__ == '__main__':
+    # # 1. 构造一个简单的价格DataFrame
+    # price_data = {'price': [100, 110, 121, 133.1, 146.41]}  # 每天上涨10%
+    # dates = pd.to_datetime(['2025-08-01', '2025-08-02', '2025-08-03', '2025-08-04', '2025-08-05'])
+    # price_df = pd.DataFrame(price_data, index=dates)
+    #
+    # # 2. 构造一个简单的因子DataFrame
+    # factor_data = {'factor': [1, 2, 3, 4, 5]}  # 因子值每天递增
+    # factor_df = pd.DataFrame(factor_data, index=dates)
+    # # 计算2日收益率
+    # buggy_returns = calcu_forward_returns_close_close(2,price_df)
+    #
+    # print("--- 你的函数计算出的收益率 ---")
+    # print(buggy_returns)
+    #
+    # # 模拟你的主函数中的合并步骤
+    # print("\n--- 模拟合并因子和收益 ---")
+    # merged_df = pd.concat([factor_df, buggy_returns.rename(columns={'price': 'return'})], axis=1)
+    # print(merged_df)
+    # # 2. 构造一个简单的因子DataFrame
+    # factor_data = {'factor': [1, 2, 3, 4, 5]}  # 因子值每天递增
+    # factor_df = pd.DataFrame(factor_data, index=dates)
 
 # ok
 def calculate_ic(
@@ -85,7 +121,7 @@ def calculate_ic(
         price_df: pd.DataFrame,
         forward_periods: List[int] = [1, 5, 20],
         method: str = 'spearman',
-        returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame] = calcu_forward_returns_close_close,
+        returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame] = calcu_forward_returns_open_close,
         min_stocks: int = 20
 ) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
     """
@@ -260,9 +296,9 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
             monotonicity_spearman, p_value = spearmanr(np.arange(1, n_quantiles + 1), quantile_means)
 
             # 【新增】异常单调性检测
-            if abs(monotonicity_spearman) > 0.95:
+            if abs(monotonicity_spearman) >= 0.9:
                 logger.warning(f"⚠️  检测到异常单调性: {monotonicity_spearman:.6f} (p={p_value:.6f})")
-                logger.warning(f"   分位数收益: {[f'{q:.4f}' for q in quantile_means]}")
+                logger.warning(f"   分位数收益: {[f'{q:.6f}' for q in quantile_means]}")
 
                 # 检查是否所有收益都相同
                 unique_returns = len(set(quantile_means))

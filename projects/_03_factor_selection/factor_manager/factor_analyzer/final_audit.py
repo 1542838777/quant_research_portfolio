@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from quant_lib.evaluation import calcu_forward_returns_close_close
 
 
 def final_audit(factor_data_path):

@@ -39,7 +39,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from quant_lib.evaluation import (
     calculate_ic,
     calculate_quantile_returns, fama_macbeth, calculate_turnover,
-    calcu_forward_returns_close_close, calcu_forward_returns_open_close, quantile_stats_result,
+    calcu_forward_returns_open_close, quantile_stats_result,
     calculate_quantile_daily_returns
 
 )
@@ -424,7 +424,7 @@ class FactorAnalyzer:
          ) = self.prepare_date_for_process_factor(target_factor_name, trade_dates,stock_codes,stock_pool_index_name)
         # save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,'_raw')
 
-
+        #ok 检查到这里一切正常
         if need_process_factor:
             # 1. 完整因子预处理（去极值 + 中性化 + 标准化）
             factor_data_shifted = self.factor_processor.process_factor(
@@ -443,9 +443,9 @@ class FactorAnalyzer:
 
         # 数据准备
         close_df, circ_mv_df_shifted, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
-        status_text = "需要处理" if need_process_factor else "不需要处理"
+        status_text = "需要" if need_process_factor else "不需要"
         log_flow_start(
-            f"因子 {target_factor_name}（{status_text}）经过预处理之后，进入 core_three_test 测试"
+            f"因子 {target_factor_name}（{status_text}）经过预处理，进入 core_three_test 测试"
         )
         # save_temp_date(target_factor_name,factor_data_shifted,returns_calculator,'_prcessed')
         ic_s, ic_st, q_r,q_daily_returns_df, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
@@ -1116,7 +1116,7 @@ class FactorAnalyzer:
                         prepare_for_neutral_shift_base_own_stock_pools_dfs, circ_mv_shift_df, style_factors_dict,
                         do_ic_test, do_turnover_test, do_quantile_test, do_fama_test, do_style_correlation_test
                         ) -> tuple[
-        dict[str, Series] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,pd.DataFrame | None,
+        dict[str, Series] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, DataFrame | None,pd.DataFrame | None,
         dict[Any, Any] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None, dict[str, DataFrame] | None,
         dict[str, float] | None]:
 
@@ -1360,11 +1360,11 @@ class FactorAnalyzer:
         open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='open_hfq',stock_pool_index_name=stock_pool_index_name,for_test=True)
 
         # 准备收益率计算器（价格数据不需要shift，因为我们要计算T日的收益率）
-        c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)
+        # c2c_calculator = partial(calcu_forward_returns_close_close, price_df=close_df)
         o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
         # 定义测试配置
         test_configurations = {
-            'c2c': c2c_calculator,
+            # 'c2c': c2c_calculator,
             'o2c': o2c_calculator
         }
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
