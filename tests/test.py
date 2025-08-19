@@ -448,7 +448,6 @@ def t_daily(stock_code, start_date, end_date, column):
         (clode_hfq.index >= pd.to_datetime(start_date)) & (clode_hfq.index <= pd.to_datetime(end_date)))]
     clode_hfq = clode_hfq[stock_code]
     return clode_hfq
-
 if __name__ == '__main__':
 
     t_daily('003017.SZ', '20231105', '20250705','vol')

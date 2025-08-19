@@ -11,7 +11,7 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
     dongbei_SETTING, fast_hs300_profile, ZZ1000_more_filter_profile, ZZ1000_no_filter_profile, fast_eva_SETTING, \
-    HS300_no_filter_profile
+    HS300_no_filter_profile, ALL_none_FFF_most_basic_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 
@@ -130,6 +130,15 @@ CSI300_FFF_most_basic_mode = {
     'period': period_东北研报,
     'desc': '但是只用了沪深300股票池（）无普适性过滤，，没有任何过滤'
 }
+ALL_FFF_most_basic_mode = {
+    'mode': 'ALL_none_FFF_most_basic_profile',
+    'pools': {
+        **ALL_none_FFF_most_basic_profile
+    },
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
+    'period': period_one_year,
+    'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
+}
 
 
 def check_backtest_periods(start_date, end_date):
@@ -137,7 +146,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = 东北证券_HS300_no_filter_mode
+trans_pram = ALL_FFF_most_basic_mode
 is_debug = False
 
 
