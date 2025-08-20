@@ -63,7 +63,7 @@ def load_dividend_events_long():
     df['ex_date'] = pd.to_datetime(df['ex_date'])
     df['ann_date'] = pd.to_datetime(df['ann_date'])
     df = df.drop_duplicates()
-    df.sort_values(by=['ex_date'], inplace=True)
+    df = df.sort_values(by=['ex_date'], inplace=False)
     # df =  df[df['ts_code'].isin(['000001.SZ','000002.SZ','000003.SZ'])]
     return df
 
@@ -71,8 +71,7 @@ def load_dividend_events_long():
 def load_suspend_d_df():
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'suspend_d.parquet')
     df['trade_date'] = pd.to_datetime(df['trade_date'])
-    df.sort_values(by=['trade_date'], ascending=[True], inplace=True)
-    return df
+    return df.sort_values(by=['trade_date'], ascending=[True], inplace=False)
 
 
 def get_trading_dates(start_date: str, end_date: str) -> pd.DatetimeIndex:
@@ -94,7 +93,7 @@ def get_trading_dates(start_date: str, end_date: str) -> pd.DatetimeIndex:
         trade_cal['cal_date_dt'] = pd.to_datetime(trade_cal['cal_date'], errors='raise')
 
         # 删除转换失败的行，增加健壮性
-        trade_cal.dropna(subset=['cal_date_dt'], inplace=True)
+        trade_cal= trade_cal.dropna(subset=['cal_date_dt'], inplace=False)
 
         # --- 步骤2：转换输入的起止日期 ---
         # 【核心修正 2】: 同样将输入的字符串参数转换为datetime对象

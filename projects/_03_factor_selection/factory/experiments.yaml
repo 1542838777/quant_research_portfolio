@@ -186,4 +186,4 @@
 #- factor_name: 'pead'#todo 计算问题
 #  stock_pool_name: 'ALL'
 - factor_name: 'volatility_120d'
-  stock_pool_name: 'ZZ800'
+  stock_pool_name: 'ALL'

@@ -356,6 +356,13 @@ def calculate_quantile_returns(
                                  值是对应的分位数收益DataFrame。
                                  每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
     """
+    #### todo 移除打点代码
+    factor_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_volatility.csv')
+    return_df= returns_calculator(period=3)
+    return_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv')
+    ###
+    # factor_df = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\local_volatility.csv', index_col=[0], parse_dates=True)
+
     results = {}
     for period in forward_periods:
         logger.info(f"  > 正在处理向前看 {period} 周期...")
@@ -396,7 +403,7 @@ def calculate_quantile_returns(
         quantile_returns_wide = daily_quantile_returns.unstack()
         # 假设当天某个分组的所有股票都因为  未来不存续 而收益为NaN， （不存续：比如我们周期5，今天买的，第五天因为停牌卖不出去，导致无法拿到价格 导致returns 为nan） 你要不是不把这个收益率替换成0，后面再算累计收益的时候 会报错！
         # 那么该分组的平均收益也是NaN。我们假设这种情况下组合当天收益为0。
-        quantile_returns_wide.fillna(0, inplace=True)
+        quantile_returns_wide= quantile_returns_wide.fillna(0, inplace=False)
         # 改个列名
         quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
 
@@ -819,7 +826,7 @@ def calculate_quantile_daily_returns(
 
     # 3. 确保因子值为数值类型
     merged_df['factor'] = pd.to_numeric(merged_df['factor'], errors='coerce')
-    merged_df.dropna(subset=['factor'], inplace=True)
+    merged_df=merged_df.dropna(subset=['factor'], inplace=False)
 
     # 4. 稳健的分组
     merged_df['quantile'] = merged_df.groupby(level=0)['factor'].transform(

@@ -107,7 +107,7 @@ def get_industry_record_df_processed():
         return group
 
     df = df.groupby('ts_code').apply(resolve_timeline_conflicts)
-    df.drop_duplicates(subset=['ts_code', 'in_date', 'out_date'], keep='first', inplace=True)
+    df=df.drop_duplicates(subset=['ts_code', 'in_date', 'out_date'], keep='first', inplace=False)
 
     return df.reset_index(drop=True)
 

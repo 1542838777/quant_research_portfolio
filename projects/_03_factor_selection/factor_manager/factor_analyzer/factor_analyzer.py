@@ -381,10 +381,11 @@ class FactorAnalyzer:
                 need_standardize = False
             )
         else:
-            # 2. 原始因子的最小预处理（仅去极值，保持原始特征）
-            factor_data_shifted = self._minimal_preprocessing_for_raw_factor(
-                factor_data_shifted, target_factor_name
-            )
+            # 2. 原始因子的最小预处理（仅去极值，保持原始特征） #todo解开
+            print("暂时跳过去极值")
+            # factor_data_shifted = self._minimal_preprocessing_for_raw_factor(
+            #     factor_data_shifted, target_factor_name
+            # )
 
         # 数据准备
         close_df, circ_mv_df_shifted, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
@@ -940,7 +941,7 @@ class FactorAnalyzer:
                 preprocess_method="standard",
                 start_date=start_date,
                 end_date=end_date,
-                need_process_factor=True,
+                need_process_factor=False,#记得该回去 todo
                 do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
                 do_style_correlation_test=True
             )
@@ -1393,6 +1394,14 @@ class FactorAnalyzer:
 
         # 准备收益率计算器（价格数据不需要shift，因为我们要计算T日的收益率）
         o2c_calculator = partial(calcu_forward_returns_open_close, close_df=close_df, open_df=open_df)
+        ###
+        #### 打点代码
+        close_df.to_csv(
+            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_close_hfq.csv')
+        open_df.to_csv(
+            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_open_hfq.csv')
+        ###
+        ###
         # 定义测试配置
         test_configurations = {
             'o2c': o2c_calculator

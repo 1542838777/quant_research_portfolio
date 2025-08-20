@@ -79,7 +79,7 @@ class DataLoader:
         try:
             trade_cal_df = pd.read_parquet(self.data_path / 'trade_cal.parquet')
             trade_cal_df['cal_date'] = pd.to_datetime(trade_cal_df['cal_date'])
-            trade_cal_df.sort_values('cal_date', inplace=True)
+            trade_cal_df=trade_cal_df.sort_values('cal_date', inplace=False)
             return trade_cal_df
         except Exception as e:
             logger.error(f"加载交易日历失败: {e}")

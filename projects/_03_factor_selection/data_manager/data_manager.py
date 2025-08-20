@@ -326,7 +326,7 @@ class DataManager:
         # --- 1. 数据预处理 ---
         # 确保suspend_df中的日期是datetime类型，并按股票和日期排序
         suspend_df['trade_date'] = pd.to_datetime(suspend_df['trade_date'])
-        suspend_df.sort_values(by=['ts_code', 'trade_date'], inplace=True)
+        suspend_df = suspend_df.sort_values(by=['ts_code', 'trade_date'], inplace=False)
 
         # 初始化一个空的DataFrame，准备逐列填充
         tradeable_matrix = pd.DataFrame(index=trading_dates, columns=ts_codes, dtype=bool)
@@ -362,13 +362,13 @@ class DataManager:
 
             # d. 【核心】状态传播 (Forward Fill)
             # ffill会用前一个有效值填充后面的NaN，完美模拟了状态的持续性
-            status_series.ffill(inplace=True)
+            status_series=status_series.ffill(inplace=False)
 
             # 将这只股票计算好的完整状态序列，填充到总矩阵中
             tradeable_matrix[ts_code] = status_series
 
         # e. 收尾工作：对于没有任何停复牌历史的股票，它们列可能依然是NaN，默认为可交易
-        tradeable_matrix.fillna(True, inplace=True)
+        tradeable_matrix=tradeable_matrix.fillna(True, inplace=False)
 
         logger.info("每日‘可交易’状态矩阵重建完毕。")
         self._tradeable_matrix_by_suspend_resume = tradeable_matrix.astype(bool)
@@ -398,7 +398,7 @@ class DataManager:
 
         # 【关键】必须按“生效日”排序，以确保状态的正确延续和覆盖
         namechange_df['start_date'] = pd.to_datetime(namechange_df['start_date'])
-        namechange_df.sort_values(by=['ts_code', 'start_date'], inplace=True)
+        namechange_df= namechange_df.sort_values(by=['ts_code', 'start_date'], inplace=False)
 
         # 【关键】必须用 np.nan 初始化，作为“未知状态”
         st_matrix = pd.DataFrame(np.nan, index=trading_dates, columns=ts_codes)
@@ -422,8 +422,8 @@ class DataManager:
                     st_matrix.loc[start_trade_date, ts_code] = is_risk_event
 
         # --- 3. “传播”与“收尾” ---
-        st_matrix.ffill(inplace=True)
-        st_matrix.fillna(False, inplace=True)
+        st_matrix = st_matrix.ffill(inplace=False)
+        st_matrix= st_matrix.fillna(False, inplace=False)
 
         logger.info("每日‘已知风险’状态矩阵重建完毕。")
         self.st_matrix = st_matrix.astype(bool)
@@ -1010,8 +1010,7 @@ class DataManager:
 
     def get_experiments_df(self):
         df = pd.DataFrame(self.experiments_config)
-        df.drop_duplicates(inplace=True)
-        return df
+        return df.drop_duplicates(inplace=False)
 
     def get_need_product_pool_name(self):
         self.get_experiments_factor_names()

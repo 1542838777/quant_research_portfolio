@@ -90,7 +90,7 @@ def download_index_weights():
                 # 保存年度数据
                 if all_weights:
                     final_df = pd.concat(all_weights, ignore_index=True)
-                    final_df.drop_duplicates(inplace=True)
+                    final_df= final_df.drop_duplicates(inplace=False)
 
                     year_path.mkdir(parents=True, exist_ok=True)
                     final_df.to_parquet(year_path / 'data.parquet')

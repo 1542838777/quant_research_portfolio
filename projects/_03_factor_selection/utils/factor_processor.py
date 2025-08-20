@@ -258,10 +258,10 @@ class FactorProcessor:
         df = daily_factor_series.to_frame(name='factor')
         merged_df = df.join(daily_industry_map, how='left')
         #   merge 之前，先将索引ts_code重置为一列，以防在merge(merged_df.merge(primary_stats, on=primary_col, how='left'))中丢失
-        merged_df.reset_index(inplace=True)
+        merged_df=merged_df.reset_index(inplace=False)
 
         # 删除没有因子值或行业分类的数据
-        merged_df.dropna(subset=['factor', primary_col, fallback_col], inplace=True)
+        merged_df=merged_df.dropna(subset=['factor', primary_col, fallback_col], inplace=False)
         if merged_df.empty:
             return pd.Series(index=daily_factor_series.index, dtype=float)
 
@@ -270,11 +270,11 @@ class FactorProcessor:
             return (s - s.median()).abs().median()
 
         primary_stats = merged_df.groupby(primary_col)['factor'].agg(['median', 'count', mad_func])
-        primary_stats.rename(columns={'median': 'primary_median', 'count': 'primary_count', 'mad_func': 'primary_mad'},
-                             inplace=True)
+        primary_stats=primary_stats.rename(columns={'median': 'primary_median', 'count': 'primary_count', 'mad_func': 'primary_mad'},
+                             inplace=False)
 
         fallback_stats = merged_df.groupby(fallback_col)['factor'].agg(['median', mad_func])
-        fallback_stats.rename(columns={'median': 'fallback_median', 'mad_func': 'fallback_mad'}, inplace=True)
+        fallback_stats=fallback_stats.rename(columns={'median': 'fallback_median', 'mad_func': 'fallback_mad'}, inplace=False)
 
         # 3. 将统计数据映射回每只股票
         merged_df = merged_df.merge(primary_stats, on=primary_col, how='left')
@@ -286,8 +286,8 @@ class FactorProcessor:
         merged_df['final_median'] = np.where(use_fallback, merged_df['fallback_median'], merged_df['primary_median'])
         merged_df['final_mad'] = np.where(use_fallback, merged_df['fallback_mad'], merged_df['primary_mad'])
 
-        merged_df['final_mad'].replace(0, 1e-9, inplace=True)#秒啊，如果是0的话 下面upper lower是一个值！ 导致最后所因子都是一个值！大忌！
-        merged_df.set_index('ts_code', inplace=True)
+        merged_df=merged_df['final_mad'].replace(0, 1e-9, inplace=False)#秒啊，如果是0的话 下面upper lower是一个值！ 导致最后所因子都是一个值！大忌！
+        merged_df=merged_df.set_index('ts_code', inplace=False)
 
         # 5. 执行去极值
         method = config.get('method', 'mad')
@@ -609,19 +609,19 @@ class FactorProcessor:
         merged_df = df.join(daily_industry_map, how='left')
 
         # 赶紧 先将索引ts_code重置为一列，以防在merge(merged_df.merge(primary_stats, on=primary_col, how='left'))中丢失
-        merged_df.reset_index(inplace=True)
+        merged_df=merged_df.reset_index(inplace=False)
 
-        merged_df.dropna(subset=['factor', primary_col, fallback_col], inplace=True)
+        merged_df=merged_df.dropna(subset=['factor', primary_col, fallback_col], inplace=False)
         if merged_df.empty:
             return pd.Series(index=daily_factor_series.index, dtype=float)
 
         # 2. 计算各级别行业的统计数据 (mean, std, count)
         primary_stats = merged_df.groupby(primary_col)['factor'].agg(['mean', 'std', 'count'])
-        primary_stats.rename(columns={'mean': 'primary_mean', 'std': 'primary_std', 'count': 'primary_count'},
-                             inplace=True)
+        primary_stats=primary_stats.rename(columns={'mean': 'primary_mean', 'std': 'primary_std', 'count': 'primary_count'},
+                             inplace=False)
 
         fallback_stats = merged_df.groupby(fallback_col)['factor'].agg(['mean', 'std'])
-        fallback_stats.rename(columns={'mean': 'fallback_mean', 'std': 'fallback_std'}, inplace=True)
+        fallback_stats=fallback_stats.rename(columns={'mean': 'fallback_mean', 'std': 'fallback_std'}, inplace=False)
 
         # 3. 将统计数据映射回每只股票
         merged_df = merged_df.merge(primary_stats, on=primary_col, how='left')
@@ -634,7 +634,7 @@ class FactorProcessor:
 
         # 修复标准化处理：更合理地处理标准差为0的情况
         merged_df['final_std'] = merged_df['final_std'].fillna(0)
-        merged_df.set_index('ts_code', inplace=True)
+        merged_df=merged_df.set_index('ts_code', inplace=False)
 
         # 对于标准差为0的情况，直接设为0，不进行标准化（在设置索引后创建mask）
         zero_std_mask = merged_df['final_std'] < 1e-6

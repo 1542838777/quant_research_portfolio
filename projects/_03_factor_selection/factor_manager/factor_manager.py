@@ -506,7 +506,7 @@ class FactorManager:
         # 1. 准备新数据
         new_results_df = pd.DataFrame(all_summary_rows)
         # (推荐) 在合并前先排序，保持数据条理性
-        new_results_df.sort_values(by=['factor_name', 'period'], inplace=True)
+        new_results_df=new_results_df.sort_values(by=['factor_name', 'period'], inplace=False)
 
         # 2. 【修正Bug 3】正确构建文件路径
         output_dir = Path(f'{self.results_dir}')
@@ -600,7 +600,7 @@ class FactorManager:
         final_matrix = pd.concat([matrix_to_keep, new_returns_df], axis=1)
 
         # 7. (推荐) 按列名排序，让文件结构更清晰
-        final_matrix.sort_index(axis=1, inplace=True)
+        final_matrix= final_matrix.sort_index(axis=1, inplace=False)
 
         # 8. 保存最终的、更新后的收益矩阵
         try:

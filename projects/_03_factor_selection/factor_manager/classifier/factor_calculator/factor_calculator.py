@@ -70,11 +70,11 @@ class FactorCalculator:
 
         # 1. 获取分子: 随时点的股东权益 (Book Value)
         #    我们的财报引擎，确保了这里使用的是 ann_date，无未来数据
-        book_value_df = self.factor_manager.get_raw_factor('total_equity')
+        book_value_df = self.factor_manager.get_raw_factor('total_equity').copy(deep=True)
 
         # 2. 获取分母: 随时点的总市值 (Market Value)
         #    我们信任 daily_basic 中的 total_mv 是随时点正确的
-        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
 
         # 3. 对齐数据
         book_aligned, market_aligned = book_value_df.align(market_value_df, join='right', axis=None)
@@ -97,10 +97,10 @@ class FactorCalculator:
         logger.info("  > 正在基于第一性原理，计算【权威 ep_ratio】...")
 
         # 1. 获取分子: TTM归母净利润
-        earnings_ttm_df = self.factor_manager.get_raw_factor('net_profit_ttm')
+        earnings_ttm_df = self.factor_manager.get_raw_factor('net_profit_ttm').copy(deep=True)
 
         # 2. 获取分母: 总市值
-        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
 
         # 3. 对齐与填充
         earnings_aligned, market_aligned = earnings_ttm_df.align(market_value_df, join='right', axis=None)
@@ -120,10 +120,10 @@ class FactorCalculator:
         logger.info("  > 正在基于第一性原理，计算【权威 sp_ratio】...")
 
         # 1. 获取分子: TTM营业总收入
-        sales_ttm_df = self.factor_manager.get_raw_factor('total_revenue_ttm')
+        sales_ttm_df = self.factor_manager.get_raw_factor('total_revenue_ttm').copy(deep=True)
 
         # 2. 获取分母: 总市值
-        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
 
         # 3. 对齐与填充
         sales_aligned, market_aligned = sales_ttm_df.align(market_value_df, join='right', axis=None)
@@ -144,10 +144,10 @@ class FactorCalculator:
         logger.info("  > 正在基于第一性原理，计算【权威 cfp_ratio】...")
 
         # 1. 获取分子: TTM经营活动现金流
-        cashflow_ttm_df = self.factor_manager.get_raw_factor('cashflow_ttm')
+        cashflow_ttm_df = self.factor_manager.get_raw_factor('cashflow_ttm').copy(deep=True)
 
         # 2. 获取分母: 总市值
-        market_value_df = self.factor_manager.get_raw_factor('total_mv')
+        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
 
         # 3. 对齐与填充
         cashflow_aligned, market_aligned = cashflow_ttm_df.align(market_value_df, join='right', axis=None)
@@ -197,7 +197,7 @@ class FactorCalculator:
         # --- 步骤四：后处理 ---
         # 尽管我们处理了分母为0的情况，但仍可能因浮点数问题产生无穷大值。
         # 统一替换为NaN，确保因子数据的干净。
-        roe_ttm_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        roe_ttm_df=roe_ttm_df.replace([np.inf, -np.inf], np.nan, inplace=False)
 
         print("--- 最终因子: roe_ttm 计算完成 ---")
         return roe_ttm_df
@@ -230,10 +230,7 @@ class FactorCalculator:
         # 理论上，毛利率不应超过100%或低于-100%太多，但极端情况可能出现。
         # 这里可以根据需要进行clip或winsorize，但暂时保持原样以观察原始分布。
         # 再次确保没有无穷大值。
-        gross_margin_ttm_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-        print("--- 最终因子: gross_margin_ttm 计算完成 ---")
-        return gross_margin_ttm_df
+        return  gross_margin_ttm_df.replace([np.inf, -np.inf], np.nan, inplace=False)
 
     def _calculate_debt_to_assets(self) -> pd.DataFrame:
         """
@@ -257,10 +254,7 @@ class FactorCalculator:
         debt_to_assets_df = debt_aligned / assets_aligned_safe
 
         # --- 步骤四：后处理 ---
-        debt_to_assets_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-        print("--- 最终因子: debt_to_assets 计算完成 ---")
-        return debt_to_assets_df
+        return debt_to_assets_df.replace([np.inf, -np.inf], np.nan, inplace=False)
     # === 成长 (Growth) ===
     def _calculate_net_profit_growth_ttm(self) -> pd.DataFrame:
         """
@@ -297,7 +291,7 @@ class FactorCalculator:
         net_profit_single_q_long = self._calculate_net_profit_single_q_long()
 
         # 确保数据按股票和报告期排序
-        net_profit_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        net_profit_single_q_long = net_profit_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=False)
 
         # --- 步骤二：计算同比增长率 (YoY) ---
         # shift(4) 回溯去年同期
@@ -314,12 +308,12 @@ class FactorCalculator:
         # --- 步骤三：将计算出的因子对齐到每日交易日历 ---
         # 1. 整理并过滤
         yoy_long_df = net_profit_single_q_long[['ts_code', 'ann_date', 'end_date', 'net_profit_growth_yoy']].copy()
-        yoy_long_df.dropna(inplace=True)
+        yoy_long_df= yoy_long_df.dropna(inplace=False)
         if yoy_long_df.empty:
             raise ValueError("警告: 计算 net_profit_growth_yoy 后没有产生任何有效的增长率数据点。")
 
         # 2. 透视 (Pivot)
-        yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        yoy_long_df = yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=False)
         yoy_wide = yoy_long_df.pivot_table(
             index='ann_date',
             columns='ts_code',
@@ -348,7 +342,7 @@ class FactorCalculator:
         )
 
         # 确保数据按股票和报告期排序，这是 shift 操作准确无误的前提
-        total_revenue_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        total_revenue_single_q_long= total_revenue_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=False)
 
         # --- 步骤二：计算同比增长率 (YoY) ---
         # shift(4) 在季度数据上，就是回溯4个季度，即去年同期
@@ -366,12 +360,12 @@ class FactorCalculator:
 
         # 1. 整理并过滤有效的YoY值
         yoy_long_df = total_revenue_single_q_long[['ts_code', 'ann_date', 'end_date', 'total_revenue_growth_yoy']].copy()
-        yoy_long_df.dropna(inplace=True)
+        yoy_long_df=yoy_long_df.dropna(inplace=False)
         if yoy_long_df.empty:
             raise ValueError("警告: 计算 total_revenue_growth_yoy 后没有产生任何有效的增长率数据点。")
 
         # 2. 透视 (Pivot)
-        yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        yoy_long_df = yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=False)
         yoy_wide = yoy_long_df.pivot_table(
             index='ann_date',
             columns='ts_code',
@@ -547,13 +541,14 @@ class FactorCalculator:
         - min_periods=60确保至少有60个有效交易日才计算波动率
         """
         print("    > 正在计算因子: volatility_120d...")
-        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
+        # pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
+        close_hfq = self.factor_manager.get_raw_factor('close_hfq').copy()
 
+        # 2. 计算120个交易日前的价格到今天的收益率
+        #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
+        annualized_vol_df = close_hfq.pct_change().rolling(window=40, min_periods=30).std() * np.sqrt(252)
         # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
         # 这样计算出的波动率更准确，只基于实际交易日的收益率
-
-        rolling_std_df = pct_chg_df.rolling(window=120, min_periods=60).std()
-        annualized_vol_df = rolling_std_df * np.sqrt(252)
 
         return annualized_vol_df
     def _calculate_volatility_40d(self) -> pd.DataFrame:
@@ -676,9 +671,7 @@ class FactorCalculator:
         logger.info("    > amihud_liquidity (最终版) 计算完成。")
 
         # 丢弃所有值都为NaN的行，这些通常是回测初期或数据不足的行
-        final_amihud_df.dropna(axis=0, how='all', inplace=True)
-
-        return final_amihud_df
+        return final_amihud_df.dropna(axis=0, how='all', inplace=False)
 
     ##财务basic数据
 
@@ -1142,13 +1135,13 @@ class FactorCalculator:
         financial_df = data_loader_func()
 
         # 步骤一：选择数据并确保有效性
-        snapshot_long_df = financial_df[['ts_code', 'ann_date', 'end_date', source_column]].copy()
-        snapshot_long_df.dropna(inplace=True)
+        snapshot_long_df = financial_df[['ts_code', 'ann_date', 'end_date', source_column]].copy(deep=True)
+        snapshot_long_df=snapshot_long_df.dropna(inplace=False)
         if snapshot_long_df.empty:
             raise ValueError(f"警告: 计算因子 {factor_name} 时，从 {source_column} 字段未获取到有效数据。")
 
         # 步骤二：透视
-        snapshot_long_df.sort_values(by=['ts_code', 'end_date'], inplace=True)
+        snapshot_long_df=snapshot_long_df.sort_values(by=['ts_code', 'end_date'], inplace=False).copy(deep=True)
         snapshot_wide = snapshot_long_df.pivot_table(
             index='ann_date',
             columns='ts_code',
@@ -1200,7 +1193,7 @@ class FactorCalculator:
         """
         print(f"    >  正在从 {source_column} 计算 {single_q_col_name}...")
 
-        financial_df = data_loader_func()
+        financial_df = data_loader_func().copy(deep=True)
 
         # 核心计算逻辑 (Scaffold -> Merge -> Diff)
         scaffold_df = financial_df.groupby('ts_code')['end_date'].agg(['min', 'max']) #记录一股票 两个时间点
@@ -1221,7 +1214,7 @@ class FactorCalculator:
 
         # 整理并返回包含单季度值的长表
         single_q_long_df = merged_df[['ts_code', 'ann_date', 'end_date', single_q_col_name]].copy()
-        single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=True)  # 确保公告日和计算值都存在
+        single_q_long_df=single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=False)  # 确保公告日和计算值都存在
 
         return single_q_long_df
     #ok 能对上 聚宽数据
@@ -1394,19 +1387,19 @@ class FactorCalculator:
 
 
     def _calculate_close_hfq_filled(self,limit: int) -> pd.DataFrame:
-        open_hfq_unfilled = self.factor_manager.get_raw_factor('close_hfq')
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
         return open_hfq_unfilled.ffill(limit=limit)
 
     def _calculate_open_hfq_filled(self,limit: int ) -> pd.DataFrame:
-        open_hfq_unfilled = self.factor_manager.get_raw_factor('open_hfq')
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('open_hfq').copy(deep=True)
         return open_hfq_unfilled.ffill(limit=limit)
 
     def _calculate_high_hfq_filled(self,limit: int ) -> pd.DataFrame:
-        open_hfq_unfilled = self.factor_manager.get_raw_factor('high_hfq')
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('high_hfq').copy(deep=True)
         return open_hfq_unfilled.ffill(limit=limit)
 
     def _calculate_low_hfq_filled(self,limit: int ) -> pd.DataFrame:
-        open_hfq_unfilled = self.factor_manager.get_raw_factor('low_hfq')
+        open_hfq_unfilled = self.factor_manager.get_raw_factor('low_hfq').copy(deep=True)
         return open_hfq_unfilled.ffill(limit=limit)
 
     ##基础换算！
@@ -1432,7 +1425,8 @@ class FactorCalculator:
     ##
     #  目前用于 计算adj_factor 必须是ffill#
     def _calculate_close_raw_ffill(self):
-        return self.factor_manager.get_raw_factor('close_raw').ffill()
+        ret = self.factor_manager.get_raw_factor('close_raw').copy(deep=True)
+        return ret.ffill()
 
     ##
     # 估值与市值类 (每日更新)
@@ -1452,10 +1446,10 @@ class FactorCalculator:
     # def _calculate_ps_ttm_fill_limit65(self):
     #     return self.factor_manager.get_raw_factor('ps_ttm').ffill(limit=65)
     def _calculate_total_mv_fill_limit65(self):
-        return self.factor_manager.get_raw_factor('total_mv').ffill(limit=65)
+        return self.factor_manager.get_raw_factor('total_mv').copy(deep=True).ffill(limit=65)
 
     def _calculate_circ_mv_fill_limit65(self):
-        return self.factor_manager.get_raw_factor('circ_mv').ffill(limit=65)
+        return self.factor_manager.get_raw_factor('circ_mv').copy(deep=True).ffill(limit=65)
 
     # def _calculate_pb_fill_limit65(self):
     #     return self.factor_manager.get_raw_factor('pb').ffill(limit=65)
@@ -1498,9 +1492,9 @@ class FactorCalculator:
     #
     # 理由: 一只股票的上市日期是一个永恒不变的事实。一旦这个信息出现，它就对该股票的整个生命周期有效。因此，使用无限制的ffill将这个事实广播到所有后续的日期，是完全正确的。#
     def _calculate_delist_date_raw_ffill(self):
-        return self.factor_manager.get_raw_factor('delist_date').ffill()
+        return self.factor_manager.get_raw_factor('delist_date').copy(deep=True).ffill()
     def _calculate_list_date_ffill(self):
-        return self.factor_manager.get_raw_factor('list_date').ffill()
+        return self.factor_manager.get_raw_factor('list_date').copy(deep=True).ffill()
 
 
     # ###标准件
@@ -1541,7 +1535,7 @@ def _broadcast_ann_date_to_daily(
     combined_index = sparse_wide_df.index.union(trading_dates)
 
     # 2. 扩展到“超级索引”上，然后进行决定性的前向填充
-    filled_df = sparse_wide_df.reindex(combined_index).ffill()
+    filled_df = sparse_wide_df.reindex(combined_index).copy(deep=True).ffill()
 
     # 3. 最后，只裁剪出我们需要的交易日，并返回
     daily_df = filled_df.loc[trading_dates]

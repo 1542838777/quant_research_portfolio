@@ -29,7 +29,7 @@ def check_step(df, i, step_description,is_wide=False):
     df = df[df['trade_date'].between(start_date, end_date)]
     df = df[df['ts_code'] == "000001.SZ"]
 
-    df.sort_values('trade_date', inplace=True)
+    df=df.sort_values('trade_date', inplace=False)
     print(df[['ts_code','trade_date','pct_chg']])
 
     print("=" * 80 + "\n")

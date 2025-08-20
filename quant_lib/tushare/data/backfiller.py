@@ -67,7 +67,7 @@ def safe_merge_and_save(year_path: Path, new_data_df: pd.DataFrame, dataset_name
 
             # 【核心】去重，保证数据唯一性。'last'会保留新下载的数据
 
-            combined_df.drop_duplicates(inplace=True)
+            combined_df=combined_df.drop_duplicates(inplace=False)
             combined_df.to_parquet(year_path, index=False)
             print(f"    -> 合并完成。现有记录: {len(existing_df)}, 新增: {len(new_data_df)}, 合并后: {len(combined_df)}")
         else:
@@ -144,7 +144,7 @@ if __name__ == '__main__':
                     final_new_df = pd.concat(all_new_data_list, ignore_index=True)
                     # 在合并到大文件前，先对本次下载的新数据进行一次去重
                     if not final_new_df.empty:
-                        final_new_df.drop_duplicates(inplace=True)
+                        final_new_df=final_new_df.drop_duplicates(inplace=False)
                         year_path = LOCAL_PARQUET_DATA_DIR / dataset_name / f"year={year}" / "data.parquet"
                         safe_merge_and_save(year_path, final_new_df,dataset_name   )
 

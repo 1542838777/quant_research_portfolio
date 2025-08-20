@@ -146,7 +146,7 @@ ALL_FFF_most_basic_mode = {
         **ALL_none_FFF_most_basic_profile
     },
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'period': period_one_year,#一年单调性就正常
+    'period': period_two_year,#一年单调性就正常
     'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
 }
 
@@ -156,7 +156,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = zz800fast
+trans_pram = ALL_FFF_most_basic_mode  # 使用包含1日期间的完整测试模式
 is_debug = False
 
 

@@ -5,7 +5,7 @@ import pandas as pd
 
 def fill_end_date_field(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()  # 避免修改原始 DataFrame
-    df.sort_values(by=['ts_code', 'start_date'], inplace=True)
+    df = df.sort_values(by=['ts_code', 'start_date'], inplace=False)
     df['start_date'] = pd.to_datetime(df['start_date'])
     df['end_date'] = pd.to_datetime(df['end_date'])
 

@@ -49,7 +49,7 @@ def verify_pct_chg(factor_manager):
     daily.index = pd.to_datetime(daily['trade_date'])
     daily['trade_date'] = daily.index
     daily = daily[daily['trade_date']>=pd.to_datetime('20230920')]
-    daily.sort_index(inplace=True)
+    daily=daily.sort_index(inplace=False)
     daily = daily[daily['ts_code']=='000001.SZ']
 
     print(1)

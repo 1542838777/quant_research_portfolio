@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Union, Dict, Any, List
 
 import pandas as pd
+
+from projects._03_factor_selection.utils.factor_scoring_v33_final import calculate_factor_score_v33
 from quant_lib import logger
 
 
@@ -20,7 +22,6 @@ def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.S
     fm_t_stat_proc_o2c = get_metric('fm_t_statistic_processed_o2c')
     tmb_max_drawdown_proc_o2c = get_metric('tmb_max_drawdown_processed_o2c')
     monotonicity_spearman_proc_o2c = get_metric('monotonicity_spearman_processed_o2c', None)
-    tmb_sharpe_proc_c2c = get_metric('tmb_sharpe_processed_c2c')
     tmb_sharpe_raw_o2c = get_metric('tmb_sharpe_raw_o2c')
     factor_direction = 1
     if ic_mean_processed_o2c < -1e-4:
@@ -62,11 +63,6 @@ def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.S
     if pd.notna(monotonicity_spearman_proc_o2c) and abs(monotonicity_spearman_proc_o2c) >= 0.5:
         base_score += abs(monotonicity_spearman_proc_o2c) * 10
     robustness_penalty = 0
-    if tmb_sharpe_proc_c2c * factor_direction > 0.3:
-        denominator = max(abs(tmb_sharpe_proc_c2c), 1e-6)
-        decay_ratio = (tmb_sharpe_proc_c2c - tmb_sharpe_proc_o2c) / denominator
-        if decay_ratio > 0.3: robustness_penalty += 10
-        if decay_ratio > 0.5: robustness_penalty += 15
     purity_penalty = 0
     if tmb_sharpe_raw_o2c * factor_direction > 0.3:
         denominator = max(abs(tmb_sharpe_raw_o2c), 1e-6)
@@ -173,12 +169,11 @@ class FactorSelectorV2:
                 with open(summary_file, 'r') as f: return json.load(f)
             return None
 
-        stats_c2c = _find_and_load_stats(factor_dir, 'c2c', run_version)
         stats_o2c = _find_and_load_stats(factor_dir, 'o2c', run_version)
-        if not stats_c2c or not stats_o2c: return None
+        if not  stats_o2c: return None
 
         row = {'factor_name': factor_dir.name}
-        for r_type, stats_data in [('c2c', stats_c2c), ('o2c', stats_o2c)]:
+        for r_type, stats_data in [('o2c', stats_o2c)]:
             for d_type in ['raw', 'processed']:
                 ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
                 q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})
@@ -224,7 +219,7 @@ class FactorSelectorV2:
                     continue
 
                 # 2. 为该周期的表现打分
-                scores = calculate_factor_score_ultimate(current_period_row)
+                scores = calculate_factor_score_v33(current_period_row)
 
                 # 3. 选出冠军
                 if scores['Final_Score'] > highest_score:
