@@ -12,3 +12,16 @@ D:\lqs\codeAbout\py\env/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# 忽略所有 parquet 文件
+*.parquet
+
+# 忽略所有 png 图片
+*.png
+
+# 忽略所有 log 文件
+*.log
+*.yaml
+*.xlsx
+*.json
+*.csv
