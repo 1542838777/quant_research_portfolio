@@ -11,7 +11,7 @@ from projects._03_factor_selection.config.config_file.local_config_file_definiti
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
     dongbei_SETTING, fast_hs300_profile, ZZ1000_more_filter_profile, ZZ1000_no_filter_profile, fast_eva_SETTING, \
-    HS300_no_filter_profile, ALL_none_FFF_most_basic_profile
+    HS300_no_filter_profile, ALL_none_FFF_most_basic_profile, fast_ZZ800_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 
@@ -32,6 +32,16 @@ massive_test_ZZ800mode = {
     },
     'period': longest_periods,
     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
+    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
+}
+
+zz800fast = {
+    'mode': 'zz800fast',
+    'pools': {
+        **fast_ZZ800_profile
+    },
+    'period': period_two_year,
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
 
@@ -136,7 +146,7 @@ ALL_FFF_most_basic_mode = {
         **ALL_none_FFF_most_basic_profile
     },
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'period': period_one_year,
+    'period': period_one_year,#一年单调性就正常
     'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
 }
 
@@ -146,7 +156,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = massive_test_ZZ800mode
+trans_pram = zz800fast
 is_debug = False
 
 

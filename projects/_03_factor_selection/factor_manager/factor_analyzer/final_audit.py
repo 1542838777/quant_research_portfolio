@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from quant_lib.evaluation import calcu_forward_returns_open_close
 
 
 def final_audit(factor_data_path):
@@ -247,64 +248,64 @@ def debug_returns_calculation_detailed(price_df, period=20):
     print(f"  最大值: {np.max(returns_flat):.6f}")
     print(f"  [1%, 99%] 分位数: [{np.percentile(returns_flat, 1):.6f}, {np.percentile(returns_flat, 99):.6f}]")
 
-
-# 调用这个函数
-def debug_grouping_data_transformation(factor_df,close_df,  period=20):
-    """调试分组过程中的数据变换"""
-
-    print("🔍 调试分组过程中的数据变换...")
-
-    # 1. 获取原始收益率
-    forward_returns = calcu_forward_returns_close_close( period,close_df)
-    print(f"📊 原始收益率统计:")
-    returns_flat = forward_returns.values.flatten()
-    returns_flat = returns_flat[~np.isnan(returns_flat)]
-    print(f"  均值: {np.mean(returns_flat):.6f}")
-    print(f"  标准差: {np.std(returns_flat):.6f}")
-    print(f"  范围: [{np.min(returns_flat):.6f}, {np.max(returns_flat):.6f}]")
-
-    # 2. 选择测试日期
-    test_date = factor_df.index[0]
-    factor_values = factor_df.loc[test_date].dropna()
-    return_values = forward_returns.loc[test_date].dropna()
-
-    print(f"\n🔍 测试日期 {test_date}:")
-    print(f"  收益率数据统计:")
-    print(f"    均值: {return_values.mean():.6f}")
-    print(f"    标准差: {return_values.std():.6f}")
-    print(f"    范围: [{return_values.min():.6f}, {return_values.max():.6f}]")
-    print(f"    前10个值: {return_values.head(10).values}")
-
-    # 3. 合并数据
-    common_stocks = factor_values.index.intersection(return_values.index)
-    factor_common = factor_values[common_stocks]
-    return_common = return_values[common_stocks]
-
-    print(f"\n📊 合并后数据:")
-    print(f"  收益率统计:")
-    print(f"    均值: {return_common.mean():.6f}")
-    print(f"    标准差: {return_common.std():.6f}")
-    print(f"    范围: [{return_common.min():.6f}, {return_common.max():.6f}]")
-
-    # 4. 分组
-    quantiles = pd.qcut(factor_common, 5, labels=False, duplicates='drop') + 1
-    df_temp = pd.DataFrame({
-        'factor': factor_common,
-        'return': return_common,
-        'quantile': quantiles
-    })
-
-    # 5. 检查分组后的原始数据
-    print(f"\n🔍 分组后各组原始收益率检查:")
-    for q in range(1, 6):
-        group_data = df_temp[df_temp['quantile'] == q]['return']
-        print(f"  Q{q}: 数量={len(group_data)}, 均值={group_data.mean():.6f}, 标准差={group_data.std():.6f}")
-        print(f"       前5个值: {group_data.head().values}")
-
-        # 检查是否有异常大的值
-        extreme_values = group_data[abs(group_data) > 1.0]  # 收益率>100%
-        if len(extreme_values) > 0:
-            print(f"       🚨 极端值数量: {len(extreme_values)}, 最大值: {extreme_values.max():.6f}")
+#
+# # 调用这个函数
+# def debug_grouping_data_transformation(factor_df,close_df,  period=20):
+#     """调试分组过程中的数据变换"""
+#
+#     print("🔍 调试分组过程中的数据变换...")
+#
+#     # 1. 获取原始收益率
+#     forward_returns = calcu_forward_returns_close_close( period,close_df)
+#     print(f"📊 原始收益率统计:")
+#     returns_flat = forward_returns.values.flatten()
+#     returns_flat = returns_flat[~np.isnan(returns_flat)]
+#     print(f"  均值: {np.mean(returns_flat):.6f}")
+#     print(f"  标准差: {np.std(returns_flat):.6f}")
+#     print(f"  范围: [{np.min(returns_flat):.6f}, {np.max(returns_flat):.6f}]")
+#
+#     # 2. 选择测试日期
+#     test_date = factor_df.index[0]
+#     factor_values = factor_df.loc[test_date].dropna()
+#     return_values = forward_returns.loc[test_date].dropna()
+#
+#     print(f"\n🔍 测试日期 {test_date}:")
+#     print(f"  收益率数据统计:")
+#     print(f"    均值: {return_values.mean():.6f}")
+#     print(f"    标准差: {return_values.std():.6f}")
+#     print(f"    范围: [{return_values.min():.6f}, {return_values.max():.6f}]")
+#     print(f"    前10个值: {return_values.head(10).values}")
+#
+#     # 3. 合并数据
+#     common_stocks = factor_values.index.intersection(return_values.index)
+#     factor_common = factor_values[common_stocks]
+#     return_common = return_values[common_stocks]
+#
+#     print(f"\n📊 合并后数据:")
+#     print(f"  收益率统计:")
+#     print(f"    均值: {return_common.mean():.6f}")
+#     print(f"    标准差: {return_common.std():.6f}")
+#     print(f"    范围: [{return_common.min():.6f}, {return_common.max():.6f}]")
+#
+#     # 4. 分组
+#     quantiles = pd.qcut(factor_common, 5, labels=False, duplicates='drop') + 1
+#     df_temp = pd.DataFrame({
+#         'factor': factor_common,
+#         'return': return_common,
+#         'quantile': quantiles
+#     })
+#
+#     # 5. 检查分组后的原始数据
+#     print(f"\n🔍 分组后各组原始收益率检查:")
+#     for q in range(1, 6):
+#         group_data = df_temp[df_temp['quantile'] == q]['return']
+#         print(f"  Q{q}: 数量={len(group_data)}, 均值={group_data.mean():.6f}, 标准差={group_data.std():.6f}")
+#         print(f"       前5个值: {group_data.head().values}")
+#
+#         # 检查是否有异常大的值
+#         extreme_values = group_data[abs(group_data) > 1.0]  # 收益率>100%
+#         if len(extreme_values) > 0:
+#             print(f"       🚨 极端值数量: {len(extreme_values)}, 最大值: {extreme_values.max():.6f}")
 
 
 def debug_monotonicity_skip_nan_dates(factor_df, returns_calculator, period=20):
@@ -602,16 +603,17 @@ def check_lookahead_bias(factor_df, returns_calculator, period=20):
 # 调用调试
 # 调用调试函数
 # 调用这个函数
-if __name__ == '__main__':
-    factor_df = pd.read_parquet('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__prcessed.parquet')
-    price_df = pd.read_parquet('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/price_for_returns.parquet')
-    returns_calculator = partial(calcu_forward_returns_close_close, price_df=price_df)
-
-    check_lookahead_bias(factor_df, returns_calculator, period=20)
-
-    # debug_spearman_calculation([-0.012930, -0.012934, -0.013231, -0.014663, -0.013641])
-    # debug_spearman_calculation([-12930, -12934, -13231, -14663, -13641])
-    # debug_spearman_calculation([-0.00012, -0.00013, -0.00014, -0.00015, -0.00010])
-    # debug_spearman_calculation([-0.00012, -0.00013, -0.00014, -0.00012, -0.00010])
-    final_audit('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__prcessed.parquet')
-    final_audit('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__raw.parquet')
+# if __name__ == '__main__':
+    # factor_df = pd.read_parquet('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__prcessed.parquet')
+    # price_df = pd.read_parquet('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/price_for_returns.parquet')
+    # # ✅ 使用正确的O2C函数
+    # returns_calculator = partial(calcu_forward_returns_open_close, close_df=price_df, open_df=price_df)
+    #
+    # check_lookahead_bias(factor_df, returns_calculator, period=20)
+    #
+    # # debug_spearman_calculation([-0.012930, -0.012934, -0.013231, -0.014663, -0.013641])
+    # # debug_spearman_calculation([-12930, -12934, -13231, -14663, -13641])
+    # # debug_spearman_calculation([-0.00012, -0.00013, -0.00014, -0.00015, -0.00010])
+    # # debug_spearman_calculation([-0.00012, -0.00013, -0.00014, -0.00012, -0.00010])
+    # final_audit('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__prcessed.parquet')
+    # final_audit('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__raw.parquet')

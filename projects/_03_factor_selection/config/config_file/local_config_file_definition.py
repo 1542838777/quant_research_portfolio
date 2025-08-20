@@ -89,7 +89,6 @@ style_factor_list =  [
 # 模板1: 快速测试设置 (Fast/Debug Setting)
 # 只跑一个核心周期，节省时间
 EVAL_SETTING_FAST = {
-    "n_groups": 5,
     "forward_periods": [1], # 只跑一个周期
     "returns_calculator": ['o2c'], # 只用一种计算方式
     # style_factor_list 可以保持完整，因为它不影响计算速度
@@ -100,7 +99,6 @@ EVAL_SETTING_FAST = {
 # 模板2: 标准研究设置 (Standard Research Setting)
 # 覆盖短、中、长周期，适用于大多数正式研究
 EVAL_SETTING_STANDARD = {
-    "n_groups": 5,
     "forward_periods": [5, 21, 60], # 短、中、长
     "returns_calculator": [ 'o2c'], # 对比两种方式
     "style_factor_list":style_factor_list
@@ -109,7 +107,6 @@ EVAL_SETTING_STANDARD = {
 # 模板3: 全面批量测试设置 (Massive Test Setting)
 # 最全面的配置，用于最终的、彻底的因子有效性检验
 EVAL_SETTING_FULL = {
-    "n_groups": 5,
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [1, 5, 10, 21, 40, 60, 120],
     "returns_calculator": [ 'o2c'],
@@ -117,7 +114,6 @@ EVAL_SETTING_FULL = {
 }
 # 东
 dongbei_SETTING = {
-    "n_groups": 5,
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [3],
     "returns_calculator": ['o2c'],
@@ -171,6 +167,7 @@ CSI500_none_FFF_most_basic_profile = make_pool_profile('microstructure_stock_poo
 CSI500_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000905.SH', True,True,True,0, 0)
 # 用于我需要在最真实的环境，交易，需要必须要过滤流动差劲的
 _massive_test_ZZ800_profile = make_pool_profile('ZZ800', True, INDEX_CODES['ZZ800'], True, True, True, 0.1, 0.05)
+fast_ZZ800_profile = make_pool_profile('ZZ800', True, INDEX_CODES['ZZ800'], False, False, False, 0, 0)
 pool_for_massive_test_MICROSTRUCTURE_profile = make_pool_profile('microstructure_stock_pool', False, 'None', True,True,True,0.2, 0.2)
 
 

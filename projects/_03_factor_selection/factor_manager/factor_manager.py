@@ -656,7 +656,7 @@ class FactorManager:
             'open_raw', 'open_hfq', 'open_hfq_filled',
             'high_raw', 'high_hfq', 'high_hfq_filled',
             'low_raw', 'low_hfq', 'low_hfq_filled',
-            'pre_close', 'price'
+
         }
 
         is_price_data = factor_name_str in price_data_names
@@ -666,6 +666,7 @@ class FactorManager:
             return factor_with_direction
         else:
             # 因子数据shift到T-1，用于交易决策
+            logger.info(f"{factor_request}因子数据shift到T-1，用于交易决策")
             return factor_with_direction.shift(1)
 
     def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple], stock_pool_index_name,

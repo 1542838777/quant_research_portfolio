@@ -1,9 +1,37 @@
+import json
+
 import pandas as pd
+from mako.ext.babelplugin import extract
 
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
+from pathlib import Path
 
 
+def extract_monotonicity_spearman(json):
+    ret = {}
+    for one_period_name,one_period_data in json.items():
+        need_data = {'monotonicity_spearman':one_period_data['monotonicity_spearman']}
+        ret.update({one_period_name:need_data})
+    
+    return ret
 
+
+def load_re():
+    RESULTS_PATH = 'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
+
+    base_path = Path(RESULTS_PATH) / '000906.SH'
+    ret = []
+    for factor_dir in base_path.iterdir():
+        path = factor_dir /'o2c/20190328_20250710/summary_stats.json'
+        d1 = json.load(open(path, 'r', encoding='utf-8'))
+
+        cur_ret = {
+            'name':factor_dir.name,
+            'monotonicity_spearman_info_raw':extract_monotonicity_spearman(d1['quantile_backtest_raw']),
+            'monotonicity_spearman_info_processed':extract_monotonicity_spearman(d1['quantile_backtest_processed'])
+        }
+        ret.append(cur_ret)
+    return ret
 if __name__ == '__main__':
-    f= FactorManager()
+    load_re()

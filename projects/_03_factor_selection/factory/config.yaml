@@ -193,7 +193,7 @@ evaluation:
   forward_periods: [ 5,21 ]
   #  forward_periods: [1, 5, 10, 21, 40, 60, 120]
 
-  returns_calculator: [ 'c2c','o2c' ]
+  returns_calculator: [ 'o2c' ]  # 已移除有问题的c2c计算方法
   style_factor_list: [
 
   ]

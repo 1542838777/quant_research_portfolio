@@ -199,6 +199,7 @@ class DataManager:
         # 基础字段 #核心要求 ，这是最基础的！ 千万不能错！ 只能是日频率更新的数据 ，(因为：   tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
         required_fields.update([
             # 'pb',  # 为了计算价值类因子  前视数据  tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
+            'amount',
             'turnover_rate',  # 为了过滤 很差劲的股票  ，  、'total_mv'还可 用于计算中性化
             # 'industry',  # 用于计算中性化
             'circ_mv',  # 流通市值 用于WOS，加权最小二方跟  ，回归法会用到

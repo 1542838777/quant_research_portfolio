@@ -930,54 +930,27 @@ class FactorCalculator:
     #
     # 计算财报发布日后几天的累计收益率(财报后漂移。
     # pead Post-Earnings Announcement Drift) #
-    def _calculate_pead(self, lookforward_days: int = 3) -> pd.DataFrame:
+    def _calculate_pead(self) -> pd.DataFrame:
         """
-        计算PEAD因子 (盈余公告后漂移)。
-        逻辑: 计算每个财报公告日之后N个交易日的累计收益率，
-               并将其作为未来一个季度的因子值。
+        计算修正后的PEAD因子，基于“盈利意外”而非未来收益。
         """
-        logger.info(f"    > 正在计算代理因子: PEAD (window={lookforward_days})...")
+        logger.info(f"    > 正在计算【修正版】PEAD因子...")
 
-        # 1. 获取所有财报的公告日 (ann_date) 和股票代码
-        # 我们需要一个包含所有公司历史公告日的长表
-        income_df_long = load_income_df()  # 假设这个函数加载原始财报长表
-        ann_dates_long = income_df_long[['ts_code', 'ann_date']].drop_duplicates().dropna()
-        ann_dates_long['ann_date'] = pd.to_datetime(ann_dates_long['ann_date'])
+        # 1. 加载包含“净利润”和“公告日”的财报数据
+        income_df_long = load_income_df()  # 假设包含 'net_profit' 字段
 
-        # 2. 获取日度收益率数据
-        pct_chg = self.factor_manager.get_raw_factor('pct_chg') # 除以100 不需要，这是手动根据close 算出来的
+        # 2. 计算某种形式的“盈利意外” (Earnings Surprise)
+        #    这里使用一个简化版：(当季净利 - 去年同期净利) / |去年同期净利|
+        #    一个更严谨的版本需要TTM数据或分析师预期数据。
+        income_df_long['surprise'] = income_df_long.groupby('ts_code')['net_profit_ttm'].pct_change(periods=4)
 
-        # 3. 计算每个公告日之后的短期累计收益
-        event_returns = {}
-        for _, row in ann_dates_long.iterrows():
-            code = row['ts_code']
-            ann_date = row['ann_date']
+        ann_surprise_long = income_df_long[['ts_code', 'ann_date', 'surprise']].dropna()
+        ann_surprise_long['ann_date'] = pd.to_datetime(ann_surprise_long['ann_date'])
 
-            # 确保股票代码和日期都在我们的收益率矩阵中
-            if code in pct_chg.columns and ann_date in pct_chg.index:
-                # 定义计算区间：从公告日后第一个交易日开始
-                start_loc = pct_chg.index.get_loc(ann_date) + 1
-                end_loc = start_loc + lookforward_days
-
-                # 确保不越界
-                if end_loc <= len(pct_chg.index):
-                    # 计算区间内的累计收益 (1+r1)*(1+r2)*... - 1
-                    cumulative_return = (1 + pct_chg[code].iloc[start_loc:end_loc]).prod() - 1
-
-                    # 存储这个“事件回报”，键是(公告日, 股票代码)
-                    event_returns[(ann_date, code)] = cumulative_return
-
-        if not event_returns:
-            raise ValueError("未能计算任何有效的PEAD事件回报")
-        # 4. 将稀疏的“事件回报”广播成每日因子值
-        # 将字典转为Series，便于处理
-        pead_series = pd.Series(event_returns).rename('pead')
-        pead_series.index.names = ['trade_date', 'ts_code']
-
-        # 转为宽表，索引是事件发生的日期
+        # 3. 将稀疏的“盈利意外”事件，广播成每日因子值
+        pead_series = ann_surprise_long.set_index(['ann_date', 'ts_code'])['surprise']
         pead_wide_sparse = pead_series.unstack()
 
-        # 使用前向填充，将事件的“余威”持续到下一个季度
         trading_dates = self.factor_manager.data_manager.trading_dates
         pead_daily_df = _broadcast_ann_date_to_daily(pead_wide_sparse, trading_dates)
 
