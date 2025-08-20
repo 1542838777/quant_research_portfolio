@@ -243,7 +243,7 @@ class FactorManager:
         """
         # 1. 缓存键就是请求本身，元组是可哈希的，可以直接做键
         if factor_request in self.factors_cache:
-            return self.factors_cache[factor_request]
+            return self.factors_cache[factor_request].copy(deep=True)
 
         # 2. 解析请求
         if isinstance(factor_request, str):
@@ -282,7 +282,7 @@ class FactorManager:
 
         # 4. 存入缓存并返回
         self.factors_cache[factor_request] = raw_factor_df #排查问题中 先关了
-        return raw_factor_df
+        return raw_factor_df.copy(deep=True)
 
     def register_factor(self,
                         name: str,
@@ -971,5 +971,3 @@ class FactorManager:
         return REQUEST
 
 
-if __name__ == '__main__':
-    s = FactorResultsManager()

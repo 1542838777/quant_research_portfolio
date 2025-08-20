@@ -1,5 +1,6 @@
 import vectorbt as vbt
 from pandas import Series
+from scipy.stats._mstats_basic import winsorize
 
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
@@ -47,6 +48,8 @@ def calcu_forward_returns_open_close(period: int,
     """
     # 1. 定义起点和终点价格
     # 起点是 T 日的开盘价，它本身不需要 shift
+    close_df = close_df.copy(deep=True)
+    open_df = open_df.copy(deep=True)
     start_price = open_df
     # 终点是 T+period-1 日的收盘价
     end_price = close_df.shift(-(period - 1))
@@ -57,9 +60,12 @@ def calcu_forward_returns_open_close(period: int,
     # 3. 计算原始收益率，并应用掩码过滤
     forward_returns_raw = end_price / start_price - 1
     forward_returns = forward_returns_raw.where(survived_mask)
+    winsorized_returns = forward_returns_raw.apply(
+        lambda x: winsorize(x.dropna(), limits=[0.025, 0.025]),
+        axis=1  # 沿行操作，即对每个时间截面
+    )
 
-    # clip 操作
-    return forward_returns.clip(-0.15, 0.15)
+    return winsorized_returns
 
 
 # ok
@@ -371,11 +377,20 @@ def calculate_quantile_returns(
         forward_returns = returns_calculator(period=period)
 
         # 2. 数据转换与对齐：从“宽表”到“长表”
-        factor_long = factor_df.stack().rename('factor')
-        returns_long = forward_returns.stack().rename('return')
+        # 有效域掩码：显式定义分析样本
+        # 单一事实来源 - 明确定义所有有效的(date, stock)坐标点
+        valid_mask = factor_df.notna() & forward_returns.notna()
 
-        # 3. 合并因子和收益，并丢弃任何一个为NaN的行
-        merged_df = pd.concat([factor_long, returns_long], axis=1).dropna()
+        # 应用掩码，确保因子和收益具有完全相同的NaN分布
+        final_factor = factor_df.where(valid_mask)
+        final_returns = forward_returns.where(valid_mask)
+
+        # 数据转换：从"宽表"到"长表"（现在是安全的）
+        factor_long = final_factor.stack().rename('factor')
+        returns_long = final_returns.stack().rename('return')
+
+        # 合并数据（不再需要dropna，因为已经完全对齐）
+        merged_df = pd.concat([factor_long, returns_long], axis=1)
 
         if merged_df.empty:
             log_warning(
@@ -620,8 +635,13 @@ def fama_macbeth_regression(
             weights_series = np.sqrt(aligned_weights.loc[date]).rename('weights')
             all_data_for_date.append(weights_series)
 
-        # b) 清洗与验证
-        combined_df = pd.concat(all_data_for_date, axis=1, join='inner').dropna()
+        # b) 有效域掩码：显式定义当日有效样本
+        # 先合并所有数据
+        combined_df = pd.concat(all_data_for_date, axis=1, join='outer')
+        # 显式定义有效掩码：所有变量都不为NaN
+        valid_mask = combined_df.notna().all(axis=1)
+        # 应用掩码
+        combined_df = combined_df[valid_mask]
 
         # 样本量检查现在更简单
         if len(combined_df) < 10:  # 对于单变量回归，可以设置一个较小的绝对值门槛
@@ -815,11 +835,20 @@ def calculate_quantile_daily_returns(
     """
     logger.info("  > 正在计算分层组合的【每日】收益率 (用于绘图)...")
     forward_returns_1d = returns_calculator(period=1)
-    # 2. 数据转换与对齐
-    factor_long = factor_df.stack().rename('factor')
-    returns_1d_long = forward_returns_1d.stack().rename('return_1d')
+    # 2. 有效域掩码：显式定义分析样本
+    # 单一事实来源 - 明确定义所有有效的(date, stock)坐标点
+    valid_mask = factor_df.notna() & forward_returns_1d.notna()#好的合集
 
-    merged_df = pd.concat([factor_long, returns_1d_long], axis=1).dropna()
+    # 应用掩码，确保因子和收益具有完全相同的NaN分布
+    final_factor = factor_df.where(valid_mask)#坏的合集都为nan
+    final_returns_1d = forward_returns_1d.where(valid_mask)#坏的合集都为nan stock进行操作，丢的nan都是一样的，就可有无脑concat了
+
+    # 数据转换：从"宽表"到"长表"（现在是安全的）
+    factor_long = final_factor.stack().rename('factor')
+    returns_1d_long = final_returns_1d.stack().rename('return_1d')
+
+    # 合并数据（不再需要dropna，因为已经完全对齐）
+    merged_df = pd.concat([factor_long, returns_1d_long], axis=1)
 
     if merged_df.empty:
         raise ValueError("  > 因子和单日收益数据没有重叠，无法计算分层收益。")

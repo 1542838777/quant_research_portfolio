@@ -546,7 +546,7 @@ class FactorCalculator:
 
         # 2. 计算120个交易日前的价格到今天的收益率
         #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
-        annualized_vol_df = close_hfq.pct_change().rolling(window=40, min_periods=30).std() * np.sqrt(252)
+        annualized_vol_df = close_hfq.pct_change().rolling(window=120, min_periods=60).std() * np.sqrt(252)
         # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
         # 这样计算出的波动率更准确，只基于实际交易日的收益率
 
