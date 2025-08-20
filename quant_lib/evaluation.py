@@ -60,14 +60,16 @@ def calcu_forward_returns_open_close(period: int,
     # 3. 计算原始收益率，并应用掩码过滤
     forward_returns_raw = end_price / start_price - 1
     forward_returns = forward_returns_raw.where(survived_mask)
-    winsorized_returns = forward_returns_raw.apply(
-        lambda x: winsorize(x.dropna(), limits=[0.025, 0.025]),
-        axis=1  # 沿行操作，即对每个时间截面
-    )
+    def safe_winsorize(x, limits=[0.025, 0.025]):
+        if x.dropna().empty:#就是会有这一行收益率全空的啊，比如最后这一天，你依赖后一天的收盘价，来做计算，显然拿不到，那就是nan咯
+            return x
+        return pd.Series(
+            winsorize(x.dropna(), limits=limits),
+            index=x.dropna().index
+        ).reindex(x.index)
 
+    winsorized_returns = forward_returns.apply(safe_winsorize, axis=1)
     return winsorized_returns
-
-
 # ok
 ##
 #
