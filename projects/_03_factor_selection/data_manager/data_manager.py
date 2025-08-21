@@ -21,6 +21,7 @@ from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
 from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
 from quant_lib.data_loader import DataLoader
+from projects._03_factor_selection.utils.component_loader import IndexComponentLoader
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent.parent
@@ -124,6 +125,8 @@ class DataManager:
             self.trading_dates = self.data_loader.get_trading_dates(self.backtest_start_date, self.backtest_end_date)
             self._existence_matrix = None
             self.pit_map = None
+
+            self.component_loader = IndexComponentLoader()
 
     def prepare_basic_data(self) -> Dict[str, pd.DataFrame]:
         """
@@ -762,59 +765,51 @@ class DataManager:
 
     # ok 已经解决前视偏差 在于：available_components = components_df[components_df['trade_date'] < date]
     def _build_dynamic_index_universe(self, stock_pool_df, index_code: str) -> pd.DataFrame:
-        """构建动态指数股票池 """
-        start_date = self.config['backtest']['start_date']
-        end_date = self.config['backtest']['end_date']
-
-        # 加载动态成分股数据
-        components_df = self._load_dynamic_index_components(index_code, start_date, end_date)
-        # 确保 components_df 中的 trade_date 是 datetime 类型，以便比较
-        components_df['trade_date'] = pd.to_datetime(components_df['trade_date'])
-
-        # 获取交易日序列
-        trading_dates = self.data_loader.get_trading_dates(start_date, end_date)
+        """
+        【最终版】根据指定指数代码，构建动态股票池。
+        该函数会自动处理简单指数和复合指数（如中证800）。
+        """
+        print(f"  > 正在基于指数 '{index_code}' 进行股票池过滤...")
         index_stock_pool_df = stock_pool_df.copy()
 
-        #  填充 ---
-        for date in trading_dates:
-            if date not in index_stock_pool_df.index:
-                continue
+        # --- 定义指数构成规则，方便未来扩展 ---
+        index_composition_rules = {
+            '000906': ['000300', '000905'],  # 中证800 = 沪深300 + 中证500
+            '000300': ['000300'],             # 沪深300
+            '000905': ['000905'],             # 中证500
+            # ... 未来可以轻松扩展更多指数，例如国证2000等
+        }
 
-            # 1. 【安全港查询】查找所有在T日之前（不含T日）已经公布的成分股列表
-            #    这是为了确保我们只使用 T-1 及更早的信息
-            available_components = components_df[components_df['trade_date'] < date]
+        if index_code not in index_composition_rules:
+            raise ValueError(f"指数 '{index_code}' 的构成规则未定义，请在 index_composition_rules 中添加。")
 
-            # 如果历史上没有任何成分股信息，则当天股票池为空
-            if available_components.empty:
+        # 获取构建该指数所需要的基础指数代码列表
+        component_source_codes = index_composition_rules[index_code]
+
+        # --- 逐日应用过滤 ---
+        for date in index_stock_pool_df.index:
+            current_date_ts = pd.to_datetime(date)
+
+            # 1. 【安全港原则】获取 T-1 日收盘后的成分股列表，作为 T 日的股票池
+            #    我们直接查询 T-1 日的成分股即可。 （我倒要看看你昨天在不在。
+            prev_date = current_date_ts - pd.Timedelta(days=1)
+
+            # 2. 从加载器高效获取成分股集合 (内部有缓存，速度飞快)
+            daily_components = self.component_loader.get_members_on_date(prev_date, component_source_codes)
+            print(f"基础数据每天目标指数内的股票数量{len(daily_components)}")
+            if not daily_components: # 如果当天（T-1）获取不到成分股，则当天股票池为空
                 index_stock_pool_df.loc[date, :] = False
                 continue
 
-            # 2. 从这些可用的历史列表中，找到最近的一次发布的日期
-            latest_available_date = available_components['trade_date'].max()
+            # 3. 应用过滤 (布尔掩码逻辑)
+            current_mask = index_stock_pool_df.loc[date]
+            index_mask = index_stock_pool_df.columns.isin(daily_components)
+            index_stock_pool_df.loc[date, :] = current_mask & index_mask
+            print(f"对齐后每天目标指数内的股票数量{ index_stock_pool_df.loc[date, :].sum()}")
 
-            # 3. 获取这份最新的、合法的成分股列表
-            daily_components = components_df[
-                components_df['trade_date'] == latest_available_date
-                ]['con_code'].tolist()
 
-            # --- 后续逻辑与你原先的相同，它们是正确的 ---
-
-            # --- 【以下是简洁、高效的优化版逻辑】 ---
-
-            # a) 获取T日的基础股票池状态（一个布尔值的Series）
-            current_universe_mask = index_stock_pool_df.loc[date]
-
-            # b) 创建第二个布尔掩码：判断股票是否在当日成分股列表中
-            is_in_index_mask = index_stock_pool_df.columns.isin(daily_components)
-
-            # c) 【核心】使用逻辑“与”(&)运算，合并两个条件
-            #    得到最终的股票列表，当且仅当一个股票在两个掩码中都为True时，结果才为True
-            final_mask = current_universe_mask & is_in_index_mask
-
-            # d) 将计算出的最终结果应用回当天的股票池
-            index_stock_pool_df.loc[date, :] = final_mask
-
-        self.show_stock_nums_for_per_day(f'by_成分股指数_filter', index_stock_pool_df)
+        # 函数结尾的日志打印 ()
+        self.show_stock_nums_for_per_day(f'by_成分股指数_filter{index_code}', index_stock_pool_df)
         return index_stock_pool_df
 
 

@@ -161,10 +161,10 @@ def check_backtest_periods(start_date, end_date):
 trans_pram = {
 
     'pools': {
-        **ALL_none_FFF_most_basic_profile #控制更改
+        **fast_ZZ800_profile #控制更改
     },
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'period': period_six_year,#一年单调性就正常 #控制更改
+    'period': period_half_year,#一年单调性就正常 #控制更改
     'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
 }
   # 使用包含1日期间的完整测试模式
