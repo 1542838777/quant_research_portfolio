@@ -381,11 +381,10 @@ class FactorAnalyzer:
                 need_standardize = False
             )
         else:
-            # 2. 原始因子的最小预处理（仅去极值，保持原始特征） #todo解开
-            print("暂时跳过去极值")
-            # factor_data_shifted = self._minimal_preprocessing_for_raw_factor(
-            #     factor_data_shifted, target_factor_name
-            # )
+            # 2. 原始因子的最小预处理（仅去极值，保持原始特征）
+            factor_data_shifted = self._minimal_preprocessing_for_raw_factor(
+                factor_data_shifted, target_factor_name
+            )
 
         # 数据准备
         close_df, circ_mv_df_shifted, style_factor_dfs = self.prepare_date_for_core_test(target_factor_name,stock_pool_index_name)
@@ -419,7 +418,6 @@ class FactorAnalyzer:
         outlier_ratio = ((factor_flat < q01) | (factor_flat > q99)).mean()
 
         if outlier_ratio > 0.02:  # 如果极值比例超过2%
-            logger.info(f"  📊 检测到 {outlier_ratio:.1%} 的极值，进行去极值处理")
 
             # 2. 按日期进行去极值（保持截面内的相对关系）
             processed_df = factor_df.copy()
@@ -431,7 +429,7 @@ class FactorAnalyzer:
                     upper_bound = daily_values.quantile(0.99)
                     processed_df.loc[date] = daily_values.clip(lower=lower_bound, upper=upper_bound)
 
-            logger.info(f"  ✅ 去极值完成，保持因子原始分布特征")
+            logger.info(f"  ✅ 📊去掉{outlier_ratio:.1%} 的极值，保持因子原始分布特征")
             return processed_df
         else:
             logger.info(f"  ✅ 极值比例较低({outlier_ratio:.1%})，无需处理")
@@ -912,7 +910,6 @@ class FactorAnalyzer:
         factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
             = self.prepare_date_for_entity_service(
             factor_name,stock_pool_index_name)
-
         all_configs_results = {}
         if is_composite_factor:
            return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,stock_pool_index_name, test_configurations, start_date, end_date, stock_pool_index_code)
@@ -941,7 +938,7 @@ class FactorAnalyzer:
                 preprocess_method="standard",
                 start_date=start_date,
                 end_date=end_date,
-                need_process_factor=False,#记得该回去 todo
+                need_process_factor=True,
                 do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
                 do_style_correlation_test=True
             )
@@ -1341,7 +1338,7 @@ class FactorAnalyzer:
         # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值
         final_neutral_dfs = {
             # 获取已经shift并对齐的T-1中性化因子
-            'log_circ_mv': self.factor_manager.get_prepare_aligned_factor_for_analysis('log_circ_mv',stock_pool_name,True),
+            'circ_mv': self.factor_manager.get_prepare_aligned_factor_for_analysis('circ_mv',stock_pool_name,True), #天坑之前用的对数市值！导致分组单调系数异常高，害我排查很久 (初步怀疑是ffill导致破坏了数据
             'pct_chg_beta': self.factor_manager.get_prepare_aligned_factor_for_analysis(BETA_REQUEST,stock_pool_name,True),
             # 行业哑变量需要单独shift
             **{key: df.shift(1, fill_value=0) for key, df in industry_dummies_dict.items()}

@@ -20,8 +20,9 @@ tem_p = ('20231215', '20250624')
 period_东北研报 = ('20220101','20250710')
 fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')
+period_three_year = ('20220710', '20250710')
 period_two_year = ('20230601', '20250710')
-period_one_year = ('20240601', '20250710')
+period_one_year = ('20230601', '20240710')
 period_half_year = ('20250101', '20250710')
 longest_periods = ('20190328', '20250710')
 
@@ -146,7 +147,7 @@ ALL_FFF_most_basic_mode = {
         **ALL_none_FFF_most_basic_profile
     },
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'period': period_two_year,#一年单调性就正常
+    'period': period_three_year,#一年单调性就正常
     'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
 }
 

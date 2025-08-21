@@ -286,8 +286,8 @@ class FactorProcessor:
         merged_df['final_median'] = np.where(use_fallback, merged_df['fallback_median'], merged_df['primary_median'])
         merged_df['final_mad'] = np.where(use_fallback, merged_df['fallback_mad'], merged_df['primary_mad'])
 
-        merged_df=merged_df['final_mad'].replace(0, 1e-9, inplace=False)#秒啊，如果是0的话 下面upper lower是一个值！ 导致最后所因子都是一个值！大忌！
-        merged_df=merged_df.set_index('ts_code', inplace=False)
+        merged_df['final_mad'].replace(0, 1e-9, inplace=True)  # #秒啊，如果是0的话 下面upper lower是一个值！ 导致最后所因子都是一个值！大忌！
+        merged_df.set_index('ts_code', inplace=True)
 
         # 5. 执行去极值
         method = config.get('method', 'mad')
@@ -435,10 +435,10 @@ class FactorProcessor:
             if 'market_cap' in factors_to_neutralize:
                 # 【命名统一】从 neutral_dfs 中寻找规模因子，名字可以是 'log_circ_mv', 'log_circ_mv' 等
                 # 我们假设传入的已经是log处理过的
-                market_cap_key = 'log_circ_mv'  # 与你 neutral_dfs 中定义的key保持一致
+                market_cap_key = 'circ_mv'  # 与你 neutral_dfs 中定义的key保持一致
                 if market_cap_key not in neutral_dfs:
                     raise ValueError(f"neutral_dfs 中缺少市值因子 '{market_cap_key}'。")
-                mv_series = neutral_dfs[market_cap_key].loc[date].rename('log_market_cap')
+                mv_series = neutral_dfs[market_cap_key].loc[date].rename('circ_mv')
                 X_df_parts.append(mv_series)
 
             # --- 行业因子 ---
@@ -502,6 +502,7 @@ class FactorProcessor:
             try:
                 model = sm.OLS(y_clean, X_clean).fit()
                 residuals = model.resid
+                # self.neutral_gression_diagnostics(model,date,y_clean,X_clean,residuals)
 
                 # 将中性化后的残差更新回 processed_factor
                 processed_factor.loc[date, residuals.index] = residuals
@@ -526,6 +527,9 @@ class FactorProcessor:
             )
 
         logger.info(f"  > 中性化完成。在 {total_days} 天中，共跳过了 {skipped_days_count} 天。")
+
+        # 🚨 深度诊断：检查中性化前后的因子分布变化
+        # self.show_neutral_result(factor_data,processed_factor)
         return processed_factor
     # # ok
     # def _standardize(self, factor_data: pd.DataFrame) -> pd.DataFrame:
@@ -796,6 +800,64 @@ class FactorProcessor:
         #         final_list.remove('market_cap')
         logger.info(f"最终用于回归的中性化目标因子为: {final_list}\n")
         return final_list
+
+    def neutral_gression_diagnostics(self,model,date,y_clean,X_clean,residuals):
+        # 🚨 详细的回归诊断
+        r_squared = model.rsquared
+
+        # 🔍 特别检查波动率因子的回归情况
+        logger.info(f"  📊 波动率因子回归详情 - 日期 {date.date()}:")
+        logger.info(f"    R² = {r_squared:.4f}")
+        logger.info(f"    样本数 = {len(y_clean)}")
+        logger.info(f"    自变量数 = {X_clean.shape[1]}")
+        logger.info(f"    因子值统计: 均值={y_clean.mean():.6f}, 标准差={y_clean.std():.6f}")
+        logger.info(f"    残差统计: 均值={residuals.mean():.6f}, 标准差={residuals.std():.6f}")
+
+        # 检查回归系数
+        coefficients = model.params
+        logger.info(f"    回归系数: {dict(zip(X_clean.columns, coefficients))}")
+
+        # 检查是否存在异常大的系数
+        max_coef = coefficients.abs().max()
+        if max_coef > 10:
+            logger.warning(f"    🚨 发现异常大的回归系数: {max_coef:.4f}")
+
+        # 检查残差与原因子值的关系
+        residual_factor_corr = np.corrcoef(y_clean, residuals)[0, 1]
+        logger.info(f"    残差与原因子值的相关性: {residual_factor_corr:.6f}")
+
+        # 如果R²过高，发出警告
+        if r_squared > 0.8:
+            logger.warning(f"    ⚠️ R²={r_squared:.4f} 过高，可能存在过度拟合！")
+        pass
+
+    def show_neutral_result(self,factor_data,processed_factor):
+        logger.info("🔬 波动率因子深度诊断 - 中性化前后对比:")
+
+        # 原始因子统计
+        orig_flat = factor_data.stack().dropna()
+        proc_flat = processed_factor.stack().dropna()
+
+        logger.info(f"  原始因子: 样本数={len(orig_flat)}, 均值={orig_flat.mean():.6f}, 标准差={orig_flat.std():.6f}")
+        logger.info(f"  原始因子: 最小值={orig_flat.min():.6f}, 最大值={orig_flat.max():.6f}")
+        logger.info(f"  原始因子: 25%分位={orig_flat.quantile(0.25):.6f}, 75%分位={orig_flat.quantile(0.75):.6f}")
+
+        logger.info(f"  中性化后: 样本数={len(proc_flat)}, 均值={proc_flat.mean():.6f}, 标准差={proc_flat.std():.6f}")
+        logger.info(f"  中性化后: 最小值={proc_flat.min():.6f}, 最大值={proc_flat.max():.6f}")
+        logger.info(f"  中性化后: 25%分位={proc_flat.quantile(0.25):.6f}, 75%分位={proc_flat.quantile(0.75):.6f}")
+
+        # 检查是否存在大量相同值
+        unique_orig = len(orig_flat.unique())
+        unique_proc = len(proc_flat.unique())
+        logger.info(f"  唯一值数量: 原始={unique_orig}, 中性化后={unique_proc}")
+
+        # 检查最常见的值
+        most_common_orig = orig_flat.value_counts().head(3)
+        most_common_proc = proc_flat.value_counts().head(3)
+        logger.info(f"  原始因子最常见值: {most_common_orig.to_dict()}")
+        logger.info(f"  中性化后最常见值: {most_common_proc.to_dict()}")
+
+
 # 模拟一个更真实的、包含历史变更的行业隶属关系数据
 def mock_full_historical_industry_data():
     """

@@ -20,3 +20,15 @@ FACTOR_STYLE_RISK_MODEL = {
     # 默认配置，适用于未明确分类的因子
     'default': ['market_cap', 'industry']
 }
+# FACTOR_STYLE_RISK_MODEL = {
+#     'value': ['market_cap', 'industry'],
+#     'quality': ['market_cap', 'industry'],
+#     'growth': ['market_cap', 'industry'],
+#     'momentum': ['market_cap', 'industry', 'pct_chg_beta'],
+#     'reversal': ['market_cap', 'industry', 'pct_chg_beta'],
+#     'risk': ['market_cap', 'industry'],  # 测试风险因子时，默认只对其他基础风险因子中性化
+#     'sentiment': ['market_cap', 'industry', 'pct_chg_beta'],
+#     'technical': ['market_cap', 'industry', 'pct_chg_beta'],
+#     # 默认配置，适用于未明确分类的因子
+#     'default': ['market_cap', 'industry']
+# }

@@ -69,6 +69,7 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
 
     'vol_hfq': FILL_STRATEGY_NONE,#不做任何填充
     'vol_hfq_filled': FILL_STRATEGY_NONE, #不做任何填充 因为你看这名，上游都计算好了
+    'amount': FILL_STRATEGY_NONE,
 
 
 

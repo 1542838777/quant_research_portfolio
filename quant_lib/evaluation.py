@@ -68,7 +68,7 @@ def calcu_forward_returns_open_close(period: int,
             index=x.dropna().index
         ).reindex(x.index)
 
-    winsorized_returns = forward_returns.apply(safe_winsorize, axis=1)
+    winsorized_returns = forward_returns.apply(safe_winsorize, axis=0)
     return winsorized_returns
 # ok
 ##

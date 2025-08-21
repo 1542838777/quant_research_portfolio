@@ -48,7 +48,6 @@ class FactorCalculator:
         circ_mv_df = self.factor_manager.get_raw_factor('circ_mv').copy()
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
-        # 使用 pandas 自带 log 函数，保持类型一致
         factor_df = circ_mv_df.apply(np.log)
         return factor_df
     def _calculate_log_total_mv(self) -> pd.DataFrame:
