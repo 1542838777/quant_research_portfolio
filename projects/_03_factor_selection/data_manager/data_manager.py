@@ -55,37 +55,46 @@ def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
         total_cells = df.size
         df_all_cells = df.isna().sum().sum()
         global_na_ratio = df_all_cells / total_cells
-        logger.info(f'\t{_get_nan_comment(item_name, global_na_ratio)}')
+        tip = _get_nan_comment(item_name, global_na_ratio)
+        if tip:
+            logger.info(f'\t{tip}')
 
 
-def _get_nan_comment(field: str, rate: float) -> str:
+def _get_nan_comment(field: str, rate: float) :
     logger.info(f"field：{field}在原始raw_df 确实占比为：{rate}")
     if field in ['delist_date']:
-        return f"{field} in 白名单，这类因子缺失率很高很正常"
-    if rate >= 0.5:
+        # f"{field} in 白名单，这类因子缺失率很高很正常"
+        return  None
+    if rate >= 0.4:
         raise ValueError(f'field:{field}缺失率超过50% 必须检查')
     """根据字段名称和缺失率，提供专家诊断意见"""
     if field in ['pe_ttm', 'pe', 'pb',
                  'pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
-        return " (正常现象: 主要代表公司亏损)"
+        # " (正常现象: 主要代表公司亏损)"
+        return  None
 
     if field in ['dv_ttm', 'dv_ratio']:
-        return " (正常现象: 主要代表公司不分红, 后续应填充为0)"
-
+         # " (正常现象: 主要代表公司不分红, 后续应填充为0)"
+        return None
     if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
-        return "正常现象：不需要care 多少缺失率"
+        # return "正常现象：不需要care 多少缺失率"
+        return  None
     if field in ['circ_mv',  'total_mv',
                  'turnover_rate', 
                  'close_raw','open_raw', 'high_raw', 'low_raw','vol_raw',
                  'close_hfq','open_hfq', 'high_hfq', 'low_hfq',
                  'pre_close', 'amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
-        return "正常现象：不需要care 多少缺失率"
+        # "正常现象：不需要care 多少缺失率"
+        return  None
     if field in ['list_date'] and rate <= 0.01:
-        return "正常现象：不需要care 多少缺失率"
+        # "正常现象：不需要care 多少缺失率"
+        return None
     if field in ['beta'] and rate <= 0.20:
-        return "正常"
+        #return "正常"
+        return None
     if field in ['ps_ttm'] and rate <= 0.20:
-        return "正常"
+        # return "正常"
+        return None
 
     raise ValueError(f"(🚨 警告: 此字段{field}缺失ratio:{rate}!) 请自行配置通过ratio 或则是缺失率太高！")
 
@@ -796,7 +805,7 @@ class DataManager:
 
             # 2. 从加载器高效获取成分股集合 (内部有缓存，速度飞快)
             daily_components = self.component_loader.get_members_on_date(prev_date, component_source_codes)
-            print(f"基础数据每天目标指数内的股票数量{len(daily_components)}")
+            # print(f"基础数据每天目标指数内的股票数量{len(daily_components)}")
             if not daily_components: # 如果当天（T-1）获取不到成分股，则当天股票池为空
                 index_stock_pool_df.loc[date, :] = False
                 continue
@@ -805,8 +814,7 @@ class DataManager:
             current_mask = index_stock_pool_df.loc[date]
             index_mask = index_stock_pool_df.columns.isin(daily_components)
             index_stock_pool_df.loc[date, :] = current_mask & index_mask
-            print(f"对齐后每天目标指数内的股票数量{ index_stock_pool_df.loc[date, :].sum()}")
-
+            # print(f"对齐后每天目标指数内的股票数量{ index_stock_pool_df.loc[date, :].sum()}")
 
         # 函数结尾的日志打印 ()
         self.show_stock_nums_for_per_day(f'by_成分股指数_filter{index_code}', index_stock_pool_df)

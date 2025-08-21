@@ -16,7 +16,7 @@ from tushare.stock.trading import factor_adj
 from websockets.legacy.handshake import check_request
 
 from quant_lib import setup_logger
-from quant_lib.config.logger_config import log_warning
+from quant_lib.config.logger_config import log_warning, log_notice
 from .classifier.factor_calculator.factor_calculator import FactorCalculator
 from .classifier.factor_classifier import FactorClassifier
 # 导入子模块
@@ -700,7 +700,7 @@ class FactorManager:
         # 2. 检查是否存在异常的完美分布
         unique_ratio = factor_flat.nunique() / len(factor_flat)
         if unique_ratio < 0.1:  # 唯一值比例过低
-            logger.warning(f"⚠️  因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
+            log_notice(f"⚠️  因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
 
         # 3. 检查截面标准化的痕迹
         daily_means = factor_data.mean(axis=1).dropna()
@@ -711,11 +711,12 @@ class FactorManager:
         std_close_to_one = abs(daily_stds.mean() - 1.0) < 0.1
 
         if mean_close_to_zero and std_close_to_one:
-            logger.info(f"📊 因子 {factor_name} 检测到截面标准化特征")
+            logger.info(f"📊 因子-{factor_name}-{des} 检测到截面标准化特征")
 
         # 4. 检查时间序列的连续性
         missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
-        log_warning(f"因子-{factor_name}-{des}- 缺失值比例: {missing_ratio:.3f}")
+        if missing_ratio >= 0.3:
+            log_notice(f"因子-{factor_name}-{des}- 缺失值比例过高: {missing_ratio:.3f}")
 
     def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple],
                                stock_pool_index_name: str):

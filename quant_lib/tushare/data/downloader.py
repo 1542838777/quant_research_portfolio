@@ -97,7 +97,12 @@ def download_index_weights():
                 print(f"{year} 年的 {index_code} 成分股数据已存在，跳过下载")
 
 
-
+def delete_suffix_index():
+    path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
+    df = pd.read_parquet(path)
+    print(df['ts_code'].unique().tolist())
+    df['ts_code'] = df['ts_code'].str.split('.').str[0]
+    df.to_parquet(path)
 
 def download_index_daily_info():
     """获取上证指数日线数据"""
@@ -109,6 +114,7 @@ def download_index_daily_info():
     path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
     # 先合并DataFrame
     concatenated_df = pd.concat(all, ignore_index=True)
+    ##处理！要把 后缀.sh 去掉 000300.SH -》000300  切记！
     # 再保存
     concatenated_df.to_parquet(path)
     print(f"✓ 所有指数数据已合并并保存至: {path}")

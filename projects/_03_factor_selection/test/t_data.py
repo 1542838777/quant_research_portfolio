@@ -7,6 +7,8 @@ from projects._03_factor_selection.factor_manager.factor_manager import FactorMa
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from pathlib import Path
 
+from quant_lib.tushare.data.downloader import delete_suffix_index
+
 
 def extract_monotonicity_spearman(json):
     ret = {}
@@ -34,4 +36,4 @@ def load_re():
         ret.append(cur_ret)
     return ret
 if __name__ == '__main__':
-    load_re()
+    delete_suffix_index()
