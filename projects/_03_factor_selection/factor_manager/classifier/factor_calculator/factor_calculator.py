@@ -564,7 +564,7 @@ class FactorCalculator:
         - rolling.std()会自动忽略NaN值进行计算
         - min_periods=60确保至少有60个有效交易日才计算波动率
         """
-        print("    > 正在计算因子: volatility_120d...")
+        # print("    > 正在计算因子: volatility_120d...")
         pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
 
         # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
@@ -650,7 +650,7 @@ class FactorCalculator:
         pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
         amount_df = self.factor_manager.get_raw_factor('amount').copy()
 
-        amount_in_yuan = amount_df * 1000.0
+        amount_in_yuan = amount_df
         amount_in_yuan_safe = amount_in_yuan.where(amount_in_yuan > 0)
         daily_amihud_df = pct_chg_df.abs() / amount_in_yuan_safe
 
@@ -1475,9 +1475,9 @@ class FactorCalculator:
     def _calculate_turnover_rate_fill_zero(self):
         """【标准件】生产一个将停牌日NaN处理为0的换手率序列"""
         turnover_df = self.factor_manager.get_raw_factor('turnover_rate')
-        return (turnover_df / 100.0).fillna(0)
+        return turnover_df .fillna(0)
     def _calculate_amount_fill_zero(self):
-        return self.factor_manager.get_raw_factor('amount').fillna(0) * 1000.0
+        return self.factor_manager.get_raw_factor('amount').fillna(0)
 
 
     ##
