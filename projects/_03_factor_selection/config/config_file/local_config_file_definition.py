@@ -168,6 +168,7 @@ CSI500_most_basic_profile = make_pool_profile('institutional_stock_pool', True, 
 # 用于我需要在最真实的环境，交易，需要必须要过滤流动差劲的
 _massive_test_ZZ800_profile = make_pool_profile('ZZ800', True, INDEX_CODES['ZZ800'], True, True, True, 0.1, 0.05)
 fast_ZZ800_profile = make_pool_profile('ZZ800', True, INDEX_CODES['ZZ800'], False, False, False, 0, 0)
+fast_ZZ1000_profile = make_pool_profile('ZZ1000', True, INDEX_CODES['ZZ1000'], False, False, False, 0, 0)
 pool_for_massive_test_MICROSTRUCTURE_profile = make_pool_profile('microstructure_stock_pool', False, 'None', True,True,True,0.2, 0.2)
 
 

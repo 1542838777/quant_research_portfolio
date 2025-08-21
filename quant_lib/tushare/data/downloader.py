@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from data.local_data_load import load_trading_lists
 from projects._03_factor_selection.config.base_config import INDEX_CODES
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
@@ -57,12 +58,7 @@ def download_index_weights():
                 year_end = get_year_end(year)
 
                 # 获取该年度所有交易日
-                trade_cal = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'trade_cal.parquet')
-                trade_dates = trade_cal[
-                    (trade_cal['cal_date'] >= year_start) &
-                    (trade_cal['cal_date'] <= year_end) &
-                    (trade_cal['is_open'] == 1)
-                    ]['cal_date'].tolist()
+                trade_dates = load_trading_lists(year_start, year_end)
 
                 all_weights = []
 

@@ -20,6 +20,7 @@ tem_p = ('20231215', '20250624')
 period_东北研报 = ('20220101','20250710')
 fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')
+period_four_year = ('20210710', '20250710')
 period_three_year = ('20220710', '20250710')
 period_two_year = ('20230601', '20250710')
 period_one_year = ('20230601', '20240710')
@@ -157,7 +158,16 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = ALL_FFF_most_basic_mode  # 使用包含1日期间的完整测试模式
+trans_pram = {
+
+    'pools': {
+        **ALL_none_FFF_most_basic_profile #控制更改
+    },
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
+    'period': period_six_year,#一年单调性就正常 #控制更改
+    'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
+}
+  # 使用包含1日期间的完整测试模式
 is_debug = False
 
 
@@ -181,7 +191,7 @@ def _load_local_config_functional(config_path: str) -> Dict[str, Any]:
 
     # 根据debug模式 修改内容
     # 在这里，根据总开关来决定你的过滤器配置
-    log_warning(f"【信息】当前处于 {trans_pram['mode']} 模式，desp: {trans_pram['desc']}。")
+    log_warning(f"【信息】当前处于  模式，desp: {trans_pram['desc']}。")
 
     start, end = trans_pram['period']
 

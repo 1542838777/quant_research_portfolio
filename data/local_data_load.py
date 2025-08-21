@@ -13,7 +13,16 @@ def load_index_daily(index_code):
     # set_index() 也将创建一个 DatetimeIndex，这对于时间序列分析至关重要
     index_df = index_daily.sort_values(by='trade_date').set_index('trade_date')
     return index_df
-
+def load_trading_lists(start,end):
+    # 获取该年度所有交易日
+    trade_cal = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'trade_cal.parquet')
+    trade_cal['cal_date'] = pd.to_datetime(trade_cal['cal_date'])
+    trade_dates = trade_cal[
+        (trade_cal['cal_date'] >= pd.to_datetime(start)) &
+        (trade_cal['cal_date'] <= pd.to_datetime(end)) &
+        (trade_cal['is_open'] == 1)
+        ]['cal_date'].tolist()
+    return sorted(trade_dates)
 
 
 def load_all_stock_codes():
