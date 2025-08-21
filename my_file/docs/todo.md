@@ -1,0 +1,1 @@
+合成因子，是没有raw数据的，calculate_factor_score_ultimate 记得兼容！ 提升打分准确率
