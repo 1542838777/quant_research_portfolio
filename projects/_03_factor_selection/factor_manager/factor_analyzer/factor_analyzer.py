@@ -979,7 +979,7 @@ class FactorAnalyzer:
     #     #                                                                      )
     #     return all_configs_results
 
-    # 合成测试，单因子测试 #todo 解开
+    # 合成测试，单因子测试
     def test_factor_entity_service_route(self,
                                          factor_name: str,
                                          stock_pool_index_name: str,

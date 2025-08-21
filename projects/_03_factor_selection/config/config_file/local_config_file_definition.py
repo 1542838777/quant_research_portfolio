@@ -123,7 +123,7 @@ dongbei_SETTING = {
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
-    "forward_periods": [3],
+    "forward_periods": [21],
     "returns_calculator": ['o2c'],
     "style_factor_list": [
     ]
@@ -155,6 +155,7 @@ def make_pool_profile(pool_name, Index_filter, index_code,remove_st,remove_new_s
 CSI300_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300',True,True,True, 0, 0)
 CSI300_more_filter_profile = make_pool_profile('institutional_stock_pool', True, '000300.',True,True,True, 0.1, 0.05)
 ZZ1000_more_filter_profile = make_pool_profile('ZZ1000', True, INDEX_CODES['ZZ1000'],True,True,True, 0.1, 0.05)
+ZZ500_more_filter_profile = make_pool_profile('ZZ500', True, INDEX_CODES['ZZ500'],True,True,True, 0.1, 0.05)
 ZZ1000_no_filter_profile = make_pool_profile('ZZ1000', True, INDEX_CODES['ZZ1000'],False,False,False, 0, 0)
 HS300_no_filter_profile = make_pool_profile('HS300', True, INDEX_CODES['HS300'],False,False,False, 0, 0)
 CSI300_none_TFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300',True,False,False, 0, 0)

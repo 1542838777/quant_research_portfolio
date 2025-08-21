@@ -4,6 +4,7 @@ from typing import Union, Dict, Any, List
 
 import pandas as pd
 
+from projects._03_factor_selection.config.base_config import INDEX_CODES
 from projects._03_factor_selection.utils.factor_scoring_v33_final import calculate_factor_score_v33
 from quant_lib import logger
 
@@ -97,9 +98,8 @@ class FactorSelectorV2:
             target_stock_pool=TARGET_STOCK_POOL
         )
         print("\n--- 因子冠军排行榜 (已选出每个因子的最佳周期) ---")
-        display_cols = ['factor_name', 'best_period', 'Base_Score',
-                        'Robustness_Penalty', 'Purity_Penalty', 'ic_ir_processed_o2c','Final_Score']
-        print(champion_leaderboard[display_cols].head(10))
+
+        print(champion_leaderboard.head(10))
 
         # --- 第三级火箭: 从冠军排行榜中，筛选出最终的、多样化的顶级因子 ---
         # top_factors_df = self.get_top_factors(
@@ -111,7 +111,7 @@ class FactorSelectorV2:
         #     correlation_threshold=correlation_threshold
         # )
         print("\n--- 最终入选的顶级因子详情 (Diversified Top Factors) ---")
-        print(champion_leaderboard[display_cols])
+        print(champion_leaderboard)
 
         # --- 后续步骤: 为最终入选的因子生成详细报告 ---
         # ... (这里的逻辑与你之前的版本类似, 可以复用)
@@ -122,37 +122,68 @@ class FactorSelectorV2:
 
            print(f"正在为因子 '{factor_name}' (最佳周期: {best_period}) 生成报告...")
            print(f"正在为因子 '{factor_name}' 生成报告...")
-           # 4.1 生成主报告 (3x2 统一评估报告)
-           # 绘图函数现在需要从硬盘加载数据，我们只需告知关键信息
-           self.visualization_manager.plot_unified_factor_report(
-               backtest_base_on_index=TARGET_STOCK_POOL,
-               factor_name=factor_name,
-               results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
-               # 你可以决定主报告默认使用C2C还是O2C的结果
-               default_config='o2c'
-           )
-
-           # 4.2 生成稳健性对比报告 (2x2 C2C vs O2C)
-           self.visualization_manager.plot_robustness_report(
-               backtest_base_on_index=TARGET_STOCK_POOL,
-               factor_name=factor_name,
-               results_path=RESULTS_PATH
-           )
-           # 4.2 调用新的分层净值报告函数
-           self.visualization_manager.plot_ic_quantile_panel(
+           # 2. 生成您需要的报告
+           viz_manager = self.visualization_manager
+           # --- 选项 A：生成最全面的“业绩报告” ---
+           viz_manager.plot_performance_report(
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c'
+               default_config='o2c',
+               run_version='latest'
            )
-           # 调用新的归因分析面板函数
-           self.visualization_manager.plot_attribution_panel(
+
+           # --- 选项 B：生成“特性诊断报告”，深入了解因子自身属性 ---
+           viz_manager.plot_characteristics_report(
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c'
+               default_config='o2c',
+               run_version='latest'
            )
 
+           # --- 选项 C：生成“归因面板”，直观对比预处理前后的效果 ---
+           viz_manager.plot_attribution_panel(
+               backtest_base_on_index=TARGET_STOCK_POOL,
+               factor_name=factor_name,
+               results_path=RESULTS_PATH,
+               default_config='o2c',
+               run_version='latest'
+           )
+
+           # --- 选项 D：生成“核心摘要”，用于快速浏览关键业绩 ---
+           viz_manager.plot_ic_quantile_panel(
+               backtest_base_on_index=TARGET_STOCK_POOL,
+               factor_name=factor_name,
+               results_path=RESULTS_PATH,
+               default_config='o2c',
+               run_version='latest'
+           )
+           # # 4.1 生成主报告 (3x2 统一评估报告)
+           # # 绘图函数现在需要从硬盘加载数据，我们只需告知关键信息
+           # self.visualization_manager.plot_unified_factor_report(
+           #     backtest_base_on_index=TARGET_STOCK_POOL,
+           #     factor_name=factor_name,
+           #     results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
+           #     # 你可以决定主报告默认使用C2C还是O2C的结果
+           #     default_config='o2c'
+           # )
+           #
+           # # 4.2 调用新的分层净值报告函数
+           # self.visualization_manager.plot_diagnostics_report(
+           #     backtest_base_on_index=TARGET_STOCK_POOL,
+           #     factor_name=factor_name,
+           #     results_path=RESULTS_PATH,
+           #     default_config='o2c'
+           # )
+           # # 调用新的归因分析面板函数
+           # self.visualization_manager.plot_attribution_panel(
+           #     backtest_base_on_index=TARGET_STOCK_POOL,
+           #     factor_name=factor_name,
+           #     results_path=RESULTS_PATH,
+           #     default_config='o2c'
+           # )
+           #
 
     def _build_single_period_row(self, factor_dir: Path, period: str, run_version: str) -> Dict | None:
         """【辅助函数】为单个因子、单个周期构建用于打分的宽表行"""
@@ -332,9 +363,9 @@ if __name__ == '__main__':
     selector = FactorSelectorV2()
 
     # 【决策】在这里做出你的战略决策，选择你的主战场
-    TARGET_UNIVERSE = '000300.SH'  # 以中证300为主战场
-    TARGET_UNIVERSE = '000852.SH'  # 以中证1000为主战场
-    TARGET_UNIVERSE = '000906.SH'  # 以中证800为主战场
+    TARGET_UNIVERSE = INDEX_CODES['HS300']  # 以中证300为主战场
+    TARGET_UNIVERSE = INDEX_CODES['ZZ500']  # 以中证1000为主战场
+    TARGET_UNIVERSE = INDEX_CODES['ZZ800']  # 以中证1000为主战场
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,
