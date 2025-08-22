@@ -288,16 +288,7 @@ def check_data_quality(factor_df, factor_name=None):
 
 
 # 使用示例
-def run_check():
-    # 读取测试数据
-    try:
-        factor_df = pd.read_csv(
-            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_momentum_12_1.csv',
-            index_col=0, parse_dates=True)
-
-        print("数据加载成功")
-        print(f"因子数据形状: {factor_df.shape}")
-
+def run_check(factor_df):
         # 检查数据质量
         quality_report = check_data_quality(factor_df, "波动率因子")
 
@@ -305,12 +296,6 @@ def run_check():
         if quality_report['quality_score'] < 60:
             print("\n警告: 数据质量较差，可能影响分析结果")
             print("建议进行数据清洗和处理")
-
-    except Exception as e:
-        print(f"数据处理出错: {e}")
-        import traceback
-
-        traceback.print_exc()
 
 
 def check_cross_sectional_duplicates(factor_df, threshold=0.1):
@@ -422,43 +407,6 @@ def check_cross_sectional_duplicates(factor_df, threshold=0.1):
     return duplicate_report
 
 
-# 改进的分组函数，处理重复值
-def safe_quantile_grouping(factor_series, n_quantiles=5, min_unique_ratio=0.5):
-    """
-    安全的分位数分组函数，处理重复值问题
-
-    参数:
-    factor_series: 因子值序列
-    n_quantiles: 分组数量
-    min_unique_ratio: 最小唯一值比例阈值
-
-    返回:
-    groups: 分组结果
-    """
-    # 移除缺失值
-    factor_series = factor_series.dropna()
-
-    if len(factor_series) == 0:
-        return None
-
-    # 检查重复值问题
-    unique_ratio = len(factor_series.unique()) / len(factor_series)
-
-    if unique_ratio < min_unique_ratio:
-        print(f"警告: 唯一值比例过低 ({unique_ratio:.2%})，使用排名分组替代分位数分组")
-        # 使用排名分组而不是分位数分组
-        ranks = factor_series.rank(method='first')
-        groups = pd.qcut(ranks, n_quantiles, labels=False, duplicates='drop')
-    else:
-        # 正常分位数分组
-        try:
-            groups = pd.qcut(factor_series, n_quantiles, labels=False, duplicates='drop')
-        except ValueError:
-            # 如果分位数分组失败，使用排名分组
-            ranks = factor_series.rank(method='first')
-            groups = pd.qcut(ranks, n_quantiles, labels=False, duplicates='drop')
-
-    return groups
 
 
 # 使用示例
@@ -466,7 +414,7 @@ def check_cross_sectional_duplicates_run():
     # 读取测试数据
     try:
         factor_df = pd.read_csv(
-            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_momentum_12_1.csv',
+            '/tests/workspace/mem_momentum_12_1.csv',
             index_col=0, parse_dates=True)
 
 
@@ -494,16 +442,13 @@ if __name__ == "__main__":
     # 读取测试数据
     try:
         factor_df = pd.read_csv(
-            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_momentum_12_1.csv',
+            '/tests/workspace/mem_momentum_12_1.csv',
             index_col=0, parse_dates=True)
         returns_df = pd.read_csv(
-            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv',
+            '/tests/workspace/mem_forward_return_o2c.csv',
             index_col=0, parse_dates=True)
-        run_check( )
-        print("数据加载成功")
-        print(f"因子数据形状: {factor_df.shape}")
-        print(f"收益数据形状: {returns_df.shape}")
-        print(f"因子数据日期范围: {factor_df.index.min()} ~ {factor_df.index.max()}")
+        #检查因子数据质量
+        run_check(factor_df )
 
         # 选择要分析的因子和收益率期限
         # 假设因子数据只有一列，或者您可以选择特定列
