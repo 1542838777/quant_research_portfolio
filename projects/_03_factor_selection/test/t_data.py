@@ -13,16 +13,16 @@ from quant_lib.tushare.data.downloader import delete_suffix_index
 def extract_monotonicity_spearman(json):
     ret = {}
     for one_period_name,one_period_data in json.items():
-        need_data = {'monotonicity_spearman':one_period_data['monotonicity_spearman']}
+        need_data = {'val':round(one_period_data['monotonicity_spearman'],1)}
         ret.update({one_period_name:need_data})
     
     return ret
 
-
+#提取 单调系数
 def load_re():
     RESULTS_PATH = 'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
 
-    base_path = Path(RESULTS_PATH) / '000906.SH'
+    base_path = Path(RESULTS_PATH) / '000906'
     ret = []
     for factor_dir in base_path.iterdir():
         path = factor_dir /'o2c/20190328_20250710/summary_stats.json'
@@ -30,10 +30,10 @@ def load_re():
 
         cur_ret = {
             'name':factor_dir.name,
-            'monotonicity_spearman_info_raw':extract_monotonicity_spearman(d1['quantile_backtest_raw']),
-            'monotonicity_spearman_info_processed':extract_monotonicity_spearman(d1['quantile_backtest_processed'])
+            'ms_raw':extract_monotonicity_spearman(d1['quantile_backtest_raw']),
+            'ms_processed':extract_monotonicity_spearman(d1['quantile_backtest_processed'])
         }
         ret.append(cur_ret)
     return ret
 if __name__ == '__main__':
-    delete_suffix_index()
+    load_re()

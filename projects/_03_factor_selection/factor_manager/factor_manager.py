@@ -715,7 +715,7 @@ class FactorManager:
 
         # 4. 检查时间序列的连续性
         missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
-        if missing_ratio >= 0.3:
+        if missing_ratio >= 0.5:
             log_notice(f"因子-{factor_name}-{des}- 缺失值比例过高: {missing_ratio:.3f}")
 
     def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple],

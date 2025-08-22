@@ -123,7 +123,7 @@ dongbei_SETTING = {
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
-    "forward_periods": [21],
+    "forward_periods": [1,3,20],
     "returns_calculator": ['o2c'],
     "style_factor_list": [
     ]

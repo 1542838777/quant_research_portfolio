@@ -498,7 +498,7 @@ class FactorProcessor:
             y_clean = combined_df['factor']
             # 使用 sm.add_constant 添加截距项，是 statsmodels 的标准做法
             X_clean = sm.add_constant(combined_df.drop(columns=['factor']))
-
+            # print(f"{date}:相关性：{pd.concat([y_clean, X_clean], axis=1).corr()}") 正常
             try:
                 model = sm.OLS(y_clean, X_clean).fit()
                 residuals = model.resid

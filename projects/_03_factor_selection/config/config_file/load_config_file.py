@@ -21,7 +21,8 @@ period_东北研报 = ('20220101','20250710')
 fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')
 period_four_year = ('20210710', '20250710')
-period_three_year = ('20220710', '20250710')
+period_behind_three_year = ('20220710', '20250710')
+period_pre_three_year = ('20190710', '20220710')
 period_two_year = ('20230601', '20250710')
 period_one_year = ('20230601', '20240710')
 period_half_year = ('20250101', '20250710')
@@ -32,7 +33,7 @@ massive_test_ZZ800mode = {
     'pools': {
         **_massive_test_ZZ800_profile
     },
-    'period': longest_periods,
+    'period': period_behind_three_year,
     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
@@ -148,7 +149,7 @@ ALL_FFF_most_basic_mode = {
         **ALL_none_FFF_most_basic_profile
     },
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'period': period_three_year,#一年单调性就正常
+    'period': period_behind_three_year,#一年单调性就正常
     'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
 }
 
@@ -161,10 +162,10 @@ def check_backtest_periods(start_date, end_date):
 trans_pram = {
     'mode': 'massive_test',
     'pools': {
-        **_massive_test_ZZ800_profile
+        **fast_ZZ800_profile
     },
-    'period': longest_periods,
-    'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
+    'period': period_two_year,
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
   # 使用包含1日期间的完整测试模式

@@ -89,13 +89,14 @@ class FactorSelectorV2:
 
         print("FactorSelectorV2 (专业级因子筛选平台) 已准备就绪。")
 
-    def run_factor_analysis(self, TARGET_STOCK_POOL: str, top_n_final: int = 5, correlation_threshold: float = 0.5):
+    def run_factor_analysis(self, TARGET_STOCK_POOL: str, top_n_final: int = 5, correlation_threshold: float = 0.5,run_version:str=None):
         RESULTS_PATH = 'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
 
         # --- 第一、二级火箭: 构建多周期冠军排行榜 ---
         champion_leaderboard = self.build_champion_leaderboard(
             results_path=RESULTS_PATH,
-            target_stock_pool=TARGET_STOCK_POOL
+            target_stock_pool=TARGET_STOCK_POOL,
+            run_version = run_version
         )
         print("\n--- 因子冠军排行榜 (已选出每个因子的最佳周期) ---")
 
@@ -370,5 +371,6 @@ if __name__ == '__main__':
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,
         top_n_final=40,
-        correlation_threshold=0.0
+        correlation_threshold=0.0,
+        run_version='20190328_20250710'
     )

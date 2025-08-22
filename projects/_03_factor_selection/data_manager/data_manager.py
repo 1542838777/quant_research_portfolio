@@ -932,7 +932,7 @@ class DataManager:
             # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
             valid_stocks = final_stock_pool_df.columns[final_stock_pool_df.any(axis=0)]
             final_stock_pool_df = final_stock_pool_df[valid_stocks]
-            logger.info(f"根据指数裁剪股票池：为true状态股票覆盖度:{(final_stock_pool_df!=False).sum().sum()/final_stock_pool_df.size}")
+            logger.info(f"根据指数裁剪股票池：形状：{final_stock_pool_df.shape} 二：为true状态股票覆盖度:{(final_stock_pool_df!=False).sum().sum()/final_stock_pool_df.size}")
         # 其他各种指标过滤条件
         universe_filters = stock_pool_config_profile['filters']
 
