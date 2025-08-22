@@ -130,7 +130,7 @@ class FactorSelectorV2:
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c',
+               default_config='c2c',
                run_version='latest'
            )
 
@@ -139,7 +139,7 @@ class FactorSelectorV2:
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c',
+               default_config='c2c',
                run_version='latest'
            )
 
@@ -148,7 +148,7 @@ class FactorSelectorV2:
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c',
+               default_config='c2c',
                run_version='latest'
            )
 
@@ -157,7 +157,7 @@ class FactorSelectorV2:
                backtest_base_on_index=TARGET_STOCK_POOL,
                factor_name=factor_name,
                results_path=RESULTS_PATH,
-               default_config='o2c',
+               default_config='c2c',
                run_version='latest'
            )
            # # 4.1 生成主报告 (3x2 统一评估报告)
@@ -167,7 +167,7 @@ class FactorSelectorV2:
            #     factor_name=factor_name,
            #     results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
            #     # 你可以决定主报告默认使用C2C还是O2C的结果
-           #     default_config='o2c'
+           #     default_config='c2c'
            # )
            #
            # # 4.2 调用新的分层净值报告函数
@@ -175,14 +175,14 @@ class FactorSelectorV2:
            #     backtest_base_on_index=TARGET_STOCK_POOL,
            #     factor_name=factor_name,
            #     results_path=RESULTS_PATH,
-           #     default_config='o2c'
+           #     default_config='c2c'
            # )
            # # 调用新的归因分析面板函数
            # self.visualization_manager.plot_attribution_panel(
            #     backtest_base_on_index=TARGET_STOCK_POOL,
            #     factor_name=factor_name,
            #     results_path=RESULTS_PATH,
-           #     default_config='o2c'
+           #     default_config='c2c'
            # )
            #
 
@@ -201,11 +201,11 @@ class FactorSelectorV2:
                 with open(summary_file, 'r') as f: return json.load(f)
             return None
 
-        stats_o2c = _find_and_load_stats(factor_dir, 'o2c', run_version)
+        stats_o2c = _find_and_load_stats(factor_dir, 'c2c', run_version)
         if not  stats_o2c: return None
 
         row = {'factor_name': factor_dir.name}
-        for r_type, stats_data in [('o2c', stats_o2c)]:
+        for r_type, stats_data in [('c2c', stats_o2c)]:
             for d_type in ['raw', 'processed']:
                 ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
                 q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})
@@ -299,7 +299,7 @@ class FactorSelectorV2:
             candidate_df=candidate_df,
             results_path=results_path,
             stock_pool=stock_pool,
-            config='o2c',
+            config='c2c',
             run_version=run_version
         )
         correlation_matrix = factor_returns_matrix.corr()

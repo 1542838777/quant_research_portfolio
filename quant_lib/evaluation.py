@@ -30,46 +30,129 @@ except ImportError:
     print("警告: statsmodels未安装，将使用简化版本的回归分析")
 
 
-# 我觉得这个更能说明因子的潜力，在运动过程中（真的过程（交易过程）中， 来看因子 跟此段收益率的协同关系
-def calcu_forward_returns_open_close(period: int,
-                                     close_df: pd.DataFrame,
-                                     open_df: pd.DataFrame) -> pd.DataFrame:
+# 辅助函数：安全的、可在apply中使用的截面去极值函数
+def safe_winsorize_series(series: pd.Series, limits: list = [0.025, 0.025]) -> pd.Series:
     """
-    计算从T日开盘价到T+period-1日收盘价的未来收益率 (Open-to-Close)。
-    这是一种更贴近实盘的、更严格的收益计算方式。
-
-    Args:
-        period (int): 持有周期。
-        close_df (pd.DataFrame): 收盘价矩阵。
-        open_df (pd.DataFrame): 开盘价矩阵。
-
-    Returns:
-        pd.DataFrame: O2C未来收益率矩阵。
+    对一个Series（DataFrame的一行或一列）进行去极值处理，并安全处理全是NaN的情况。
     """
-    # 1. 定义起点和终点价格
-    # 起点是 T 日的开盘价，它本身不需要 shift
-    close_df = close_df.copy(deep=True)
-    open_df = open_df.copy(deep=True)
-    start_price = open_df
-    # 终点是 T+period-1 日的收盘价
-    end_price = close_df.shift(-(period - 1))
+    # 如果剔除NaN后为空，直接返回原序列
+    if series.dropna().empty:
+        return series
+
+    # 对非NaN值进行winsorize
+    winsorized_values = winsorize(series.dropna(), limits=limits)
+
+    # 将处理后的值放回原序列的索引位置
+    return pd.Series(winsorized_values, index=series.dropna().index).reindex(series.index)
+
+
+def calculate_forward_returns_tradable_o2c(period: int,
+                                                close_df: pd.DataFrame,
+                                                open_df: pd.DataFrame,
+                                                winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
+    """
+    【生产级 Tradable O2C】计算从 T+1日开盘价 到 T+period日收盘价 的未来收益率。
+    包含了生存偏差过滤和截面去极值处理。
+    """
+    open_prices = open_df.copy(deep=True)
+    close_prices = close_df.copy(deep=True)
+
+    # 1. 定义起点和终点价格 (逻辑核心)
+    start_price = open_prices.shift(-1)
+    end_price = close_prices.shift(-period)
 
     # 2. 创建“未来存续”掩码
     survived_mask = start_price.notna() & end_price.notna()
 
-    # 3. 计算原始收益率，并应用掩码过滤
-    forward_returns_raw = end_price / start_price - 1
-    forward_returns = forward_returns_raw.where(survived_mask)
-    def safe_winsorize(x, limits=[0.025, 0.025]):
-        if x.dropna().empty:#就是会有这一行收益率全空的啊，比如最后这一天，你依赖后一天的收盘价，来做计算，显然拿不到，那就是nan咯
-            return x
-        return pd.Series(
-            winsorize(x.dropna(), limits=limits),
-            index=x.dropna().index
-        ).reindex(x.index)
+    # 3. 计算原始收益率
+    forward_returns_raw = (end_price / start_price) - 1
 
-    winsorized_returns = forward_returns.apply(safe_winsorize, axis=0)
-    return winsorized_returns
+    # 4. 应用掩码
+    forward_returns_masked = forward_returns_raw.where(survived_mask)
+
+    # 5. 在截面 (axis=1) 上进行去极值
+    forward_returns_winsorized = forward_returns_masked.apply(
+        safe_winsorize_series,
+        axis=1,
+        limits=winsorize_limits
+    )
+
+    return forward_returns_winsorized
+
+def calculate_forward_returns_c2c(period: int,
+                                  close_df: pd.DataFrame,
+                                  winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
+    """
+    【生产级 C2C】计算从 T日收盘价 到 T+period日收盘价 的未来收益率。
+    包含了生存偏差过滤和截面去极值处理。
+    """
+    prices = close_df.copy(deep=True)
+
+    # 1. 定义起点和终点价格 (逻辑核心)
+    start_price = prices
+    end_price = prices.shift(-period)
+
+    # 2. 创建“未来存续”掩码 (处理退市等情况)
+    # 确保在持有期的起点和终点，股票价格都存在
+    survived_mask = start_price.notna() & end_price.notna()
+
+    # 3. 计算原始收益率
+    forward_returns_raw = (end_price / start_price) - 1
+
+    # 4. 应用掩码，过滤掉无效收益
+    forward_returns_masked = forward_returns_raw.where(survived_mask)
+
+    # 5. 在截面 (axis=1) 上对每日的收益率进行去极值处理
+    # 这是至关重要的一步，可以大幅提高回测结果的稳定性
+    forward_returns_winsorized = forward_returns_masked.apply(
+        safe_winsorize_series,
+        axis=1,
+        limits=winsorize_limits
+    )
+
+    return forward_returns_winsorized
+#最新注释： 无法贴近实际，因为往往很难做到第二天一大早就能顺利买入
+
+# 我觉得这个更能说明因子的潜力，在运动过程中（真的过程（交易过程）中， 来看因子 跟此段收益率的协同关系
+# def calcu_forward_returns_open_close(period: int,
+#                                      close_df: pd.DataFrame,
+#                                      open_df: pd.DataFrame) -> pd.DataFrame:
+#     """
+#     计算从T日开盘价到T+period-1日收盘价的未来收益率 (Open-to-Close)。
+#     这是一种更贴近实盘的、更严格的收益计算方式。
+#
+#     Args:
+#         period (int): 持有周期。
+#         close_df (pd.DataFrame): 收盘价矩阵。
+#         open_df (pd.DataFrame): 开盘价矩阵。
+#
+#     Returns:
+#         pd.DataFrame: O2C未来收益率矩阵。
+#     """
+#     # 1. 定义起点和终点价格
+#     # 起点是 T 日的开盘价，它本身不需要 shift
+#     close_df = close_df.copy(deep=True)
+#     open_df = open_df.copy(deep=True)
+#     start_price = open_df
+#     # 终点是 T+period-1 日的收盘价
+#     end_price = close_df.shift(-(period - 1))
+#
+#     # 2. 创建“未来存续”掩码
+#     survived_mask = start_price.notna() & end_price.notna()
+#
+#     # 3. 计算原始收益率，并应用掩码过滤
+#     forward_returns_raw = end_price / start_price - 1
+#     forward_returns = forward_returns_raw.where(survived_mask)
+#     def safe_winsorize(x, limits=[0.025, 0.025]):
+#         if x.dropna().empty:#就是会有这一行收益率全空的啊，比如最后这一天，你依赖后一天的收盘价，来做计算，显然拿不到，那就是nan咯
+#             return x
+#         return pd.Series(
+#             winsorize(x.dropna(), limits=limits),
+#             index=x.dropna().index
+#         ).reindex(x.index)
+#
+#     winsorized_returns = forward_returns.apply(safe_winsorize, axis=1)
+#     return winsorized_returns
 # ok
 ##
 #
@@ -129,7 +212,7 @@ def calculate_ic(
         price_df: pd.DataFrame,
         forward_periods: List[int] = [1, 5, 20],
         method: str = 'spearman',
-        returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame] = calcu_forward_returns_open_close,
+        returns_calculator: Callable[[int, pd.DataFrame], pd.DataFrame] = calculate_forward_returns_c2c,
         min_stocks: int = 20
 ) -> Tuple[Dict[str, Series], Dict[str, pd.DataFrame]]:
     """
@@ -365,8 +448,8 @@ def calculate_quantile_returns(
                                  每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
     """
     #### todo 移除打点代码
-    factor_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_volatility.csv')
-    return_df= returns_calculator(period=3)
+    factor_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_momentum_12_1.csv')
+    return_df= returns_calculator(period=1)
     return_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv')
     ###
     # factor_df = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\local_volatility.csv', index_col=[0], parse_dates=True)
@@ -413,14 +496,16 @@ def calculate_quantile_returns(
             lambda x: pd.qcut(x, n_quantiles, labels=False, duplicates='drop') + 1
             if len(x) >= MIN_SAMPLES_FOR_GROUPING else np.nan
         )
-        # 5. 计算各分位数的平均收益 （时间+组别 为一个group。进行求收益率平均）
+        # 5. 计算各分位数的平均收益 （时间+组别 为一个group。进行求收益率平均） 今天q1组收益平均结果
         daily_quantile_returns = merged_df.groupby([merged_df.index.get_level_values(0), 'quantile'])['return'].mean()
 
         # 6. 数据转换：从“长表”恢复到“宽表”
         quantile_returns_wide = daily_quantile_returns.unstack()
-        # 假设当天某个分组的所有股票都因为  未来不存续 而收益为NaN， （不存续：比如我们周期5，今天买的，第五天因为停牌卖不出去，导致无法拿到价格 导致returns 为nan） 你要不是不把这个收益率替换成0，后面再算累计收益的时候 会报错！
-        # 那么该分组的平均收益也是NaN。我们假设这种情况下组合当天收益为0。
-        quantile_returns_wide= quantile_returns_wide.fillna(0, inplace=False)
+        # 保持NaN不填充：当某分组全部股票停牌/退市导致收益率缺失时，
+        # 应该保持NaN状态，这样更真实反映该分组在该日期无法交易的情况
+        # pandas的后续统计函数(mean, cumprod等)都能正确处理NaN
+        # quantile_returns_wide= quantile_returns_wide.fillna(0, inplace=False)
+
         # 改个列名
         quantile_returns_wide.columns = [f'Q{int(col)}' for col in quantile_returns_wide.columns]
 

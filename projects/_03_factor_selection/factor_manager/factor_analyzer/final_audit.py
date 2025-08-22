@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from quant_lib.evaluation import calcu_forward_returns_open_close
+from quant_lib.evaluation import calculate_forward_returns_c2c
 
 
 def final_audit(factor_data_path):
@@ -607,7 +607,7 @@ def check_lookahead_bias(factor_df, returns_calculator, period=20):
     # factor_df = pd.read_parquet('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/factor_to_test__prcessed.parquet')
     # price_df = pd.read_parquet('D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\debug_snapshot/price_for_returns.parquet')
     # # ✅ 使用正确的O2C函数
-    # returns_calculator = partial(calcu_forward_returns_open_close, close_df=price_df, open_df=price_df)
+    # returns_calculator = partial(calculate_forward_returns_c2c, close_df=price_df, open_df=price_df)
     #
     # check_lookahead_bias(factor_df, returns_calculator, period=20)
     #

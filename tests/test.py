@@ -547,7 +547,7 @@ def  compare_local_mem():
     lcoal_Return = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\local_forward_return_o2c.csv', index_col=[0], parse_dates=True)
     mem_return = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv', index_col=[0], parse_dates=True)
     local_volatility = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\local_volatility.csv', index_col=[0], parse_dates=True)
-    mem_volatility = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_volatility.csv', index_col=[0], parse_dates=True)
+    mem_momentum_12_1 = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_momentum_12_1.csv', index_col=[0], parse_dates=True)
 
     mem_close_hfq = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_close_hfq.csv', index_col=[0], parse_dates=True)
     local_close_hfq = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\local_close_hfq.csv', index_col=[0], parse_dates=True)
@@ -560,7 +560,7 @@ def  compare_local_mem():
     diff_open_hfq = (local_open_hfq - mem_open_hfq).abs()
 
     diff_return = (lcoal_Return - mem_return).abs()
-    difference_fac = (local_volatility - mem_volatility).abs()
+    difference_fac = (local_volatility - mem_momentum_12_1).abs()
     print(f"diff_close_hfq两个文件的差异总和: {diff_close_hfq.sum().sum()}")
     print(f"diff_open_hfq两个文件的差异总和: {diff_open_hfq.sum().sum()}")
     print(f"diff_return两个文件的差异总和: {diff_return.sum().sum()}")

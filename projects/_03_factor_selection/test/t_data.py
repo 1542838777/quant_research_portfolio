@@ -13,7 +13,10 @@ from quant_lib.tushare.data.downloader import delete_suffix_index
 def extract_monotonicity_spearman(json):
     ret = {}
     for one_period_name,one_period_data in json.items():
-        need_data = {'val':round(one_period_data['monotonicity_spearman'],1)}
+        val = round(one_period_data['monotonicity_spearman'], 1)
+        # if abs(val) < 0.7:
+        #     continue
+        need_data = {'val':val}
         ret.update({one_period_name:need_data})
     
     return ret
@@ -30,7 +33,7 @@ def load_re():
 
         cur_ret = {
             'name':factor_dir.name,
-            'ms_raw':extract_monotonicity_spearman(d1['quantile_backtest_raw']),
+            # 'ms_raw':extract_monotonicity_spearman(d1['quantile_backtest_raw']),
             'ms_processed':extract_monotonicity_spearman(d1['quantile_backtest_processed'])
         }
         ret.append(cur_ret)

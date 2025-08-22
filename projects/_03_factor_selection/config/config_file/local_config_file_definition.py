@@ -90,7 +90,7 @@ style_factor_list =  [
 # 只跑一个核心周期，节省时间
 EVAL_SETTING_FAST = {
     "forward_periods": [1], # 只跑一个周期
-    "returns_calculator": ['o2c'], # 只用一种计算方式
+    "returns_calculator": ['c2c'], # 只用一种计算方式
     # style_factor_list 可以保持完整，因为它不影响计算速度
     "style_factor_list": [
     ]
@@ -100,7 +100,7 @@ EVAL_SETTING_FAST = {
 # 覆盖短、中、长周期，适用于大多数正式研究
 EVAL_SETTING_STANDARD = {
     "forward_periods": [5, 21, 60], # 短、中、长
-    "returns_calculator": [ 'o2c'], # 对比两种方式
+    "returns_calculator": [ 'c2c'], # 对比两种方式
     "style_factor_list":style_factor_list
 }
 
@@ -109,22 +109,22 @@ EVAL_SETTING_STANDARD = {
 EVAL_SETTING_FULL = {
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [1, 5, 10, 21, 40, 60, 120],
-    "returns_calculator": [ 'o2c'],
+    "returns_calculator": [ 'c2c'],
     "style_factor_list": style_factor_list
 }
 # 东
 dongbei_SETTING = {
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [3],
-    "returns_calculator": ['o2c'],
+    "returns_calculator": ['c2c'],
     "style_factor_list": [
 
     ]
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
-    "forward_periods": [1,3,20],
-    "returns_calculator": ['o2c'],
+    "forward_periods": [1,30,80],
+    "returns_calculator": ['c2c'],
     "style_factor_list": [
     ]
 }

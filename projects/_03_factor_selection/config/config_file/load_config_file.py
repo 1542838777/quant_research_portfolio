@@ -164,7 +164,7 @@ trans_pram = {
     'pools': {
         **fast_ZZ800_profile
     },
-    'period': period_two_year,
+    'period': period_pre_three_year,
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
