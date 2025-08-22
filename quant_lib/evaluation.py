@@ -387,6 +387,7 @@ def quantile_stats_result(results: Dict[int, pd.DataFrame], n_quantiles: int) ->
             monotonicity_spearman, p_value = spearmanr(np.arange(1, n_quantiles + 1), quantile_means)
 
             # 【新增】异常单调性检测
+            logger.warning(f"单调性: {monotonicity_spearman:.6f} (p={p_value:.6f})")
             if abs(monotonicity_spearman) >= 0.9:
                 logger.warning(f"⚠️  检测到异常单调性: {monotonicity_spearman:.6f} (p={p_value:.6f})")
                 logger.warning(f"   分位数收益: {[f'{q:.6f}' for q in quantile_means]} 如果 分位数收益的方差极小，导致微小差异被放大 所以总单调性很大，很正常！")

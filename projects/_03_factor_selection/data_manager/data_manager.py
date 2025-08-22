@@ -69,7 +69,7 @@ def _get_nan_comment(field: str, rate: float) :
         raise ValueError(f'field:{field}缺失率超过50% 必须检查')
     """根据字段名称和缺失率，提供专家诊断意见"""
     if field in ['pe_ttm', 'pe', 'pb',
-                 'pb_ttm'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
+                 'pb_ttm','amount'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
         # " (正常现象: 主要代表公司亏损)"
         return  None
 
@@ -83,16 +83,16 @@ def _get_nan_comment(field: str, rate: float) :
                  'turnover_rate', 
                  'close_raw','open_raw', 'high_raw', 'low_raw','vol_raw',
                  'close_hfq','open_hfq', 'high_hfq', 'low_hfq',
-                 'pre_close', 'amount'] and rate < 0.2:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
+                 'pre_close', 'amount'] and rate < 0.25:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         # "正常现象：不需要care 多少缺失率"
         return  None
     if field in ['list_date'] and rate <= 0.01:
         # "正常现象：不需要care 多少缺失率"
         return None
-    if field in ['beta'] and rate <= 0.20:
+    if field in ['beta'] and rate <= 0.25:
         #return "正常"
         return None
-    if field in ['ps_ttm'] and rate <= 0.20:
+    if field in ['ps_ttm'] and rate <= 0.25:
         # return "正常"
         return None
 

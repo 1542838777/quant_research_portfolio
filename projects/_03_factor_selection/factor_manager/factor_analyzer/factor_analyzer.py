@@ -979,94 +979,7 @@ class FactorAnalyzer:
     #     #                                                                      )
     #     return all_configs_results
 
-    # # 合成测试，单因子测试 解开todo
-    # def test_factor_entity_service_route(self,
-    #                                      factor_name: str,
-    #                                      stock_pool_index_name: str,
-    #                                      preprocess_method: str = "standard",
-    #                                      ) -> Dict[str, Any]:
-    #     """
-    #     测试单个因子
-    #     综合评分
-    #     保存结果
-    #     画图保存
-    #     """
-    #     factor_data_shifted, is_composite_factor, start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations \
-    #         = self.prepare_date_for_entity_service(
-    #         factor_name, stock_pool_index_name)
-    #
-    #     all_configs_results = {}
-    #     if is_composite_factor:
-    #         return self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,
-    #                                                                     stock_pool_index_name, test_configurations,
-    #                                                                     start_date, end_date, stock_pool_index_code)
-    #     for calculator_name, func in test_configurations.items():
-    #         # 执行测试
-    #         # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
-    #         raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
-    #             target_factor_name=factor_name,
-    #             factor_data_shifted=factor_data_shifted,
-    #             stock_pool_index_name=stock_pool_index_name,
-    #             returns_calculator=func,
-    #             preprocess_method="standard",
-    #             start_date=start_date,
-    #             end_date=end_date,
-    #             need_process_factor=False,
-    #             do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
-    #             # do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
-    #             do_style_correlation_test=False
-    #         )
-    #         # log_flow_start(f"因子{factor_name}处理状态 进入comprehensive_test测试 ")
-    #         proceessed_df, ic_s, ic_st, q_r_processed, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
-    #             = self.comprehensive_test(
-    #             target_factor_name=factor_name,
-    #             factor_data_shifted=factor_data_shifted,
-    #             stock_pool_index_name=stock_pool_index_name,
-    #             returns_calculator=func,
-    #             preprocess_method="standard",
-    #             start_date=start_date,
-    #             end_date=end_date,
-    #             need_process_factor=True,
-    #             do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
-    #             do_style_correlation_test=True
-    #         )
-    #         single_config_results = {
-    #             "raw_factor_df": raw_factor_df,  # 注意 都是经过shift1的
-    #             "processed_factor_df": proceessed_df,  # 注意 都是经过shift1的
-    #             "ic_series_periods_dict_raw": ic_s_raw,
-    #             "ic_stats_periods_dict_raw": ic_st_raw,
-    #             "ic_series_periods_dict_processed": ic_s,
-    #             "ic_stats_periods_dict_processed": ic_st,
-    #
-    #             "quantile_returns_series_periods_dict_raw": q_r_raw,
-    #             "quantile_stats_periods_dict_raw": q_st_raw,
-    #             "q_daily_returns_df_raw": q_daily_returns_df_raw,
-    #
-    #             "quantile_returns_series_periods_dict_processed": q_r_processed,
-    #             "quantile_stats_periods_dict_processed": q_st,
-    #             "q_daily_returns_df_processed": q_daily_returns_df_proc,
-    #
-    #             "fm_returns_series_periods_dict": fm_returns_series_dict,
-    #             "fm_stat_results_periods_dict": fm_summary_dict,
-    #             "turnover_stats_periods_dict": turnover,
-    #             "style_correlation_dict": style_correlation_dict
-    #         }
-    #         # b) 将本次配置的所有结果打包
-    #         self.factorResultsManager._save_factor_results(  # 假设保存函数在FactorManager中
-    #             factor_name=factor_name,
-    #             stock_index=stock_pool_index_code,
-    #             start_date=start_date,
-    #             end_date=end_date,
-    #             returns_calculator_func_name=calculator_name,
-    #             results=single_config_results
-    #         )
-    #         all_configs_results[calculator_name] = single_config_results
-    #     # overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df, target_factor_name,
-    #     #                                                                      style_category, "standard",
-    #     #                                                                      ic_s, ic_st, q_r_processed, q_st, fm_r, fm_st, turnover_st, style_corr
-    #     #                                                                      )
-    #     return all_configs_results
-        # 合成测试，单因子测试
+    # 合成测试，单因子测试
     def test_factor_entity_service_route(self,
                                          factor_name: str,
                                          stock_pool_index_name: str,
@@ -1088,21 +1001,21 @@ class FactorAnalyzer:
                                                                         stock_pool_index_name, test_configurations,
                                                                         start_date, end_date, stock_pool_index_code)
         for calculator_name, func in test_configurations.items():
-            # # 执行测试
-            # # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
-            # raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
-            #     target_factor_name=factor_name,
-            #     factor_data_shifted=factor_data_shifted,
-            #     stock_pool_index_name=stock_pool_index_name,
-            #     returns_calculator=func,
-            #     preprocess_method="standard",
-            #     start_date=start_date,
-            #     end_date=end_date,
-            #     need_process_factor=False,
-            #     do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
-            #     # do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
-            #     do_style_correlation_test=False
-            # )
+            # 执行测试
+            # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
+            raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
+                target_factor_name=factor_name,
+                factor_data_shifted=factor_data_shifted,
+                stock_pool_index_name=stock_pool_index_name,
+                returns_calculator=func,
+                preprocess_method="standard",
+                start_date=start_date,
+                end_date=end_date,
+                need_process_factor=False,
+                do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
+                # do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
+                do_style_correlation_test=False
+            )
             # log_flow_start(f"因子{factor_name}处理状态 进入comprehensive_test测试 ")
             proceessed_df, ic_s, ic_st, q_r_processed, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
                 = self.comprehensive_test(
@@ -1118,16 +1031,16 @@ class FactorAnalyzer:
                 do_style_correlation_test=True
             )
             single_config_results = {
-                "raw_factor_df": None,  # 注意 都是经过shift1的
+                "raw_factor_df": raw_factor_df,  # 注意 都是经过shift1的
                 "processed_factor_df": proceessed_df,  # 注意 都是经过shift1的
-                "ic_series_periods_dict_raw": None,
-                "ic_stats_periods_dict_raw": None,
+                "ic_series_periods_dict_raw": ic_s_raw,
+                "ic_stats_periods_dict_raw": ic_st_raw,
                 "ic_series_periods_dict_processed": ic_s,
                 "ic_stats_periods_dict_processed": ic_st,
 
-                "quantile_returns_series_periods_dict_raw": None,
-                "quantile_stats_periods_dict_raw": None,
-                "q_daily_returns_df_raw": None,
+                "quantile_returns_series_periods_dict_raw": q_r_raw,
+                "quantile_stats_periods_dict_raw": q_st_raw,
+                "q_daily_returns_df_raw": q_daily_returns_df_raw,
 
                 "quantile_returns_series_periods_dict_processed": q_r_processed,
                 "quantile_stats_periods_dict_processed": q_st,
@@ -1153,6 +1066,93 @@ class FactorAnalyzer:
         #                                                                      ic_s, ic_st, q_r_processed, q_st, fm_r, fm_st, turnover_st, style_corr
         #                                                                      )
         return all_configs_results
+        # 合成测试，单因子测试
+    # def test_factor_entity_service_route(self,
+    #                                      factor_name: str,
+    #                                      stock_pool_index_name: str,
+    #                                      preprocess_method: str = "standard",
+    #                                      ) -> Dict[str, Any]:
+    #     """
+    #     测试单个因子
+    #     综合评分
+    #     保存结果
+    #     画图保存
+    #     """
+    #     factor_data_shifted, is_composite_factor, start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations \
+    #         = self.prepare_date_for_entity_service(
+    #         factor_name, stock_pool_index_name)
+    #
+    #     all_configs_results = {}
+    #     if is_composite_factor:
+    #         return self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,
+    #                                                                     stock_pool_index_name, test_configurations,
+    #                                                                     start_date, end_date, stock_pool_index_code)
+    #     for calculator_name, func in test_configurations.items():
+    #         # # 执行测试
+    #         # # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
+    #         # raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
+    #         #     target_factor_name=factor_name,
+    #         #     factor_data_shifted=factor_data_shifted,
+    #         #     stock_pool_index_name=stock_pool_index_name,
+    #         #     returns_calculator=func,
+    #         #     preprocess_method="standard",
+    #         #     start_date=start_date,
+    #         #     end_date=end_date,
+    #         #     need_process_factor=False,
+    #         #     do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
+    #         #     # do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
+    #         #     do_style_correlation_test=False
+    #         # )
+    #         # log_flow_start(f"因子{factor_name}处理状态 进入comprehensive_test测试 ")
+    #         proceessed_df, ic_s, ic_st, q_r_processed, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
+    #             = self.comprehensive_test(
+    #             target_factor_name=factor_name,
+    #             factor_data_shifted=factor_data_shifted,
+    #             stock_pool_index_name=stock_pool_index_name,
+    #             returns_calculator=func,
+    #             preprocess_method="standard",
+    #             start_date=start_date,
+    #             end_date=end_date,
+    #             need_process_factor=True,
+    #             do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
+    #             do_style_correlation_test=True
+    #         )
+    #         single_config_results = {
+    #             "raw_factor_df": None,  # 注意 都是经过shift1的
+    #             "processed_factor_df": proceessed_df,  # 注意 都是经过shift1的
+    #             "ic_series_periods_dict_raw": None,
+    #             "ic_stats_periods_dict_raw": None,
+    #             "ic_series_periods_dict_processed": ic_s,
+    #             "ic_stats_periods_dict_processed": ic_st,
+    #
+    #             "quantile_returns_series_periods_dict_raw": None,
+    #             "quantile_stats_periods_dict_raw": None,
+    #             "q_daily_returns_df_raw": None,
+    #
+    #             "quantile_returns_series_periods_dict_processed": q_r_processed,
+    #             "quantile_stats_periods_dict_processed": q_st,
+    #             "q_daily_returns_df_processed": q_daily_returns_df_proc,
+    #
+    #             "fm_returns_series_periods_dict": fm_returns_series_dict,
+    #             "fm_stat_results_periods_dict": fm_summary_dict,
+    #             "turnover_stats_periods_dict": turnover,
+    #             "style_correlation_dict": style_correlation_dict
+    #         }
+    #         # b) 将本次配置的所有结果打包
+    #         self.factorResultsManager._save_factor_results(  # 假设保存函数在FactorManager中
+    #             factor_name=factor_name,
+    #             stock_index=stock_pool_index_code,
+    #             start_date=start_date,
+    #             end_date=end_date,
+    #             returns_calculator_func_name=calculator_name,
+    #             results=single_config_results
+    #         )
+    #         all_configs_results[calculator_name] = single_config_results
+    #     # overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df, target_factor_name,
+    #     #                                                                      style_category, "standard",
+    #     #                                                                      ic_s, ic_st, q_r_processed, q_st, fm_r, fm_st, turnover_st, style_corr
+    #     #                                                                      )
+    #     return all_configs_results
     def purify_summary_rows_contain_periods(self, comprehensive_results):
         factor_category = comprehensive_results.get('factor_category', 'Unknown')  # 使用.get增加健壮性
         factor_name = comprehensive_results['factor_name']

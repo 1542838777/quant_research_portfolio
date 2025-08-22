@@ -22,18 +22,19 @@ fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')
 period_four_year = ('20210710', '20250710')
 period_behind_three_year = ('20220710', '20250710')
+really_train_period = ('20190328', '20231231')
 period_pre_three_year = ('20190710', '20220710')
 period_two_year = ('20230601', '20250710')
 period_one_year = ('20230601', '20240710')
 period_half_year = ('20250101', '20250710')
 longest_periods = ('20190328', '20250710')
 
-massive_test_ZZ800mode = {
+massive_test_ZZ800_train_mode = {
     'mode': 'massive_test',
     'pools': {
         **_massive_test_ZZ800_profile
     },
-    'period': period_behind_three_year,
+    'period': really_train_period,
     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
@@ -159,15 +160,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = {
-    'mode': 'massive_test',
-    'pools': {
-        **fast_ZZ800_profile
-    },
-    'period': period_pre_three_year,
-    'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
-}
+trans_pram = massive_test_ZZ800_train_mode
   # 使用包含1日期间的完整测试模式
 is_debug = False
 
