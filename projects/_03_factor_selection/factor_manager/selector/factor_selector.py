@@ -201,11 +201,11 @@ class FactorSelectorV2:
                 with open(summary_file, 'r') as f: return json.load(f)
             return None
 
-        stats_o2c = _find_and_load_stats(factor_dir, 'c2c', run_version)
+        stats_o2c = _find_and_load_stats(factor_dir, 'o2c', run_version)
         if not  stats_o2c: return None
 
         row = {'factor_name': factor_dir.name}
-        for r_type, stats_data in [('c2c', stats_o2c)]:
+        for r_type, stats_data in [('o2c', stats_o2c)]:
             for d_type in ['raw', 'processed']:
                 ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
                 q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})

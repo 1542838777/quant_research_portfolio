@@ -78,7 +78,7 @@ def calculate_forward_returns_tradable_o2c(period: int,
     )
 
     return forward_returns_winsorized
-
+#ok
 def calculate_forward_returns_c2c(period: int,
                                   close_df: pd.DataFrame,
                                   winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
