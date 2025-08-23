@@ -107,13 +107,52 @@ class FactorSynthesizer:
         return composite_factor_df
 
 
-    def do_composite(self,factor_name,stock_pool_index_name):
-        # 3. 定义你要合成的因子列表
-
-        sub_factor_names =  self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name) # 改成 从config 里面读取
-        # 4. 调用合成方法
-        value_composite_df = self.synthesize_composite_factor(factor_name, stock_pool_index_name,sub_factor_names)
-        return value_composite_df
+    def do_composite(self, factor_name, stock_pool_index_name, use_ic_weighting=False, weighting_config=None):
+        """
+        执行因子合成 - 支持等权和IC加权两种模式
+        
+        Args:
+            factor_name: 合成因子名称
+            stock_pool_index_name: 股票池名称
+            use_ic_weighting: 是否使用IC加权（默认False，使用等权）
+            weighting_config: IC权重配置（可选）
+            
+        Returns:
+            pd.DataFrame: 合成后的因子数据
+        """
+        # 获取子因子列表
+        sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name)
+        
+        if use_ic_weighting:
+            # 使用IC加权合成
+            from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
+                ICWeightedSynthesizer, FactorWeightingConfig
+            )
+            
+            # 创建IC加权合成器
+            config = weighting_config or FactorWeightingConfig()
+            ic_synthesizer = ICWeightedSynthesizer(
+                self.factor_manager, 
+                self.factor_analyzer, 
+                self.processor,
+                config
+            )
+            
+            # 执行IC加权合成
+            composite_df, report = ic_synthesizer.synthesize_ic_weighted_factor(
+                composite_factor_name=factor_name,
+                stock_pool_index_name=stock_pool_index_name, 
+                candidate_factor_names=sub_factor_names
+            )
+            
+            # 显示报告
+            ic_synthesizer.print_synthesis_report(report)
+            
+            return composite_df
+        else:
+            # 使用传统等权合成
+            composite_df = self.synthesize_composite_factor(factor_name, stock_pool_index_name, sub_factor_names)
+            return composite_df
         # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
         # # 准备数据
         #

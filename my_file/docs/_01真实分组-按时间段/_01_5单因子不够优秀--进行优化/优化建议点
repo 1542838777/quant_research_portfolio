@@ -1,0 +1,36 @@
+基于你相对较好的几个因子，尝试以下优化：
+
+  1. 重点关注这几个因子：
+    - earnings_stability (IC=0.017) - 盈利稳定性
+    - ep_ratio (IC=0.017) - 市盈率倒数
+    - bm_ratio (IC=0.013) - 账面市值比
+    - cfp_ratio (IC=0.010) - 现金流市值比
+  2. 尝试参数优化：
+  # 例如调整计算窗口
+  'volatility_60d',    # 试试60日波动率而不是90日
+  'momentum_60d',      # 试试60日动量
+  'earnings_stability_12q'  # 试试12个季度而不是20个季度
+
+
+  方案二：扩展因子库
+
+  添加一些在A股市场历史表现较好的因子：
+
+  # 建议添加到config.yaml
+  new_factors_to_test = [
+      # 反转类因子（A股效应显著）
+      'reversal_5d',        # 5日反转
+      'reversal_21d',       # 月度反转
+
+      # 量价类因子
+      'volume_price_trend', # 量价趋势
+      'money_flow_20d',     # 资金流向
+
+      # 基本面momentum
+      'earnings_revision',   # 盈利预测修正
+      'roe_change_ttm',     # ROE变化率
+
+      # 市场微观结构
+      'bid_ask_spread',     # 买卖价差
+      'tick_direction',     # 成交方向
+  ]

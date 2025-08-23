@@ -44,7 +44,6 @@ FILL_STRATEGY_CONDITIONAL_ZERO = 'conditional_zero'  # 条件填充0 (处理停�
 
 # =================================================================
 #  最终填充配置字典 (用于 get_backtest_ready_factor) 严谨用于基层因子计算的填充 remind
-# =================================================================
 FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # --------------------------------------------------------------------------
     #  一、基础数据层 (Base Data)
@@ -116,7 +115,6 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     'pct_chg_beta': FILL_STRATEGY_NONE,
     'momentum_120d': FILL_STRATEGY_NONE,
     'reversal_21d': FILL_STRATEGY_NONE,
-    'volatility_90d': FILL_STRATEGY_NONE,
     'turnover_rate_90d_mean': FILL_STRATEGY_CONDITIONAL_ZERO,
     'ln_turnover_value_90d': FILL_STRATEGY_CONDITIONAL_ZERO,
     'amihud_liquidity': FILL_STRATEGY_NONE,
@@ -133,6 +131,9 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     'momentum_20d': FILL_STRATEGY_NONE,
     'beta': FILL_STRATEGY_NONE,
     'volatility_120d': FILL_STRATEGY_NONE,
+    'volatility_90d': FILL_STRATEGY_NONE,
+    'volatility_40d': FILL_STRATEGY_NONE,
+
     'turnover_rate_monthly_mean': FILL_STRATEGY_NONE,
     'liquidity_amihud': FILL_STRATEGY_NONE,
     'amihud_liquidity': FILL_STRATEGY_NONE,
@@ -159,3 +160,4 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     'market_pct_chg':FILL_STRATEGY_NONE, #市场指数涨跌 别贸然填充！
 
 }
+# =================================================================

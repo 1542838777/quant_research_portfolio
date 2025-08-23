@@ -330,8 +330,7 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: momentum_20d...")
         close_df = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
-        # close_df.reset_index(trading_index = self.factor_manager.data_manager._prebuffer_trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
-        # close_df.ffill(axis=0, inplace=True)
+
         momentum_df = close_df.pct_change(periods=20)
         return momentum_df
 
