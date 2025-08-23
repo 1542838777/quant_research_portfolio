@@ -890,7 +890,6 @@ class DataManager:
     def get_base_require_factors(self, target_factors_name: list[str]) -> set:
         result = set()
         for name in target_factors_name:
-            logger.info(f"name------{name}")
             factor_config = self.get_factor_definition(name)
             if factor_config['cal_require_base_fields_from_daily'].iloc[0]:
                 base_fields = factor_config['cal_require_base_fields'].iloc[0]

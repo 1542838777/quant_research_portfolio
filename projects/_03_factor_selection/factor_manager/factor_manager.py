@@ -91,7 +91,7 @@ class FactorResultsManager:
         ic_series_periods_dict_raw = results.get("ic_series_periods_dict_raw", {})
         ic_series_periods_dict_processed = results.get("ic_series_periods_dict_processed", {})
 
-        q_daily_returns_df_raw = results.get("q_daily_returns_df_raw", pd.DataFrame())
+        q_daily_returns_df_raw = results.get("q_daily_returns_df_raw", None)
         q_daily_returns_df_processed = results.get("q_daily_returns_df_processed", pd.DataFrame())
 
         quantile_returns_series_periods_dict_raw = results.get("quantile_returns_series_periods_dict_raw", {})
@@ -112,7 +112,7 @@ class FactorResultsManager:
                 df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
         for period, df in quantile_returns_series_periods_dict_processed.items():
             df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
-        if not q_daily_returns_df_raw.empty:
+        if q_daily_returns_df_raw is not None and not q_daily_returns_df_raw.empty:
             q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
         q_daily_returns_df_processed.to_parquet(output_path / f'q_daily_returns_df_processed.parquet')
 

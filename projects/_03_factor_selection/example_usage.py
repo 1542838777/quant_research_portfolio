@@ -227,41 +227,13 @@ def main():
     current_dir = Path(__file__).parent
     config_path = current_dir / 'factory' / 'config.yaml'
     experiments_path = current_dir / 'factory' / 'experiments.yaml'
-
-    # 验证配置文件存在
-    if not config_path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
-    if not experiments_path.exists():
-        raise FileNotFoundError(f"实验配置文件不存在: {experiments_path}")
-
-    # 【修复】添加异常处理
-    try:
-        data_manager = DataManager(config_path=str(config_path), experiments_config_path=str(experiments_path))
-        data_manager.prepare_basic_data()
-        factor_manager = FactorManager(data_manager)
-    except FileNotFoundError as e:
-        logger.error(f"数据文件缺失: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"数据管理器初始化失败: {e}")
-        raise
+    data_manager = DataManager(config_path=str(config_path), experiments_config_path=str(experiments_path))
+    data_manager.prepare_basic_data()
+    factor_manager = FactorManager(data_manager)
 
     # 【修复】使用正式的缓存清理方法
     logger.info("!!! 正在执行“硬重启”：强制清理因子缓存...")
     factor_manager.clear_cache()
-    # analyze_why_better_performance(factor_manager)
-    # verify_data(factor_manager)
-
-    # 测试时间聚合效果
-    # mono_aggregated = simulate_your_aggregation_method(factor_manager)
-    # comprehensive_factor_test(factor_manager)
-    # verify_pct_chg(factor_manager) #通过
-
-    # check_look_ahead_bias(factor_manager)#通过
-    # debug_ic_calculation_detailed(factor_manager)#表现正常 有正有负!
-    # verify_volatility_calculation(factor_manager)通过
-    # verify_adj_factor_timing(factor_manager)通过
-    # verify_adj_factor(factor_manager, ts_code_to_check='600519.SH', ex_date_to_check='2024-06-19')通过
 
     # 3. 创建示例因子
     logger.info("3. 创建目标学术因子...")
