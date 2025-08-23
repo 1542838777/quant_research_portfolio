@@ -369,7 +369,7 @@ def main():
         # 创建并发测试器
         # 建议并发数不要超过CPU核心数的75%
         import multiprocessing
-        max_workers = min(6, max(2, multiprocessing.cpu_count() - 2))
+        max_workers = min(3, max(1, multiprocessing.cpu_count() // 4))
         
         logger.info(f"🔧 系统CPU核心数: {multiprocessing.cpu_count()}, 使用并发数: {max_workers}")
         

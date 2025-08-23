@@ -39,15 +39,14 @@ massive_test_ZZ800_train_mode = {
     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
-
-zz800fast = {
-    'mode': 'zz800fast',
+fast_mode = {
+    'mode': 'fast',
     'pools': {
         **fast_ZZ800_profile
     },
-    'period': period_two_year,
+    'period': period_one_year,
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
+    'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
 
 CSI300_most_basic_mode = {
@@ -59,24 +58,8 @@ CSI300_most_basic_mode = {
     'desc': '但是只用了沪深300股票池（）只有普适性过滤，除此之外，没有任何过滤'
 }
 
-fast_mode = {
-    'mode': 'fast',
-    'pools': {
-        **fast_hs300_profile
-    },
-    'period': fast_train_period,
-    'evaluation': dongbei_SETTING,  # <--- 【新增】
-    'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
-}
 
-fast_mode_2 = {
-    'mode': 'fast',
-    'pools': {
-        **CSI300_none_FFF_most_basic_profile
-    },
-    'period': fast_train_period,
-    'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
-}
+
 
 fast_mode_two_pools = {
     'mode': 'fast',
@@ -154,7 +137,6 @@ ALL_FFF_most_basic_mode = {
     'period': period_behind_three_year,#一年单调性就正常
     'desc': 'ALL_none_FFF_most_basic_profile（）无普适性过滤，，没有任何过滤'
 }
-
 
 def check_backtest_periods(start_date, end_date):
     if pd.to_datetime(end_date) - pd.to_datetime(start_date) < datetime.timedelta(days=110):

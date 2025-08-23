@@ -460,6 +460,8 @@ class FactorProcessor:
             min_periods = resid_config.get('min_periods', max(1, int(window * 0.5)))
             factor_mean = processed_factor.rolling(window=window, min_periods=min_periods).mean()
             processed_factor = processed_factor - factor_mean
+            logger.info(f"{target_factor_name} 进行因子残差化 for 中性化")
+
 
         # --- 阶段二：确定中性化因子列表 ---
         factors_to_neutralize = self.get_regression_need_neutral_factor_list(style_category, target_factor_name)

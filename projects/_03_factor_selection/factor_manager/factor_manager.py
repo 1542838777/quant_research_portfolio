@@ -681,7 +681,7 @@ class FactorManager:
         3. 默认shift处理
         """
         # 1. 从配置文件获取显式声明
-        factor_definitions = self.config.get('factor_definition', [])
+        factor_definitions = self.data_manager.config.get('factor_definition', [])
         for factor_def in factor_definitions:
             if factor_def.get('name') == factor_name:
                 alignment = factor_def.get('time_alignment')
