@@ -80,7 +80,7 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # 'total_mv': FILL_STRATEGY_NONE,
 
     # 交易行为类，依赖一个外部的交易状态flag来实现
-    'turnover_rate': FILL_STRATEGY_CONDITIONAL_ZERO,
+    'turnover_rate': FILL_STRATEGY_CONDITIONAL_ZERO,#todo
     'pct_chg': FILL_STRATEGY_NONE,# 状态未知 / 无法计算 很关键的数据，整个测试的基石
 
     # 静态信息类，信息永不或极少变化，使用无限制ffill是安全的
@@ -113,13 +113,14 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     #
     # 如果你用ffill来填充，就等于在说：“既然我今天算不出它的风险，那我就假设它的风险和上一次我能算出来时（可能是一个月前）的风险一模一样。” 这是一个极其危险的假设，尤其是在股票刚刚经历了一次长期停牌重组后，其风险特征很可能已经发生了根本性的变化。#
     'pct_chg_beta': FILL_STRATEGY_NONE,
-    'momentum_120d': FILL_STRATEGY_NONE,
+    'reversal_51d': FILL_STRATEGY_NONE,
     'reversal_21d': FILL_STRATEGY_NONE,
-    'turnover_rate_90d_mean': FILL_STRATEGY_CONDITIONAL_ZERO,
-    'ln_turnover_value_90d': FILL_STRATEGY_CONDITIONAL_ZERO,
+    'turnover_rate_90d_mean': FILL_STRATEGY_NONE,
+    'ln_turnover_value_90d': FILL_STRATEGY_NONE,
+    'turnover_change_20d': FILL_STRATEGY_NONE,
     'amihud_liquidity': FILL_STRATEGY_NONE,
-    'net_profit_growth_ttm':FILL_STRATEGY_FFILL_LIMIT_65,
-    'revenue_growth_ttm':FILL_STRATEGY_FFILL_LIMIT_65,
+    'net_profit_growth_ttm':FILL_STRATEGY_NONE,
+    'revenue_growth_ttm':FILL_STRATEGY_NONE,
 
 
 
@@ -129,6 +130,8 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # 任何填充都会引入错误的陈旧信息。
     'momentum_12_1': FILL_STRATEGY_NONE,
     'momentum_20d': FILL_STRATEGY_NONE,
+    'momentum_60d': FILL_STRATEGY_NONE,
+    'momentum_120d': FILL_STRATEGY_NONE,
     'beta': FILL_STRATEGY_NONE,
     'volatility_120d': FILL_STRATEGY_NONE,
     'volatility_90d': FILL_STRATEGY_NONE,

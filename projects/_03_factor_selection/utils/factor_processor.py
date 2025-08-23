@@ -32,6 +32,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 from quant_lib.config.logger_config import setup_logger, log_warning, log_flow_start
+from projects._03_factor_selection.utils.data.residualization_rules import \
+    need_residualization_in_neutral_processing as need_residualization_in_neutral_proceessing, \
+    get_residualization_config
 
 warnings.filterwarnings('ignore')
 
@@ -109,7 +112,7 @@ class FactorProcessor:
         processed_target_factor_df = self.winsorize_robust(processed_target_factor_df,pit_map)
         # 步骤2：中性化
         if self.preprocessing_config.get('neutralization', {}).get('enable', False):
-            processed_target_factor_df_E = self._neutralize(processed_target_factor_df, target_factor_name,
+            processed_target_factor_df = self._neutralize(processed_target_factor_df, target_factor_name,
                                                           neutral_dfs, style_category)
             #用于测试验证中性化有无作用
             # verify_neutralization_effectiveness(processed_target_factor_df,processed_target_factor_df_E,neutral_dfs=neutral_dfs,test_dates=processed_target_factor_df.index[:100])
@@ -451,16 +454,21 @@ class FactorProcessor:
         processed_factor = factor_data.copy()
 
         # --- 阶段一：(可选) 因子残差化 ---
-        if factor_school == 'microstructure':
-            window = neutralization_config.get('residualization_window', 20)
-            logger.info(f"    > 应用时间序列残差化 (窗口: {window}天)...")
-            factor_mean = processed_factor.rolling(window=window, min_periods=max(1, int(window * 0.5))).mean()
+        if need_residualization_in_neutral_proceessing(target_factor_name, style_category):
+
+            # 获取该因子的定制化残差配置
+            resid_config = get_residualization_config(target_factor_name)
+            window = resid_config.get('window', 20)
+            min_periods = resid_config.get('min_periods', max(1, int(window * 0.5)))
+            
+            logger.info(f"    > 应用时间序列残差化 (窗口: {window}天, 最小期数: {min_periods})...")
+            factor_mean = processed_factor.rolling(window=window, min_periods=min_periods).mean()
             processed_factor = processed_factor - factor_mean
 
         # --- 阶段二：确定中性化因子列表 ---
         factors_to_neutralize = self.get_regression_need_neutral_factor_list(style_category, target_factor_name)
         if not factors_to_neutralize:
-            logger.info(f"    > '{factor_school}' 派因子无需中性化。")
+            logger.info(f"    > '{target_factor_name}' 因子无需中性化。")
             return processed_factor
 
         # logger.info(f"    > {target_factor_name} 将对以下风格进行中性化: {factors_to_neutralize}")
@@ -473,6 +481,7 @@ class FactorProcessor:
             y_series = processed_factor.loc[date].dropna()
             if y_series.empty:
                 skipped_days_count += 1
+                log_warning(f"{target_factor_name}中性化跳过这一天{date} y_series.empty ")
                 continue
 
             # --- a) 【效率优化】构建回归自变量矩阵 X ---
@@ -510,6 +519,7 @@ class FactorProcessor:
                 X_df_parts.append(beta_series)
 
             if not X_df_parts:
+                log_warning(f"{target_factor_name}中性化跳过这一天{date} :not X_df_parts")
                 continue
 
             # --- b) 【流程优化】将所有部分一次性合并，然后与 y 对齐 ---
@@ -540,6 +550,7 @@ class FactorProcessor:
                 # 如果直接continue ()：这意味着在样本不足的日期，processed_factor 中保留的是原始因子值。这会使你的“纯净因子”在某些天突然变回“原始因子”，导致风险暴露不一致。#
                 processed_factor.loc[date] = np.nan  #
                 skipped_days_count += 1
+                log_warning(f"{target_factor_name}中性化跳过这一天{date} 当天样本不够")
                 continue
             # --- d) 执行回归并计算残差 ---
             y_clean = combined_df['factor']

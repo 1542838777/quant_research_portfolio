@@ -2,52 +2,6 @@
 # 目标因子设置（用于DataManager）
 target_factors_for_evaluation:
   fields:
-##    - 'operating_accruals'
-#    - 'earnings_stability'
-#    - 'rsi'
-#    - 'cci'
-#    - 'pead'
-#    - 'quality_momentum'
-##    - #重新
-#    - 'turnover_rate_90d_mean'
-#    - 'ln_turnover_value_90d'
-#    - 'rsi'
-    - 'amihud_liquidity'
-
-#    # === 规模 (Size) ===
-#    - 'log_total_mv'
-#    - 'log_circ_mv'
-#
-#    # === 价值 (Value) ===
-#    - 'bm_ratio'
-#    - 'ep_ratio'
-#    - 'sp_ratio'
-#    - 'cfp_ratio'
-#
-#
-#    # === 质量 (Quality) ===
-#    - 'roe_ttm'
-#    - 'gross_margin_ttm'
-#    - 'debt_to_assets'
-#
-#    # === 成长 (Growth) ===
-#    - 'net_profit_growth_yoy'
-#    - 'total_revenue_growth_yoy'
-#
-#    # === 动量 (Momentum) ===
-#    - 'momentum_12_1'
-#    - 'momentum_20d'
-#
-#    # === 风险 (Risk / Volatility) ===
-#    - 'beta'
-#    - 'volatility_120d'
-#    - 'volatility_90d'
-#
-#    # === 流动性 (Liquidity) ===
-#    - 'turnover_rate_90d_mean'
-#    - 'ln_turnover_value_90d'
-#    - 'turnover_rate_monthly_mean'
-#    - 'amihud_liquidity'
 
 
 # 回测时间范围
@@ -449,6 +403,13 @@ factor_definition:
     cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: False
 
+  - name: 'momentum_60d'
+    style_category: 'momentum'
+    description: '捕捉中期价格惯性。'
+    action: 'technical_calcu'
+    time_alignment: 'shift'
+    cal_require_base_fields: [ 'close_adj' ]
+    cal_require_base_fields_from_daily: False
   - name: 'momentum_120d'
     style_category: 'momentum'
     description: '120日（约半年）累计收益率，捕捉中期价格惯性。'
@@ -456,6 +417,7 @@ factor_definition:
     time_alignment: 'shift'
     cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: False
+
 
   - name: 'reversal_21d'
     # 【新增】 A股市场效应非常显著的短期反转因子
@@ -466,6 +428,13 @@ factor_definition:
     cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: False
 
+  - name: 'reversal_5d'
+    style_category: 'momentum' # 类别上仍属动量大类
+    description: '周 收益率的负向。A股短期反转效应显著，即前期涨多的股票后期倾向于跌。'
+    action: 'technical_calcu'
+    time_alignment: 'shift'
+    cal_require_base_fields: [ 'close_adj' ]
+    cal_require_base_fields_from_daily: False
 
   # === 风险 (Risk / Volatility) - 基于日度行情，应为 shift ===
   - name: 'beta'
@@ -519,6 +488,13 @@ factor_definition:
   - name: 'ln_turnover_value_90d'
     style_category: 'liquidity'
     description: '90日日均成交额的对数。反映了资产的绝对流动性水平，是冲击成本的重要代理变量。建议取对数。'
+    action: 'technical_calcu'
+    time_alignment: 'shift'
+    cal_require_base_fields: [ 'amount' ]
+    cal_require_base_fields_from_daily: False
+  - name: 'turnover_change_20d'
+    style_category: 'liquidity'
+    description: '成交额突然放大，往往伴随趋势/事件驱动。。'
     action: 'technical_calcu'
     time_alignment: 'shift'
     cal_require_base_fields: [ 'amount' ]

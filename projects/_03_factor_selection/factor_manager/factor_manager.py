@@ -764,8 +764,7 @@ class FactorManager:
             _existence_matrix=self.data_manager._existence_matrix
         )
 
-    def get_school_code_by_factor_name(self, factor_name):
-        return self.get_school_by_style_category(self.get_style_category(factor_name))
+
 
     #
     #
@@ -777,51 +776,7 @@ class FactorManager:
     #     raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
 
     @staticmethod
-    def get_school_by_style_category(style_category: str) -> str:
-        """
-        根据因子风格(style_category)，返回其所属的投资门派(school)。
-        这是连接因子定义与业务逻辑（如选择股票池）的核心枢纽。
 
-        Args:
-            style_category (str): 因子定义中的风格类别。
-
-        Returns:
-            str: 'fundamentals', 'trend', or 'microstructure'.
-
-        Raises:
-            ValueError: 如果输入的style_category未被定义。
-        """
-        # 定义从“风格”到“门派”的映射关系
-        # 这是我们系统的“唯一真实来源”
-        SCHOOL_MAP = {
-            # === 基本面派 (fundamentals) ===
-            # 源于公司财务报表或其内在属性，反映了公司的长期价值。
-            'value': 'fundamentals',
-            'quality': 'fundamentals',
-            'growth': 'fundamentals',
-            'size': 'fundamentals',
-            'sector': 'fundamentals',
-            'event': 'fundamentals',
-
-            # === 趋势派 (trend) ===
-            # 反映了价格在历史序列中的行为模式和风险特征。
-            'momentum': 'trend',
-            'risk': 'trend',  # Beta和波动率描述了股票在趋势中的行为特征和敏感度
-
-            # === 微观派 (microstructure) ===
-            # 直接来源于市场的实际交易行为（价格、成交量、换手率）。
-            'liquidity': 'microstructure',
-            'price': 'microstructure',
-            'return': 'microstructure',
-            'sentiment': 'microstructure'
-
-        }
-        school = SCHOOL_MAP.get(style_category)
-
-        if school is None:
-            raise ValueError(
-                f"无法识别的因子风格 '{style_category}'，请在 get_school_by_style_category 函数中定义其门派。")
-        return school
 
     # def get_stock_pool_index_by_factor_name(self, factor_name):
     #     # 拿到对应pool_name

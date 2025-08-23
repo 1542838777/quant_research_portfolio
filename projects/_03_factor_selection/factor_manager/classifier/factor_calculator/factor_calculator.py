@@ -281,11 +281,23 @@ class FactorCalculator:
 
         logger.info("    > momentum_120d 计算完成。")
         return momentum_df
+    def _calculate_momentum_60d(self) -> pd.DataFrame:
+        """
+        计算70日（约半年）动量/累计收益率。
+        金融逻辑:
+        捕捉市场中期的价格惯性，即所谓的“强者恒强，弱者恒弱”的趋势。
+        这是构建趋势跟踪策略的基础。
+        """
+        # 1. 获取基础数据：后复权收盘价
+        close_df = self.factor_manager.get_raw_factor('close_hfq').copy()
+        # 2. 计算120个交易日前的价格到今天的收益率
+        #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
+        momentum_df = close_df.pct_change(periods=60)
+        return momentum_df
 
     def _calculate_reversal_21d(self) -> pd.DataFrame:
         """
         计算21日（约1个月）反转因子。
-
         金融逻辑:
         A股市场存在显著的短期均值回归现象。即过去一个月涨幅过高的股票，
         在未来倾向于下跌；反之亦然。因此，我们将短期收益率取负，
@@ -294,15 +306,24 @@ class FactorCalculator:
         logger.info("    > 正在计算因子: reversal_21d...")
         # 1. 获取基础数据：后复权收盘价
         close_df = self.factor_manager.get_raw_factor('close_hfq').copy()
-
         # 2. 计算21日收益率
         return_21d = close_df.pct_change(periods=21)
-
         # 3. 将收益率取负，即为反转因子
-        reversal_df = -return_21d
+        return   -return_21d
 
-        logger.info("    > reversal_21d 计算完成。")
-        return reversal_df
+    def _calculate_reversal_5d(self) -> pd.DataFrame:
+        """
+        计算周 反转因子。
+        金融逻辑:
+        A股市场存在显著的短期均值回归现象。即过去一个月涨幅过高的股票，
+        在未来倾向于下跌；反之亦然。因此，我们将短期收益率取负，
+        得到的分数越高，代表其反转（上涨）的可能性越大。
+        """
+        # 1. 获取基础数据：后复权收盘价
+        close_df = self.factor_manager.get_raw_factor('close_hfq').copy()
+        return_21d = close_df.pct_change(periods=5)
+        # 3. 将收益率取负，即为反转因子
+        return -return_21d
     def _calculate_momentum_12_1(self) -> pd.DataFrame:
         """
         计算过去12个月剔除最近1个月的累计收益率 (Momentum 12-1)。
@@ -395,10 +416,10 @@ class FactorCalculator:
         """【私有引擎】计算滚动平均换手率（以小数形式）。"""
 
         # 1. 获取原始换手率数据（其中停牌日为NaN） ---现在直接ffill（0） 符合金融要求
-        turnover_df_filled = self.factor_manager.get_raw_factor('turnover_rate_fill_zero')
+        turnover_df_ = self.factor_manager.get_raw_factor('turnover_rate')
 
         # 2. 在填充后的、代表了真实交易活动的数据上进行滚动计算
-        mean_turnover_df = turnover_df_filled.rolling(window=window, min_periods=min_periods).mean()
+        mean_turnover_df = turnover_df_.rolling(window=window, min_periods=min_periods).mean()
 
         return mean_turnover_df
 
@@ -427,7 +448,7 @@ class FactorCalculator:
         """
         logger.info("    > 正在计算因子: ln_turnover_value_90d...")
         # 1. 获取日成交额数据 (单位：元)
-        amount_df = self.factor_manager.get_raw_factor('amount_fill_zero').copy()
+        amount_df = self.factor_manager.get_raw_factor('amount').copy()
 
         # 2. 计算90日滚动平均成交额
         mean_amount_df = amount_df.rolling(window=90, min_periods=60).mean()
@@ -441,8 +462,13 @@ class FactorCalculator:
 
         logger.info("    > ln_turnover_value_90d 计算完成。")
         return ln_turnover_value_df
-
-
+    def _calculate_turnover_change_20d(self) -> pd.DataFrame:
+        """
+        逻辑：成交额突然放大，往往伴随趋势/事件驱动。
+        """
+        # 1. 获取日成交额数据 (单位：元)
+        amount_df = self.factor_manager.get_raw_factor('amount').copy()
+        return amount_df / amount_df.rolling(20).mean()
 
     def _calculate_amihud_liquidity(self) -> pd.DataFrame:
         """
@@ -1360,12 +1386,6 @@ class FactorCalculator:
     #
     # ffill的危害：如果你对turnover_rate进行ffill，就等于错误地假设“停牌日的热度=停牌前一天”，这与事实完全相反。#
     ##        # 金融逻辑：停牌日的真实换手率就是0
-    def _calculate_turnover_rate_fill_zero(self):
-        """【标准件】生产一个将停牌日NaN处理为0的换手率序列"""
-        turnover_df = self.factor_manager.get_raw_factor('turnover_rate')
-        return turnover_df .fillna(0)
-    def _calculate_amount_fill_zero(self):
-        return self.factor_manager.get_raw_factor('amount').fillna(0)
 
 
     ##
