@@ -60,7 +60,7 @@ class FullQuantConfig:
 
 style_factor_list =  [
       # 1. 规模 (Size)
-      'log_circ_mv',              # 基于流通市值的对数，最核心的规模因子
+      'circ_mv',              # 基于流通市值，最核心的规模因子
 
       # 2. 价值 (Value)
       'bm_ratio',               # 账面市值比(B/P)，Fama-French三因子模型经典成员
@@ -123,6 +123,14 @@ dongbei_SETTING = {
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
+    "forward_periods": [3],
+    "returns_calculator": ['c2c'],
+    "style_factor_list": [
+
+    ]
+}
+fast_eva_SETTING = {
+    "quantiles": 5, # 兼容旧命名
     "forward_periods": [1,30,80],
     "returns_calculator": ['c2c'],
     "style_factor_list": [
@@ -163,7 +171,7 @@ CSI300_none_FTF_most_basic_profile = make_pool_profile('institutional_stock_pool
 CSI300_none_FFT_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300',False,False,True, 0, 0)
 CSI300_none_FFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300',False,False,False, 0, 0)
 ALL_none_FFF_most_basic_profile = make_pool_profile('ALL', False, INDEX_CODES['ZZ_ALL'],False,False,False, 0, 0)
-fast_hs300_profile = make_pool_profile('HS300', True, INDEX_CODES['HS300'], False, False, False, 0, 0)
+fast_hs300_profile = make_pool_profile('fast', True, INDEX_CODES['HS300'], False, False, False, 0, 0)
 CSI500_none_FFF_most_basic_profile = make_pool_profile('microstructure_stock_pool', True, INDEX_CODES['ZZ500'],False,False,False, 0, 0)
 CSI500_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000905', True,True,True,0, 0)
 # 用于我需要在最真实的环境，交易，需要必须要过滤流动差劲的

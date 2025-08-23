@@ -16,7 +16,7 @@ from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 
 fast_periods = ('20190328', '20190612')
-tem_p = ('20231215', '20250624')
+fast_train_period = ('20190328', '20210328')
 period_东北研报 = ('20220101','20250710')
 fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')
@@ -63,7 +63,7 @@ fast_mode = {
     'pools': {
         **fast_hs300_profile
     },
-    'period': tem_p,
+    'period': fast_train_period,
     'evaluation': dongbei_SETTING,  # <--- 【新增】
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
@@ -73,7 +73,7 @@ fast_mode_2 = {
     'pools': {
         **CSI300_none_FFF_most_basic_profile
     },
-    'period': tem_p,
+    'period': fast_train_period,
     'desc': '但是只用了沪深300股票池（） ，没有任何过滤 fast'
 }
 
@@ -83,7 +83,7 @@ fast_mode_two_pools = {
         **CSI300_none_FFF_most_basic_profile,
         **CSI500_none_FFF_most_basic_profile
     },
-    'period': tem_p,
+    'period': fast_train_period,
     'desc': 'fast_mode_two_pools ，没有任何过滤 fast'
 }
 
@@ -160,7 +160,15 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram = massive_test_ZZ800_train_mode
+trans_pram = {
+    'mode': 'fast',
+    'pools': {
+        **fast_hs300_profile
+    },
+    'period': fast_train_period,
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
+    'desc': 'fast 沪深300股票池（） ，没有任何过滤 fast'
+}
   # 使用包含1日期间的完整测试模式
 is_debug = False
 

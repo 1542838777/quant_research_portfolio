@@ -285,7 +285,7 @@ class FactorSelectorV2:
             'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
             'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
             'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
-            'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period']]
+            'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period','factor_name']]
         return ret
 
     def get_top_factors(self, leaderboard_df: pd.DataFrame, results_path: str, stock_pool: str,

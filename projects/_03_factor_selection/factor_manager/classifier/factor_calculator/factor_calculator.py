@@ -134,10 +134,10 @@ class FactorCalculator:
 
         sp_ratio_df = sales_positive / market_positive
         return sp_ratio_df.replace([np.inf, -np.inf], np.nan)
-
+    #ok
     def _calculate_cfp_ratio(self) -> pd.DataFrame:
         """
-        【V2.0 - 第一性原理版】计算现金流市值比 (Cash Flow Yield)。
+        【  第一性原理版】计算现金流市值比 (Cash Flow Yield)。
         CF/P = cashflow_ttm / total_mv
         """
         logger.info("  > 正在基于第一性原理，计算【权威 cfp_ratio】...")
@@ -149,7 +149,8 @@ class FactorCalculator:
         market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
 
         # 3. 对齐与填充
-        cashflow_aligned, market_aligned = cashflow_ttm_df.align(market_value_df, join='right', axis=None)
+        ##in='outer' 会取两个DataFrame的并集，保留所有数据，这在数据探索和因子研究阶段更安全。它能确保你不会无声无息地丢掉任何一边的数据，如果出现未对齐的情况，会以NaN的形式暴露出来，便于你后续诊断。#
+        cashflow_aligned, market_aligned = cashflow_ttm_df.align(market_value_df, join='outer', axis=None)
         cashflow_aligned_filled = cashflow_aligned.ffill()
 
         # 4. 计算因子
@@ -662,15 +663,7 @@ class FactorCalculator:
         # 使用过去一个月（约20个交易日）的平均值来代表当天的流动性水平
         # 这会使因子信号更稳定，减少日常噪声。
         smoothed_log_amihud_df = log_amihud_df.rolling(window=20, min_periods=12).mean()
-
-        # 【修正】移除因子计算阶段的标准化，保持原始经济含义
-        # 标准化应该在预处理阶段统一进行，而不是在因子计算阶段
-        final_amihud_df = smoothed_log_amihud_df
-
-        logger.info("    > amihud_liquidity (最终版) 计算完成。")
-
-        # 丢弃所有值都为NaN的行，这些通常是回测初期或数据不足的行
-        return final_amihud_df.dropna(axis=0, how='all', inplace=False)
+        return  smoothed_log_amihud_df
 
     ##财务basic数据
 
@@ -1192,18 +1185,18 @@ class FactorCalculator:
         """
         print(f"    >  正在从 {source_column} 计算 {single_q_col_name}...")
 
-        financial_df = data_loader_func().copy(deep=True)
+        financial_long_df = data_loader_func().copy(deep=True)
 
         # 核心计算逻辑 (Scaffold -> Merge -> Diff)
-        scaffold_df = financial_df.groupby('ts_code')['end_date'].agg(['min', 'max']) #记录一股票 两个时间点
+        scaffold_df = financial_long_df.groupby('ts_code')['end_date'].agg(['min', 'max']) #记录一股票 两个时间点
         full_date_dfs = []
         for ts_code, row in scaffold_df.iterrows():
             date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')##记录一股票 两个时间点 期间所有报告期日(0331 0630 0930 1231
             full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, 'end_date': date_range}))
         full_dates_df = pd.concat(full_date_dfs)
 
-        merged_df = pd.merge(full_dates_df, financial_df, on=['ts_code', 'end_date'], how='left')
-
+        merged_df = pd.merge(full_dates_df, financial_long_df, on=['ts_code', 'end_date'], how='left')
+        ##以上就一个目的，填充每个季度行！（因为有的股票喜欢几年才发一次报告，
         filled_col = f"{source_column}_filled"
         merged_df[filled_col] = merged_df.groupby('ts_code')[source_column].ffill()
         merged_df[single_q_col_name] = merged_df.groupby('ts_code')[filled_col].diff()
@@ -1213,7 +1206,7 @@ class FactorCalculator:
 
         # 整理并返回包含单季度值的长表
         single_q_long_df = merged_df[['ts_code', 'ann_date', 'end_date', single_q_col_name]].copy()
-        single_q_long_df=single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=False)  # 确保公告日和计算值都存在
+        single_q_long_df=single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=False)  # 确保公告日和计算值都存在 （
 
         return single_q_long_df
     #ok 能对上 聚宽数据
