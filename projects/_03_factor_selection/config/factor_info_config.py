@@ -35,6 +35,9 @@
 # 定义填充策略常量
 
 
+#####最新理论！！！！
+##
+# 只有在【策略应用层 (回测 ： 这是唯一可以考虑填充的阶段#
 # 定义填充策略常量
 FILL_STRATEGY_NONE = 'no_fill'  # 不填充 (默认最安全)
 FILL_STRATEGY_FFILL_UNLIMITED = 'ffill_unlimited'  # 无限制前向填充 (仅用于行业等静态数据)
@@ -80,7 +83,7 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # 'total_mv': FILL_STRATEGY_NONE,
 
     # 交易行为类，依赖一个外部的交易状态flag来实现
-    'turnover_rate': FILL_STRATEGY_CONDITIONAL_ZERO,#todo
+    'turnover_rate': FILL_STRATEGY_NONE,
     'pct_chg': FILL_STRATEGY_NONE,# 状态未知 / 无法计算 很关键的数据，整个测试的基石
 
     # 静态信息类，信息永不或极少变化，使用无限制ffill是安全的
@@ -94,18 +97,18 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # 【核心修正】这些因子都强依赖于季度财报。其信息有效期为一个季度。
     # 我们设定一个比季度略长的limit（约65个交易日），作为风险控制的硬上限。
     # 这能有效防止您担心的“停牌两年”问题。
-    'market_cap_log': FILL_STRATEGY_FFILL_LIMIT_65,
-    'bm_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
-    'ep_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
-    'sp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
-    'cfp_ratio': FILL_STRATEGY_FFILL_LIMIT_65,
-    'roe_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
-    'log_circ_mv': FILL_STRATEGY_FFILL_LIMIT_65,
-    'log_total_mv': FILL_STRATEGY_FFILL_LIMIT_65,
-    'gross_margin_ttm': FILL_STRATEGY_FFILL_LIMIT_65,
-    'debt_to_assets': FILL_STRATEGY_FFILL_LIMIT_65,
-    'net_profit_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
-    'total_revenue_growth_yoy': FILL_STRATEGY_FFILL_LIMIT_65,
+    'market_cap_log': FILL_STRATEGY_NONE,
+    'bm_ratio': FILL_STRATEGY_NONE,
+    'ep_ratio': FILL_STRATEGY_NONE,
+    'sp_ratio': FILL_STRATEGY_NONE,
+    'cfp_ratio': FILL_STRATEGY_NONE,
+    'roe_ttm': FILL_STRATEGY_NONE,
+    'log_circ_mv': FILL_STRATEGY_NONE,
+    'log_total_mv': FILL_STRATEGY_NONE,
+    'gross_margin_ttm': FILL_STRATEGY_NONE,
+    'debt_to_assets': FILL_STRATEGY_NONE,
+    'net_profit_growth_yoy': FILL_STRATEGY_NONE,
+    'total_revenue_growth_yoy': FILL_STRATEGY_NONE,
     ##
     # 为什么不能填充:
     #
@@ -148,9 +151,9 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     #  三、进阶因子层 (Advanced Factors)
     # =================================================================
     # 财报深化/事件驱动类因子，信息按季度更新，使用有限前向填充
-    'operating_accruals': FILL_STRATEGY_FFILL_LIMIT_65,
-    'earnings_stability': FILL_STRATEGY_FFILL_LIMIT_65,
-    'pead': FILL_STRATEGY_FFILL_LIMIT_65,
+    'operating_accruals': FILL_STRATEGY_NONE,
+    'earnings_stability': FILL_STRATEGY_NONE,
+    'pead': FILL_STRATEGY_NONE,
 
     # 高频情绪/复合类因子，每日动态变化，不应填充
     'rsi': FILL_STRATEGY_NONE,

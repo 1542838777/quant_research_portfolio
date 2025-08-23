@@ -47,12 +47,19 @@ class FactorCalculator:
     # === 规模 (Size) ===
     def _calculate_log_circ_mv(self) -> pd.DataFrame:
         circ_mv_df = self.factor_manager.get_raw_factor('circ_mv').copy()
+        # 2. 【核心步骤】因为市值是“状态量”，所以使用ffill填充非交易日
+        #    这确保了公司价值状态的连续性。
+        circ_mv_df.ffill(limit=65)
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
+
         factor_df = circ_mv_df.apply(np.log)
         return factor_df
     def _calculate_log_total_mv(self) -> pd.DataFrame:
         circ_mv_df = self.factor_manager.get_raw_factor('total_mv').copy()
+        # 2. 【核心步骤】因为市值是“状态量”，所以使用ffill填充非交易日
+        #    这确保了公司价值状态的连续性。
+        circ_mv_df.ffill(limit=65)
         # 保证为正数，避免log报错
         circ_mv_df = circ_mv_df.where(circ_mv_df > 0)
         # 使用 pandas 自带 log 函数，保持类型一致
@@ -1017,6 +1024,7 @@ class FactorCalculator:
         return ret
 
     # 加载财报中的“时点”数据，并将其正确地映射到每日的时间序列上。 ok
+    #流程:两个报告期间作了填充
     #对齐方案：事件类型
     def _calculate_financial_snapshot_factor(self,
                                              factor_name: str,
@@ -1330,7 +1338,7 @@ class FactorCalculator:
         amount = amount * 1000
         return amount
     def _calculate_turnover_rate(self):
-        turnover_rate = self.factor_manager.data_manager.raw_dfs['turnover_rate'].copy(deep=True)#这里会递归啊，所以一定要开缓存，这样下此调用会走缓存！
+        turnover_rate = self.factor_manager.data_manager.raw_dfs['turnover_rate'].copy(deep=True)
         turnover_rate = turnover_rate / 100
         return turnover_rate
     ###标准内部件
