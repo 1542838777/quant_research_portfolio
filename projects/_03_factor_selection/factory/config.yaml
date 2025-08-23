@@ -282,6 +282,15 @@ factor_definition:
     time_alignment: 'shift' # 基于日度价格，应为 shift
     cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: False
+  # === market_microstructure 市场微观结构类===
+  - name: 'vwap_deviation_20d'
+    style_category: 'market_microstructure'
+    description: '衡量后复权收盘价(close_hfq)相对于后复权全天交易均价(vwap_hfq)的偏离程度，
+        并对该偏离度取20日平均，以获得更平滑的信号'
+    action: technical_calcu
+    time_alignment: 'shift' # 基于日度价格，应为 shift
+    cal_require_base_fields: [ 'vwap_hfq' ,'close_hfq']
+    cal_require_base_fields_from_daily: False
 
 
   # --- 以下价值因子均源于财报，应为 pre_aligned ---
@@ -327,6 +336,25 @@ factor_definition:
 
 
   # === 质量 (Quality) - 全部源于财报，应为 pre_aligned ===
+  - name: 'roa_ttm'
+    style_category: 'quality'
+    description: '捕捉公司盈利能力的“边际变化”或“加速度”。一个公司的ROE很高固然好，
+        但如果其ROE正在持续改善（环比为正），这通常是更强的未来超额收益信号。
+        这是一个结合了质量与动量思想的因子。'
+    action: 'technical_calcu'
+    time_alignment: 'pre_aligned'
+    cal_require_base_fields: [ 'q_roe' ]
+    cal_require_base_fields_from_daily: False
+
+  - name: 'roe_change_q'
+    style_category: 'quality'
+    description: '捕捉公司盈利能力的“边际变化”或“加速度”。一个公司的ROE很高固然好，
+        但如果其ROE正在持续改善（环比为正），这通常是更强的未来超额收益信号。
+        这是一个结合了质量与动量思想的因子。'
+    action: 'technical_calcu'
+    time_alignment: 'pre_aligned'
+    cal_require_base_fields: [ 'q_roe']
+    cal_require_base_fields_from_daily: False
   - name: 'roe_ttm'
     style_category: 'quality'
     description: '净资产收益率(Return on Equity)，衡量公司为股东创造利润的能力，巴菲特最看重的指标之一。'
@@ -387,6 +415,15 @@ factor_definition:
 
 
   # === 动量与反转 (Momentum & Reversal) - 基于日度行情，应为 shift ===
+  - name: 'sharpe_momentum_60d'
+    style_category: 'momentum'
+    description: '传统的动量因子只关心收益率，但高收益可能伴随着高风险。夏普动量通过用波动率
+        来调整历史收益率，旨在寻找那些“稳定上涨”的股票，剔除纯粹因高波动而产生
+        高收益的股票，信号质量通常更高'
+    action: 'technical_calcu'
+    time_alignment: 'shift'
+    cal_require_base_fields: [ 'pct_chg' ]
+    cal_require_base_fields_from_daily: False
   - name: 'momentum_12_1'
     style_category: 'momentum'
     description: '过去12个月剔除最近1个月的累计收益率，最经典的截面动量因子，捕捉中期价格惯性。'
@@ -403,7 +440,7 @@ factor_definition:
     cal_require_base_fields: [ 'close_adj' ]
     cal_require_base_fields_from_daily: False
 
-  - name: 'momentum_60d'
+  - name: 'momentum_pct_60d'
     style_category: 'momentum'
     description: '捕捉中期价格惯性。'
     action: 'technical_calcu'
@@ -492,7 +529,7 @@ factor_definition:
     time_alignment: 'shift'
     cal_require_base_fields: [ 'amount' ]
     cal_require_base_fields_from_daily: False
-  - name: 'turnover_change_20d'
+  - name: 'turnover_t1_div_t20d_avg'
     style_category: 'liquidity'
     description: '成交额突然放大，往往伴随趋势/事件驱动。。'
     action: 'technical_calcu'
@@ -553,6 +590,16 @@ factor_definition:
     time_alignment: 'shift'
     cal_require_base_fields: [ 'high', 'low', 'close_adj' ] # 依赖价格
     cal_require_base_fields_from_daily: False
+
+  # 资金流向类 money_flow
+  - name: 'large_trade_ratio_10d'
+    style_category: 'money_flow'
+    description: ' 大单或特大单净流入占比，反映了机构或主力资金的动向。持续的大单净流入可能预示着股价的上涨。'
+    action: 'technical_calcu'
+    time_alignment: 'shift' # 其成分因子均为shift类型，故也为shift
+    cal_require_base_fields: [ 'sell_elg_amount', 'sell_lg_amount' ,'buy_elg_amount','buy_lg_amount']
+    cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
+
 
   # === 复合类因子 (Composite) ===
   - name: 'quality_momentum'

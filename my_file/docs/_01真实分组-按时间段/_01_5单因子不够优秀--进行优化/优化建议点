@@ -8,7 +8,7 @@
   2. 尝试参数优化：
   # 例如调整计算窗口
   'volatility_60d',    # 试试60日波动率而不是90日
-  'momentum_60d',      # 试试60日动量
+  'momentum_pct_60d',      # 试试60日动量
   'earnings_stability_12q'  # 试试12个季度而不是20个季度
 
 

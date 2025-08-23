@@ -1067,7 +1067,7 @@ def fill_and_align_by_stock_pool(factor_name=None, df=None,
         raise ValueError("stock_pool_df 必须传入且不能为空的 DataFrame")
     # 定义不同类型数据的填充策略
 
-    df = fill_self(factor_name, df, _existence_matrix)
+    # df = fill_self(factor_name, df, _existence_matrix)
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
     return my_align(df,stock_pool_df)
 

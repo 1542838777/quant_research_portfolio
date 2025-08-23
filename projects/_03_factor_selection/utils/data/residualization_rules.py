@@ -153,12 +153,12 @@ def _need_residualization_by_category(style_category: str, factor_name: str) -> 
         return _is_high_autocorr_momentum_factor(factor_name)
     elif category == 'risk':
         return _is_high_autocorr_risk_factor(factor_name)
-    elif category in ['value', 'quality', 'growth', 'size','return','event']:
+    elif category in ['value', 'quality', 'growth', 'size','return','event','market_microstructure','money_flow']:
         # 对于明确不需要的类别，直接返回False
         return False
     else:
         # 对于未知的类别，可以返回一个安全的默认值，或者抛出异常
-        raise ValueError(f"未知的因子类别: {style_category}")
+        raise ValueError(f"未知的因子类别: {style_category} factor_name:{factor_name}")
 def _is_high_autocorr_liquidity_factor(factor_name: str) -> bool:
     """
     判断是否为高自相关的流动性因子
@@ -174,7 +174,7 @@ def _is_high_autocorr_liquidity_factor(factor_name: str) -> bool:
     low_autocorr_liquidity = {
         'amihud_liquidity',    # Amihud流动性的绝对水平很重要
         'turnover_rate',       # 单日换手率波动本身就大
-        'turnover_change_20d',       # 单日换手率波动本身就大
+        'turnover_t1_div_t20d_avg',       # 单日换手率波动本身就大
     }
     
     if factor_name in high_autocorr_liquidity:
@@ -260,11 +260,12 @@ def _is_high_autocorr_momentum_factor(factor_name: str) -> bool:
     low_autocorr = {
         'momentum_250d',
         'momentum_120d',
-        'momentum_60d',
+        'momentum_pct_60d',
         'momentum_20d',
         'reversal_5d',
         'reversal_21d',
         'momentum_12_1',
+        'sharpe_momentum_60d',
         'quality_momentum', # 组合因子，默认不处理
     }
     if factor_name in high_autocorr:
@@ -333,7 +334,7 @@ if __name__ == "__main__":
         ('rsi', 'sentiment'), 
         ('bm_ratio', 'value'),
         ('volatility_90d', 'risk'),
-        ('turnover_change_20d', 'liquidity'),
+        ('turnover_t1_div_t20d_avg', 'liquidity'),
         ('momentum_120d', 'momentum'),
         ('earnings_stability', 'quality')
     ]

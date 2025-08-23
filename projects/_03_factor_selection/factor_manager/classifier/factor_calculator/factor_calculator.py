@@ -5,7 +5,7 @@ import pandas as pd
 import pandas_ta as ta
 
 from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
-    load_balancesheet_df, load_dividend_events_long
+    load_balancesheet_df, load_dividend_events_long, load_fina_indicator_df
 from projects._03_factor_selection.utils.date.trade_date_utils import map_ann_dates_to_tradable_dates
 from quant_lib import logger
 
@@ -110,7 +110,19 @@ class FactorCalculator:
         )
 
     # === 质量 (Quality) ===
+    #ok
+    def _calculate_roa_ttm(self) -> pd.DataFrame:
+        """
+        【生产级】计算滚动12个月的总资产报酬率 (ROA_TTM)。
 
+        金融逻辑:
+        ROA衡量公司利用所有资产（包括负债）创造利润的能力。高ROA代表
+        更轻资产的运营模式或更高的资产效率。
+
+        公式: net_profit_ttm / total_assets
+        """
+        logger.info("--- 开始计算最终因子: roa_ttm ---")
+        return self._create_financial_ratio_factor('net_profit_ttm','total_assets')
     def _calculate_roe_ttm(self) -> pd.DataFrame:
         """
         计算滚动12个月的净资产收益率 (ROE_TTM)。
@@ -288,7 +300,7 @@ class FactorCalculator:
 
         logger.info("    > momentum_120d 计算完成。")
         return momentum_df
-    def _calculate_momentum_60d(self) -> pd.DataFrame:
+    def _calculate_momentum_pct_60d(self) -> pd.DataFrame:
         """
         计算70日（约半年）动量/累计收益率。
         金融逻辑:
@@ -469,13 +481,21 @@ class FactorCalculator:
 
         logger.info("    > ln_turnover_value_90d 计算完成。")
         return ln_turnover_value_df
-    def _calculate_turnover_change_20d(self) -> pd.DataFrame:
+    def _calculate_turnover_t1_div_t20d_avg(self) -> pd.DataFrame:
         """
         逻辑：成交额突然放大，往往伴随趋势/事件驱动。
         """
         # 1. 获取日成交额数据 (单位：元)
         amount_df = self.factor_manager.get_raw_factor('amount').copy()
         return amount_df / amount_df.rolling(20).mean()
+    def _calculate_turnover_reversal_20d(self) -> pd.DataFrame:
+        """
+        高换手率本身与小市值股和特定行业高度相关，建议中性化。。
+        """
+        # 1. 获取日成交额数据 (单位：元)
+        amount_df = self.factor_manager.get_raw_factor('amount').copy()
+        return amount_df / amount_df.rolling(20).mean()
+
 
     def _calculate_amihud_liquidity(self) -> pd.DataFrame:
         """
@@ -507,8 +527,41 @@ class FactorCalculator:
         # 使用过去一个月（约20个交易日）的平均值来代表当天的流动性水平
         # 这会使因子信号更稳定，减少日常噪声。
         smoothed_log_amihud_df = log_amihud_df.rolling(window=20, min_periods=12).mean()
-        return  smoothed_log_amihud_df
+        # 2. 乘以一个足够大的常数进行缩放
+        #    例如，1e10可以将 e-11 级别的值放大到 0.1 级别
+        scaling_factor = 1e10
+        amihud_scaled_df = smoothed_log_amihud_df * scaling_factor
+        return  amihud_scaled_df
+    #类别： 资金流向类 money_flow
+    def _calculate_large_trade_ratio_10d(self) -> pd.DataFrame:
+        """
+        【需特殊数据】计算10日大单或特大单净买入额占比。
+        金融逻辑:
+        大单或特大单的交易行为通常被认为是机构或主力资金的动向。持续的大单净流入
+        可能预示着有备而来的建仓行为，是一个积极信号。大单或特大单净流入占比，反映了机构或主力资金的动向。持续的大单净流入可能预示着股价的上涨。
+        """
 
+        # 1. 加载资金流数据并计算每日大单净买入额
+        moneyflow_df =None #load_moneyflow_df() #todo 下载  load
+        # 注意：Tushare的moneyflow单位是“万元”，我们的amount因子单位是“元”，需要统一
+        moneyflow_df['net_lg_amount'] = (moneyflow_df['buy_lg_amount'] + moneyflow_df['buy_elg_amount'] -
+                                         moneyflow_df['sell_lg_amount'] - moneyflow_df['sell_elg_amount']) * 10000
+
+        net_lg_amount_wide = moneyflow_df.pivot_table(
+            index='trade_date', columns='ts_code', values='net_lg_amount'
+        )
+
+        # 2. 获取总成交额 (单位: 元)
+        amount_df = self.factor_manager.get_raw_factor('amount')
+
+        # 3. 计算10日滚动求和
+        net_lg_sum_10d = net_lg_amount_wide.rolling(window=10, min_periods=7).sum()
+        amount_sum_10d = amount_df.rolling(window=10, min_periods=7).sum()
+
+        # 4. 风险控制与计算
+        amount_sum_safe = amount_sum_10d.where(amount_sum_10d > 0)
+
+        return (net_lg_sum_10d / amount_sum_safe).replace([np.inf, -np.inf], np.nan)
     ##财务basic数据
 
     def _calculate_cashflow_ttm(self) -> pd.DataFrame:
@@ -603,7 +656,6 @@ class FactorCalculator:
         # =========================================================================
 
         # === 质量类深化 (Advanced Quality) ===
-
 
     def _calculate_operating_accruals(self) -> pd.DataFrame:
         """
@@ -840,6 +892,79 @@ class FactorCalculator:
         df[factor_name] = abs(mean_safe) / std_safe
         return df
     ##以下是模板
+    def _calculate_vwap_hfq(self) -> pd.DataFrame:
+        """
+        【V2.0 - 基于第一性原理】计算每日的后复权VWAP (vwap_hfq)。
+
+        金融逻辑:
+        VWAP (成交量加权平均价) 是当天交易的平均成本。为与后复权收盘价(close_hfq)
+        进行可比的计算，必须将当日的原始VWAP通过后复权因子进行调整。
+
+        计算步骤:
+        1. 从 'daily' 接口获取原始成交额(amount)和成交量(vol)。
+        2. 计算当日不复权VWAP: vwap_raw = (amount * 1000) / (vol * 100)。
+        3. 获取后复权因子: hfq_adj_factor。
+        4. 计算后复权VWAP: vwap_hfq = vwap_raw * hfq_adj_factor。
+        """
+        logger.info("    > [第一性原理] 正在计算因子: vwap_hfq...")
+
+        # 1. 获取最基础的日线数据
+        # 假设 FactorManager 可以直接获取 amount 和 vol
+        amount_df = self.factor_manager.get_raw_factor('amount')
+        vol_df = self.factor_manager.get_raw_factor('vol_raw')
+
+        # 2. 对齐数据
+        amount_aligned, vol_aligned = amount_df.align(vol_df, join='inner', axis=None)
+
+        # 3. 风险控制：成交量必须大于0
+        vol_aligned_safe = vol_aligned.where(vol_aligned > 0)
+
+        # 4. 计算当日不复权VWAP
+        vwap_raw = (amount_aligned) / (vol_aligned_safe )
+
+        # 5. 获取后复权因子并对齐
+        hfq_adj_factor = self.factor_manager.get_raw_factor('hfq_adj_factor')
+        vwap_raw_aligned, adj_factor_aligned = vwap_raw.align(hfq_adj_factor, join='inner', axis=None)
+
+        # 6. 计算后复权VWAP
+        vwap_hfq = vwap_raw_aligned * adj_factor_aligned
+
+        return vwap_hfq.replace([np.inf, -np.inf], np.nan)
+    def _create_scaffold_and_merge_quarterly_data(self,
+                                                  long_df: pd.DataFrame,
+                                                  date_col: str = 'end_date') -> pd.DataFrame:
+        """
+        【底层核心工具】为季度长表数据创建时间脚手架并合并。
+
+        功能: 解决因财报发布不规律导致的季度时间序列“跳跃”问题。
+
+        Args:
+            long_df (pd.DataFrame): 包含 'ts_code' 和日期列的原始长表数据。
+            date_col (str): 用于创建时间范围的日期列名，通常是 'end_date'。
+
+        Returns:
+            pd.DataFrame: 一个将原始数据合并到完整季度时间线上的新DataFrame。
+                          缺失的季度会以行的形式存在，但数据列为NaN。
+        """
+        if long_df.empty:
+            return long_df
+
+        # 1. 为每只股票创建一个完整的、连续的季度日期范围
+        scaffold_df = long_df.groupby('ts_code')[date_col].agg(['min', 'max'])
+        full_date_dfs = []
+        for ts_code, row in scaffold_df.iterrows():
+            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')
+            full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, date_col: date_range}))
+
+        if not full_date_dfs:
+            return long_df  # 如果没有有效日期范围，返回原始df
+
+        full_dates_scaffold = pd.concat(full_date_dfs)
+
+        # 2. 将原始数据左合并到脚手架上，让缺失的季度显式化为NaN
+        merged_df = pd.merge(full_dates_scaffold, long_df, on=['ts_code', date_col], how='left')
+
+        return merged_df
     def _create_rolling_volatility_factor(self, window: int, min_periods: int) -> pd.DataFrame:
         """【V3.0 通用滚动波动率引擎】计算指定窗口的年化波动率。"""
         logger.info(f"    > [波动率引擎] 正在计算 {window}日 年化波动率...")
@@ -1110,33 +1235,30 @@ class FactorCalculator:
                               source_column: str,
                               single_q_col_name: str) -> pd.DataFrame:
         """
-        【底层零件】从累计值财报数据中，计算出单季度值的长表DataFrame。
-        这是所有TTM和YoY计算的共同基础。
-        """
+                【底层零件 - V2.0 重构版】从累计值财报数据中，计算出单季度值的长表。
+                """
         print(f"    >  正在从 {source_column} 计算 {single_q_col_name}...")
 
         financial_long_df = data_loader_func().copy(deep=True)
 
-        # 核心计算逻辑 (Scaffold -> Merge -> Diff)
-        scaffold_df = financial_long_df.groupby('ts_code')['end_date'].agg(['min', 'max']) #记录一股票 两个时间点
-        full_date_dfs = []
-        for ts_code, row in scaffold_df.iterrows():
-            date_range = pd.date_range(start=row['min'], end=row['max'], freq='Q-DEC')##记录一股票 两个时间点 期间所有报告期日(0331 0630 0930 1231
-            full_date_dfs.append(pd.DataFrame({'ts_code': ts_code, 'end_date': date_range}))
-        full_dates_df = pd.concat(full_date_dfs)
+        # 步骤一：【调用新工具】创建脚手架并合并，解决季度跳跃问题
+        merged_df = self._create_scaffold_and_merge_quarterly_data(financial_long_df, 'end_date')
 
-        merged_df = pd.merge(full_dates_df, financial_long_df, on=['ts_code', 'end_date'], how='left')
-        ##以上就一个目的，填充每个季度行！（因为有的股票喜欢几年才发一次报告，
+        # 步骤二：在时间连续的DataFrame上安全地计算单季度值
         filled_col = f"{source_column}_filled"
+        # 使用ffill填充缺失财报季度的累计值
         merged_df[filled_col] = merged_df.groupby('ts_code')[source_column].ffill()
         merged_df[single_q_col_name] = merged_df.groupby('ts_code')[filled_col].diff()
-        #第一个季度就是自己的值！（前面做了diff，现在需要更正季度为q1de！
+
+        # 修正第一个季度被diff成NaN的问题
         is_q1 = merged_df['end_date'].dt.month == 3
+        # 只在原始数据真实存在的地方进行修正
         merged_df.loc[is_q1 & merged_df[source_column].notna(), single_q_col_name] = merged_df.loc[is_q1, source_column]
 
-        # 整理并返回包含单季度值的长表
+        # 步骤三：整理并返回
         single_q_long_df = merged_df[['ts_code', 'ann_date', 'end_date', single_q_col_name]].copy()
-        single_q_long_df=single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=False)  # 确保公告日和计算值都存在 （
+        # 确保公告日和计算值都存在 (ann_date在缺失的季度行为NaN)
+        single_q_long_df.dropna(subset=[single_q_col_name, 'ann_date'], inplace=True)
 
         return single_q_long_df
     #ok 能对上 聚宽数据
@@ -1343,6 +1465,8 @@ class FactorCalculator:
         return turnover_rate
     ###标准内部件
 
+    def _calculate_vol_raw(self):
+        return self.factor_manager.get_raw_factor('val_raw').copy(deep=True) * 100 # 成交量 vol 的单位是 手 (1手 = 100股)，需要乘以 100 换算成 股。
 
     ##
     #  目前用于 计算adj_factor 必须是ffill#
@@ -1412,25 +1536,101 @@ class FactorCalculator:
     def _calculate_list_date_ffill(self):
         return self.factor_manager.get_raw_factor('list_date').copy(deep=True).ffill()
 
+    # === 质量/成长类 (Quality/Growth) 新增 ===
+    #ok
+    def _calculate_roe_change_q(self) -> pd.DataFrame:
+        """
+        计算单季度ROE的环比变化 (ROE Quarter-over-Quarter Change)。
+        金融逻辑:
+        捕捉公司盈利能力的“边际变化”或“加速度”。一个公司的ROE很高固然好，
+        但如果其ROE正在持续改善（环比为正），这通常是更强的未来超额收益信号。
+        这是一个结合了质量与动量思想的因子。
+        """
+        # 直接调用通用的季度因子计算引擎
+        # 我们只需要提供：1.数据加载函数 2.源数据列名 3.具体的计算逻辑
+        return self._create_general_quarterly_factor_engine(
+            factor_name='roe_change_q',
+            data_loader_func=load_fina_indicator_df(),
+            source_column='q_roe',  # Tushare财务指标接口中的“单季度净资产收益率”
+            calculation_logic_func=self._qoq_change_logic  # 使用下方定义的通用环比计算逻辑
+        )
 
-    # ###标准件
-    #
-    # def _calculate_price_adj_multiplier(self) -> pd.DataFrame:
-    #     """
-    #     【新增核心组件】
-    #     根据权威的 close_hfq 和 close_raw，计算每日通用的复权乘数。
-    #     这是所有其他复权价和复权量的基础。
-    #     """
-    #     logger.info("  > 正在生产核心标准件: price_adj_multiplier...")
-    #
-    #     # 依赖于我们之前已经定义好的、最权威的两个“标准件”
-    #     close_hfq = self.factor_manager.get_raw_factor('close_hfq')
-    #     close_raw = self.factor_manager.get_raw_factor('close_raw')
-    #
-    #     # 为防止除零错误，在close_raw为0的地方返回NaN
-    #     price_adj_multiplier = close_hfq.div(close_raw).where(close_raw > 0)
-    #
-    #     return price_adj_multiplier
+    # === 动量类 (Momentum) 新增 ===
+    #ok
+    def _calculate_sharpe_momentum_60d(self) -> pd.DataFrame:
+        """
+        计算60日夏普动量 (Volatility-Adjusted Momentum)。
+
+        金融逻辑:
+        传统的动量因子只关心收益率，但高收益可能伴随着高风险。夏普动量通过用波动率
+        来调整历史收益率，旨在寻找那些“稳定上涨”的股票，剔除纯粹因高波动而产生
+        高收益的股票，信号质量通常更高。
+        """
+        logger.info("    > 正在计算因子: sharpe_momentum_pct_60d...")
+
+        # 1. 获取日收益率
+        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg')
+
+        # 2. 计算滚动均值和滚动标准差
+        rolling_mean = pct_chg_df.rolling(window=60, min_periods=40).mean()
+        rolling_std = pct_chg_df.rolling(window=60, min_periods=40).std()
+
+        # 3. 风险控制：波动率（标准差）必须为正
+        rolling_std_safe = rolling_std.where(rolling_std > 1e-6)  # 避免除以极小的数
+
+        # 4. 计算夏普动量
+        sharpe_momentum_df = rolling_mean / rolling_std_safe
+
+        # 5. 后处理，清理无穷大值
+        return sharpe_momentum_df.replace([np.inf, -np.inf], np.nan)
+    # === 市场微观结构类 (market_microstructure) 新增 ===
+
+    def _calculate_vwap_deviation_20d(self) -> pd.DataFrame:
+        """
+        计算20日VWAP偏离度  使用后复权VWAP)。
+        金融逻辑:
+        衡量后复权收盘价(close_hfq)相对于后复权全天交易均价(vwap_hfq)的偏离程度，
+        并对该偏离度取20日平均，以获得更平滑的信号。
+        """
+        # 1. 获取基础数据 (现在口径完全统一)
+        close_df = self.factor_manager.get_raw_factor('close_hfq')
+        # 调用我们新建的、计算正确的后复权VWAP函数
+        vwap_df = self.factor_manager.get_raw_factor('vwap_hfq')
+
+        # 2. 对齐数据
+        close_aligned, vwap_aligned = close_df.align(vwap_df, join='inner', axis=None)
+
+        # 3. 风险控制：VWAP必须为正
+        vwap_aligned_safe = vwap_aligned.where(vwap_aligned > 0)
+
+        # 4. 计算每日偏离度
+        daily_deviation = (close_aligned - vwap_aligned) / vwap_aligned_safe
+
+        # 5. 计算20日滚动平均值，使信号更平滑
+        return daily_deviation.rolling(window=20, min_periods=15).mean()
+
+
+    # === 为通用引擎新增的、可复用的“计算逻辑”函数 ===
+
+    def _qoq_change_logic(self, df: pd.DataFrame, col_name: str, factor_name: str) -> pd.DataFrame:
+        """
+        【可复用逻辑 - V3.0 重构版】计算单季度数据的环比变化值。
+        通过调用通用脚手架工具，确保diff()总是在连续的季度之间进行。
+        """
+        logger.info(f"    > [V3.0 逻辑] 正在为 '{col_name}' 计算 QoQ 环比变化...")
+
+        # 步骤一：【调用新工具】创建脚手架，让缺失的季度显式化为NaN
+        merged_df = self._create_scaffold_and_merge_quarterly_data(df, 'end_date')
+
+        # 步骤二：在时间连续的DataFrame上安全地计算环比
+        # .diff() 会自动处理NaN，如果前一季度是NaN，则结果也是NaN
+        merged_df[factor_name] = merged_df.groupby('ts_code')[col_name].diff(1)
+
+        # 步骤三：只返回那些真实存在公告日的、且成功计算出环比值的行
+        final_df = merged_df.dropna(subset=['ann_date', factor_name])
+
+        return final_df
+
 def _broadcast_ann_date_to_daily(
                                  sparse_wide_df: pd.DataFrame,
                                  trading_dates: pd.DatetimeIndex) -> pd.DataFrame:

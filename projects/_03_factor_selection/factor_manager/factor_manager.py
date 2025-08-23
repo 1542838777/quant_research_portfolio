@@ -719,33 +719,10 @@ class FactorManager:
 
         # 2. 与股票池对齐
         ret = self.align_factor_with_pool(factor_data, factor_request, stock_pool_index_name)
-        self._validate_data_quality(ret, REQUEST, des='原生数据最终完全对齐股票池之后')
+        FactorManager._validate_data_quality(ret, REQUEST, des='原生数据最终完全对齐股票池之后')
         return ret
 
-    def _validate_data_quality(self, factor_data: pd.DataFrame, factor_name: str, des):
-        """
-        【新增】数据质量检查，防止时间错配导致的虚假单调性
-        """
-        # logger.info(f"🔍 开始数据质量检查: {factor_name}--{des}")
 
-        # 1. 检查因子值分布
-        factor_flat = factor_data.stack().dropna()
-
-        # 2. 检查是否存在异常的完美分布
-        unique_ratio = factor_flat.nunique() / len(factor_flat)
-        if unique_ratio < 0.1:  # 唯一值比例过低 很正常啊，3快-15快 1200个数据/1000*800
-            log_notice(f"因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
-
-        check_report  = check_data_quality_detail(factor_data)
-        if check_report['serious_data']:
-            log_error(f"因子-{factor_name}-{des}-报告:{check_report}")
-            raise ValueError('数据严重问题')
-        logger.info(f"因子-{factor_name}-{des}- 数据质量分数: {check_report['quality_score']:.3f}")
-        # 4. 检查时间序列的连续性
-        missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
-        #因为长达5年，股票轮换，列不再是目标列，zz500 长时间轮换 ->最后变成800列 浅浅一算：固定缺300/800=缺37.5%都很正常！
-        if missing_ratio >= 0.5:
-            log_notice(f"因子-{factor_name}-{des}- 缺失值比例过高: {missing_ratio:.3f}")
 
     def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple],
                                stock_pool_index_name: str):
@@ -774,8 +751,6 @@ class FactorManager:
     #     if factor_school in ['microstructure']:
     #         return 'microstructure_stock_pool' #全大A 股票池
     #     raise ValueError(f'{factor_school}没有定义因子属于哪一门派')
-
-    @staticmethod
 
 
     # def get_stock_pool_index_by_factor_name(self, factor_name):
@@ -955,4 +930,28 @@ class FactorManager:
                        self.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name))
         return REQUEST
 
+    @staticmethod
+    def _validate_data_quality(factor_data: pd.DataFrame, factor_name: str, des):
+        """
+        【新增】数据质量检查，防止时间错配导致的虚假单调性
+        """
+        # logger.info(f"🔍 开始数据质量检查: {factor_name}--{des}")
 
+        # 1. 检查因子值分布
+        factor_flat = factor_data.stack().dropna()
+
+        # 2. 检查是否存在异常的完美分布
+        unique_ratio = factor_flat.nunique() / len(factor_flat)
+        if unique_ratio < 0.1:  # 唯一值比例过低 很正常啊，3快-15快 1200个数据/1000*800
+            log_notice(f"因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
+
+        check_report  = check_data_quality_detail(factor_data)
+        if check_report['serious_data']:
+            log_error(f"因子-{factor_name}-{des}-报告:{check_report}")
+            raise ValueError('数据严重问题')
+        logger.info(f"因子-{factor_name}-{des}- 数据质量分数: {check_report['quality_score']:.3f}")
+        # 4. 检查时间序列的连续性
+        missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
+        #因为长达5年，股票轮换，列不再是目标列，zz500 长时间轮换 ->最后变成800列 浅浅一算：固定缺300/800=缺37.5%都很正常！
+        if missing_ratio >= 0.5:
+            log_notice(f"因子-{factor_name}-{des}- 缺失值比例过高: {missing_ratio:.3f}")

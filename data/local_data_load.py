@@ -55,6 +55,16 @@ def load_income_df():
     df = df[['ann_date', 'ts_code', 'end_date', 'n_income_attr_p','total_revenue','oper_cost']]
     return df
 
+def load_fina_indicator_df():
+    df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'fina_indicator.parquet')
+    df['ann_date'] = pd.to_datetime(df['ann_date'])
+    df['end_date'] = pd.to_datetime(df['end_date'])
+    df = df.sort_values(by=['ts_code', 'end_date', 'update_flag'], ascending=[True, True, False]).drop_duplicates(
+        subset=['ts_code', 'end_date'], keep='first')
+    #                                              确认过:单位:元         元
+    df = df[['ann_date', 'ts_code', 'end_date', 'q_roe']]
+    return df
+
 def load_balancesheet_df():
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'balancesheet.parquet')
     df['ann_date'] = pd.to_datetime(df['ann_date'])
@@ -123,3 +133,6 @@ def get_trading_dates(start_date: str, end_date: str) -> pd.DatetimeIndex:
     except Exception as e:
         raise ValueError(f"获取交易日时发生未知错误: {e}")
 
+if __name__ == '__main__':
+    df = load_fina_indicator_df()
+    print(1)

@@ -125,7 +125,7 @@ class FactorProcessor:
             logger.info("2. 跳过标准化处理...")
 
         # 统计处理结果
-        self._print_processing_stats(factor_df_shifted, processed_target_factor_df)
+        FactorManager._validate_data_quality(factor_df_shifted, processed_target_factor_df,'预处理完之后：')
 
         return processed_target_factor_df
 
@@ -449,19 +449,15 @@ class FactorProcessor:
         if not neutralization_config.get('enable', False):
             return factor_data
 
-        factor_school = FactorManager.get_school_by_style_category(style_category)
-        logger.info(f"  > 正在对 '{factor_school}' 派因子 '{target_factor_name}' 进行中性化处理...")
+        logger.info(f"  > 正在对 '{target_factor_name}' 因子 '{target_factor_name}' 进行中性化处理...")
         processed_factor = factor_data.copy()
 
-        # --- 阶段一：(可选) 因子残差化 ---
+        # --- 阶段一：因子残差化 ---
         if need_residualization_in_neutral_proceessing(target_factor_name, style_category):
-
             # 获取该因子的定制化残差配置
             resid_config = get_residualization_config(target_factor_name)
             window = resid_config.get('window', 20)
             min_periods = resid_config.get('min_periods', max(1, int(window * 0.5)))
-            
-            logger.info(f"    > 应用时间序列残差化 (窗口: {window}天, 最小期数: {min_periods})...")
             factor_mean = processed_factor.rolling(window=window, min_periods=min_periods).mean()
             processed_factor = processed_factor - factor_mean
 
@@ -550,7 +546,7 @@ class FactorProcessor:
                 # 如果直接continue ()：这意味着在样本不足的日期，processed_factor 中保留的是原始因子值。这会使你的“纯净因子”在某些天突然变回“原始因子”，导致风险暴露不一致。#
                 processed_factor.loc[date] = np.nan  #
                 skipped_days_count += 1
-                log_warning(f"{target_factor_name}中性化跳过这一天{date} 当天样本不够")
+                log_warning(f"{target_factor_name}中性化跳过这一天{date} 当天样本不够（经过残差化的前几天都是nan很正常！但是不会超过10天")
                 continue
             # --- d) 执行回归并计算残差 ---
             y_clean = combined_df['factor']

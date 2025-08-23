@@ -120,7 +120,7 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     'reversal_21d': FILL_STRATEGY_NONE,
     'turnover_rate_90d_mean': FILL_STRATEGY_NONE,
     'ln_turnover_value_90d': FILL_STRATEGY_NONE,
-    'turnover_change_20d': FILL_STRATEGY_NONE,
+    'turnover_t1_div_t20d_avg': FILL_STRATEGY_NONE,
     'amihud_liquidity': FILL_STRATEGY_NONE,
     'net_profit_growth_ttm':FILL_STRATEGY_NONE,
     'revenue_growth_ttm':FILL_STRATEGY_NONE,
@@ -133,7 +133,7 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
     # 任何填充都会引入错误的陈旧信息。
     'momentum_12_1': FILL_STRATEGY_NONE,
     'momentum_20d': FILL_STRATEGY_NONE,
-    'momentum_60d': FILL_STRATEGY_NONE,
+    'momentum_pct_60d': FILL_STRATEGY_NONE,
     'momentum_120d': FILL_STRATEGY_NONE,
     'beta': FILL_STRATEGY_NONE,
     'volatility_120d': FILL_STRATEGY_NONE,
@@ -142,7 +142,6 @@ FACTOR_FILL_CONFIG_FOR_STRATEGY = {
 
     'turnover_rate_monthly_mean': FILL_STRATEGY_NONE,
     'liquidity_amihud': FILL_STRATEGY_NONE,
-    'amihud_liquidity': FILL_STRATEGY_NONE,
 
     # === 合成类因子 ===
     # 【保持正确】合成因子不应有自己的填充逻辑。
