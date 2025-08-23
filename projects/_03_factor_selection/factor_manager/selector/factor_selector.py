@@ -8,11 +8,10 @@ from projects._03_factor_selection.config.base_config import INDEX_CODES
 from projects._03_factor_selection.utils.factor_scoring_v33_final import calculate_factor_score_v33
 from quant_lib import logger
 
-
 from projects._03_factor_selection.visualization_manager import VisualizationManager
 
-def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.Series:
 
+def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.Series:
     def get_metric(key: str, default=0.0):
         val = summary_row.get(key)
         return default if pd.isna(val) else val
@@ -89,14 +88,15 @@ class FactorSelectorV2:
 
         print("FactorSelectorV2 (专业级因子筛选平台) 已准备就绪。")
 
-    def run_factor_analysis(self, TARGET_STOCK_POOL: str, top_n_final: int = 5, correlation_threshold: float = 0.5,run_version:str=None):
+    def run_factor_analysis(self, TARGET_STOCK_POOL: str, top_n_final: int = 5, correlation_threshold: float = 0.5,
+                            run_version: str = None):
         RESULTS_PATH = 'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
 
         # --- 第一、二级火箭: 构建多周期冠军排行榜 ---
         champion_leaderboard = self.build_champion_leaderboard(
             results_path=RESULTS_PATH,
             target_stock_pool=TARGET_STOCK_POOL,
-            run_version = run_version
+            run_version=run_version
         )
         print("\n--- 因子冠军排行榜 (已选出每个因子的最佳周期) ---")
 
@@ -118,78 +118,78 @@ class FactorSelectorV2:
         # ... (这里的逻辑与你之前的版本类似, 可以复用)
         logger.info("\n--- 开始为顶级因子生成详细报告 ---")
         for _, factor_row in champion_leaderboard.iterrows():
-           factor_name = factor_row['factor_name']
-           best_period = factor_row['best_period']
+            factor_name = factor_row['factor_name']
+            best_period = factor_row['best_period']
 
-           print(f"正在为因子 '{factor_name}' (最佳周期: {best_period}) 生成报告...")
-           print(f"正在为因子 '{factor_name}' 生成报告...")
-           # 2. 生成您需要的报告
-           viz_manager = self.visualization_manager
-           # --- 选项 A：生成最全面的“业绩报告” ---
-           viz_manager.plot_performance_report(
-               backtest_base_on_index=TARGET_STOCK_POOL,
-               factor_name=factor_name,
-               results_path=RESULTS_PATH,
-               default_config='c2c',
-               run_version='latest'
-           )
+            print(f"正在为因子 '{factor_name}' (最佳周期: {best_period}) 生成报告...")
+            print(f"正在为因子 '{factor_name}' 生成报告...")
+            # 2. 生成您需要的报告
+            viz_manager = self.visualization_manager
+            # --- 选项 A：生成最全面的“业绩报告” ---
+            viz_manager.plot_performance_report(
+                backtest_base_on_index=TARGET_STOCK_POOL,
+                factor_name=factor_name,
+                results_path=RESULTS_PATH,
+                default_config='c2c',
+                run_version='latest'
+            )
 
-           # --- 选项 B：生成“特性诊断报告”，深入了解因子自身属性 ---
-           viz_manager.plot_characteristics_report(
-               backtest_base_on_index=TARGET_STOCK_POOL,
-               factor_name=factor_name,
-               results_path=RESULTS_PATH,
-               default_config='c2c',
-               run_version='latest'
-           )
+            # --- 选项 B：生成“特性诊断报告”，深入了解因子自身属性 ---
+            viz_manager.plot_characteristics_report(
+                backtest_base_on_index=TARGET_STOCK_POOL,
+                factor_name=factor_name,
+                results_path=RESULTS_PATH,
+                default_config='c2c',
+                run_version='latest'
+            )
 
-           # --- 选项 C：生成“归因面板”，直观对比预处理前后的效果 ---
-           viz_manager.plot_attribution_panel(
-               backtest_base_on_index=TARGET_STOCK_POOL,
-               factor_name=factor_name,
-               results_path=RESULTS_PATH,
-               default_config='c2c',
-               run_version='latest'
-           )
+            # --- 选项 C：生成“归因面板”，直观对比预处理前后的效果 ---
+            viz_manager.plot_attribution_panel(
+                backtest_base_on_index=TARGET_STOCK_POOL,
+                factor_name=factor_name,
+                results_path=RESULTS_PATH,
+                default_config='c2c',
+                run_version='latest'
+            )
 
-           # --- 选项 D：生成“核心摘要”，用于快速浏览关键业绩 ---
-           viz_manager.plot_ic_quantile_panel(
-               backtest_base_on_index=TARGET_STOCK_POOL,
-               factor_name=factor_name,
-               results_path=RESULTS_PATH,
-               default_config='c2c',
-               run_version='latest'
-           )
-           # # 4.1 生成主报告 (3x2 统一评估报告)
-           # # 绘图函数现在需要从硬盘加载数据，我们只需告知关键信息
-           # self.visualization_manager.plot_unified_factor_report(
-           #     backtest_base_on_index=TARGET_STOCK_POOL,
-           #     factor_name=factor_name,
-           #     results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
-           #     # 你可以决定主报告默认使用C2C还是O2C的结果
-           #     default_config='c2c'
-           # )
-           #
-           # # 4.2 调用新的分层净值报告函数
-           # self.visualization_manager.plot_diagnostics_report(
-           #     backtest_base_on_index=TARGET_STOCK_POOL,
-           #     factor_name=factor_name,
-           #     results_path=RESULTS_PATH,
-           #     default_config='c2c'
-           # )
-           # # 调用新的归因分析面板函数
-           # self.visualization_manager.plot_attribution_panel(
-           #     backtest_base_on_index=TARGET_STOCK_POOL,
-           #     factor_name=factor_name,
-           #     results_path=RESULTS_PATH,
-           #     default_config='c2c'
-           # )
-           #
+            # --- 选项 D：生成“核心摘要”，用于快速浏览关键业绩 ---
+            viz_manager.plot_ic_quantile_panel(
+                backtest_base_on_index=TARGET_STOCK_POOL,
+                factor_name=factor_name,
+                results_path=RESULTS_PATH,
+                default_config='c2c',
+                run_version='latest'
+            )
+            # # 4.1 生成主报告 (3x2 统一评估报告)
+            # # 绘图函数现在需要从硬盘加载数据，我们只需告知关键信息
+            # self.visualization_manager.plot_unified_factor_report(
+            #     backtest_base_on_index=TARGET_STOCK_POOL,
+            #     factor_name=factor_name,
+            #     results_path=RESULTS_PATH,  # <--- 传入成果库的根路径
+            #     # 你可以决定主报告默认使用C2C还是O2C的结果
+            #     default_config='c2c'
+            # )
+            #
+            # # 4.2 调用新的分层净值报告函数
+            # self.visualization_manager.plot_diagnostics_report(
+            #     backtest_base_on_index=TARGET_STOCK_POOL,
+            #     factor_name=factor_name,
+            #     results_path=RESULTS_PATH,
+            #     default_config='c2c'
+            # )
+            # # 调用新的归因分析面板函数
+            # self.visualization_manager.plot_attribution_panel(
+            #     backtest_base_on_index=TARGET_STOCK_POOL,
+            #     factor_name=factor_name,
+            #     results_path=RESULTS_PATH,
+            #     default_config='c2c'
+            # )
+            #
 
     def _build_single_period_row(self, factor_dir: Path, period: str, run_version: str) -> Dict | None:
         """【辅助函数】为单个因子、单个周期构建用于打分的宽表行"""
 
-        def _find_and_load_stats(factor_dir: Path, config_name: str, version: str) -> Dict | None:
+        def _find_and_load_stats(factor_dir: Path, config_name: str, version: str = 'latest') -> Dict | None:
             config_path = factor_dir / config_name
             if not config_path.is_dir(): return None
             version_dirs = [d for d in config_path.iterdir() if d.is_dir()]
@@ -201,11 +201,11 @@ class FactorSelectorV2:
                 with open(summary_file, 'r') as f: return json.load(f)
             return None
 
-        stats_o2c = _find_and_load_stats(factor_dir, 'o2c', run_version)
-        if not  stats_o2c: return None
+        stats_o2c = _find_and_load_stats(factor_dir, 'c2c', run_version)
+        if not stats_o2c: return None
 
         row = {'factor_name': factor_dir.name}
-        for r_type, stats_data in [('o2c', stats_o2c)]:
+        for r_type, stats_data in [('c2c', stats_o2c)]:
             for d_type in ['raw', 'processed']:
                 ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
                 q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})
@@ -219,7 +219,7 @@ class FactorSelectorV2:
                 row[f'monotonicity_spearman_{d_type}_{r_type}'] = q_stats['monotonicity_spearman']
 
             fm_stats = stats_data.get('fama_macbeth', {}).get(period, {})
-            row[f'fm_t_statistic_processed_{r_type}'] = fm_stats.get('t_statistic')#todo 这是要准备获取啥？
+            row[f'fm_t_statistic_processed_{r_type}'] = fm_stats.get('t_statistic')
 
         return row
 
@@ -276,7 +276,17 @@ class FactorSelectorV2:
             raise ValueError(f"在路径 {base_path} 下，没有找到任何可以生成冠军排行榜的因子。")
 
         final_leaderboard = pd.DataFrame(champions_data).set_index('factor_name', drop=False)
-        return final_leaderboard.sort_values(by='Final_Score', ascending=False)
+
+        ret  = final_leaderboard.sort_values(by='Final_Score', ascending=False)[
+             ['ic_mean_processed_c2c', 'ic_ir_processed_c2c', 'monotonicity_spearman_processed_c2c',
+
+            'Final_Score',
+              'ic_mean_raw_c2c', 'ic_ir_raw_c2c', 'tmb_sharpe_raw_c2c', 'tmb_max_drawdown_raw_c2c',
+            'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
+            'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
+            'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
+            'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period']]
+        return ret
 
     def get_top_factors(self, leaderboard_df: pd.DataFrame, results_path: str, stock_pool: str,
                         quality_score_threshold: float, top_n_final: int, correlation_threshold: float,
@@ -372,5 +382,5 @@ if __name__ == '__main__':
         TARGET_STOCK_POOL=TARGET_UNIVERSE,
         top_n_final=40,
         correlation_threshold=0.0,
-        run_version='20190328_20250710'
+        run_version='latest'
     )
