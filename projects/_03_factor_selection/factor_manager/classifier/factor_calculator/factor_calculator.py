@@ -6,6 +6,7 @@ import pandas_ta as ta
 
 from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
     load_balancesheet_df, load_dividend_events_long
+from projects._03_factor_selection.utils.date.trade_date_utils import map_ann_dates_to_tradable_dates
 from quant_lib import logger
 
 
@@ -61,103 +62,45 @@ class FactorCalculator:
     # === 价值 (Value) - 【V2.0 - 第一性原理版】 ===
 
     def _calculate_bm_ratio(self) -> pd.DataFrame:
-        """
-        【V2.0 - 第一性原理版】计算账面市值比 (Book-to-Market Ratio)。
-        B/M = total_equity / total_mv
-        """
-        logger.info("  > 正在基于第一性原理，计算【权威 bm_ratio】...")
-
-        # 1. 获取分子: 随时点的股东权益 (Book Value)
-        #    我们的财报引擎，确保了这里使用的是 ann_date，无未来数据
-        book_value_df = self.factor_manager.get_raw_factor('total_equity').copy(deep=True)
-
-        # 2. 获取分母: 随时点的总市值 (Market Value)
-        #    我们信任 daily_basic 中的 total_mv 是随时点正确的
-        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
-
-        # 3. 对齐数据
-        book_aligned, market_aligned = book_value_df.align(market_value_df, join='right', axis=None)
-
-        # 4. 对齐后，对低频的财报数据进行前向填充
-        book_aligned_filled = book_aligned.ffill()
-
-        # 5. 计算因子并进行风控
-        market_positive = market_aligned.where(market_aligned > 0)
-        book_positive = book_aligned_filled.where(book_aligned_filled > 0)
-
-        bm_ratio_df = book_positive / market_positive
-        return bm_ratio_df.replace([np.inf, -np.inf], np.nan)
+        """计算账面市值比 (Book-to-Market Ratio)。"""
+        return self._create_financial_ratio_factor(
+            numerator_factor='total_equity',
+            denominator_factor='total_mv',
+            numerator_must_be_positive=True
+        )
 
     def _calculate_ep_ratio(self) -> pd.DataFrame:
         """
         【V2.0 - 第一性原理版】计算盈利收益率 (Earnings Yield)。
         E/P = net_profit_ttm / total_mv
         """
-        logger.info("  > 正在基于第一性原理，计算【权威 ep_ratio】...")
-
-        # 1. 获取分子: TTM归母净利润
-        earnings_ttm_df = self.factor_manager.get_raw_factor('net_profit_ttm').copy(deep=True)
-
-        # 2. 获取分母: 总市值
-        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
-
-        # 3. 对齐与填充
-        earnings_aligned, market_aligned = earnings_ttm_df.align(market_value_df, join='right', axis=None)
-        earnings_aligned_filled = earnings_aligned.ffill()
-
-        # 4. 计算因子
-        market_positive = market_aligned.where(market_aligned > 0)
-        # 对于盈利，分子可以是负数，所以不做 book_positive 类似的筛选
-        ep_ratio_df = earnings_aligned_filled / market_positive
-        return ep_ratio_df.replace([np.inf, -np.inf], np.nan)
+        return self._create_financial_ratio_factor(
+            numerator_factor='net_profit_ttm',
+            denominator_factor='total_mv',
+            numerator_must_be_positive=False  # 盈利可以是负数
+        )
 
     def _calculate_sp_ratio(self) -> pd.DataFrame:
         """
-        【V2.0 - 第一性原理版】计算销售收益率 (Sales Yield)。
+        【- 第一性原理版】计算销售收益率 (Sales Yield)。
         S/P = total_revenue_ttm / total_mv
         """
-        logger.info("  > 正在基于第一性原理，计算【权威 sp_ratio】...")
-
-        # 1. 获取分子: TTM营业总收入
-        sales_ttm_df = self.factor_manager.get_raw_factor('total_revenue_ttm').copy(deep=True)
-
-        # 2. 获取分母: 总市值
-        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
-
-        # 3. 对齐与填充
-        sales_aligned, market_aligned = sales_ttm_df.align(market_value_df, join='right', axis=None)
-        sales_aligned_filled = sales_aligned.ffill()
-
-        # 4. 计算因子
-        market_positive = market_aligned.where(market_aligned > 0)
-        sales_positive = sales_aligned_filled.where(sales_aligned_filled > 0)  # 收入通常为正
-
-        sp_ratio_df = sales_positive / market_positive
-        return sp_ratio_df.replace([np.inf, -np.inf], np.nan)
+        return self._create_financial_ratio_factor(
+            numerator_factor='total_revenue_ttm',
+            denominator_factor='total_mv',
+            numerator_must_be_positive=True
+        )
     #ok
     def _calculate_cfp_ratio(self) -> pd.DataFrame:
         """
         【  第一性原理版】计算现金流市值比 (Cash Flow Yield)。
         CF/P = cashflow_ttm / total_mv
         """
-        logger.info("  > 正在基于第一性原理，计算【权威 cfp_ratio】...")
-
-        # 1. 获取分子: TTM经营活动现金流
-        cashflow_ttm_df = self.factor_manager.get_raw_factor('cashflow_ttm').copy(deep=True)
-
-        # 2. 获取分母: 总市值
-        market_value_df = self.factor_manager.get_raw_factor('total_mv').copy(deep=True)
-
-        # 3. 对齐与填充
-        ##in='outer' 会取两个DataFrame的并集，保留所有数据，这在数据探索和因子研究阶段更安全。它能确保你不会无声无息地丢掉任何一边的数据，如果出现未对齐的情况，会以NaN的形式暴露出来，便于你后续诊断。#
-        cashflow_aligned, market_aligned = cashflow_ttm_df.align(market_value_df, join='outer', axis=None)
-        cashflow_aligned_filled = cashflow_aligned.ffill()
-
-        # 4. 计算因子
-        market_positive = market_aligned.where(market_aligned > 0)
-
-        cfp_ratio_df = cashflow_aligned_filled / market_positive
-        return cfp_ratio_df.replace([np.inf, -np.inf], np.nan)
+        return self._create_financial_ratio_factor(
+            numerator_factor='cashflow_ttm',
+            denominator_factor='total_mv',
+            numerator_must_be_positive=False  # 经营现金流可以是负数
+        )
 
     # === 质量 (Quality) ===
 
@@ -285,100 +228,23 @@ class FactorCalculator:
         """
         【生产级】计算单季度归母净利润的同比增长率 (YoY)。
         """
-        print("--- 开始计算最终因子: net_profit_growth_yoy ---")
-
-        # --- 步骤一：获取基础数据 net_profit_single_q 的长表 ---
-        net_profit_single_q_long = self._calculate_net_profit_single_q_long()
-
-        # 确保数据按股票和报告期排序
-        net_profit_single_q_long = net_profit_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=False)
-
-        # --- 步骤二：计算同比增长率 (YoY) ---
-        # shift(4) 回溯去年同期
-        net_profit_last_year_q = net_profit_single_q_long.groupby('ts_code')['net_profit_single_q'].shift(4)
-
-        # 核心风控：去年同期净利润可能为0或负数，此时增长率无意义或失真。
-        # 必须要求去年同期利润为正，才能计算有意义的增长率。
-        net_profit_last_year_q_safe = net_profit_last_year_q.where(net_profit_last_year_q > 0, np.nan)
-
-        # 计算同比增长率
-        net_profit_single_q_long['net_profit_growth_yoy'] = \
-            net_profit_single_q_long['net_profit_single_q'] / net_profit_last_year_q_safe - 1
-
-        # --- 步骤三：将计算出的因子对齐到每日交易日历 ---
-        # 1. 整理并过滤
-        yoy_long_df = net_profit_single_q_long[['ts_code', 'ann_date', 'end_date', 'net_profit_growth_yoy']].copy()
-        yoy_long_df= yoy_long_df.dropna(inplace=False)
-        if yoy_long_df.empty:
-            raise ValueError("警告: 计算 net_profit_growth_yoy 后没有产生任何有效的增长率数据点。")
-
-        # 2. 透视 (Pivot)
-        yoy_long_df = yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=False)
-        yoy_wide = yoy_long_df.pivot_table(
-            index='ann_date',
-            columns='ts_code',
-            values='net_profit_growth_yoy',
-            aggfunc='last'
+        return self._create_general_quarterly_factor_engine(
+            factor_name='net_profit_growth_yoy',
+            data_loader_func=load_income_df,
+            source_column='n_income_attr_p',
+            calculation_logic_func=self._yoy_growth_logic
         )
-
-        trading_dates = self.factor_manager.data_manager.trading_dates
-        yoy_daily = _broadcast_ann_date_to_daily(yoy_wide, trading_dates)
-
-        print("--- 最终因子: net_profit_growth_yoy 计算完成 ---")
-        return yoy_daily
     #ok
     def _calculate_total_revenue_growth_yoy(self) -> pd.DataFrame:
         """
         【生产级】计算单季度营业收入的同比增长率 (YoY)。
         """
-        print("--- 开始计算最终因子: total_revenue_growth_yoy ---")
-
-        # --- 步骤一：获取基础数据 total_revenue_single_q 的长表 ---
-        # 调用我们的新引擎来获取每个公司每个季度的单季收入
-        total_revenue_single_q_long = self._calculate_financial_single_q_factor(
-            factor_name='total_revenue_single_q',
+        return self._create_general_quarterly_factor_engine(
+            factor_name='total_revenue_growth_yoy',
             data_loader_func=load_income_df,
-            source_column='total_revenue'  # 确认使用总收入
+            source_column='total_revenue',
+            calculation_logic_func=self._yoy_growth_logic
         )
-
-        # 确保数据按股票和报告期排序，这是 shift 操作准确无误的前提
-        total_revenue_single_q_long= total_revenue_single_q_long.sort_values(by=['ts_code', 'end_date'], inplace=False)
-
-        # --- 步骤二：计算同比增长率 (YoY) ---
-        # shift(4) 在季度数据上，就是回溯4个季度，即去年同期
-        revenue_last_year_q = total_revenue_single_q_long.groupby('ts_code')['total_revenue_single_q'].shift(4)
-
-        # 核心风控：去年同期收入可能为0或负数，此时增长率无意义
-        revenue_last_year_q_safe = revenue_last_year_q.where(revenue_last_year_q > 0, np.nan)
-
-        # 计算同比增长率
-        total_revenue_single_q_long['total_revenue_growth_yoy'] = \
-            total_revenue_single_q_long['total_revenue_single_q'] / revenue_last_year_q_safe - 1
-
-        # --- 步骤三：将计算出的因子对齐到每日交易日历 ---
-        # 这里的逻辑和我们之前的引擎完全一样
-
-        # 1. 整理并过滤有效的YoY值
-        yoy_long_df = total_revenue_single_q_long[['ts_code', 'ann_date', 'end_date', 'total_revenue_growth_yoy']].copy()
-        yoy_long_df=yoy_long_df.dropna(inplace=False)
-        if yoy_long_df.empty:
-            raise ValueError("警告: 计算 total_revenue_growth_yoy 后没有产生任何有效的增长率数据点。")
-
-        # 2. 透视 (Pivot)
-        yoy_long_df = yoy_long_df.sort_values(by=['ts_code', 'end_date'], inplace=False)
-        yoy_wide = yoy_long_df.pivot_table(
-            index='ann_date',
-            columns='ts_code',
-            values='total_revenue_growth_yoy',
-            aggfunc='last'
-        )
-
-        # ---步骤四：调用通用广播引擎 ---
-        trading_dates = self.factor_manager.data_manager.trading_dates
-        yoy_daily = _broadcast_ann_date_to_daily(yoy_wide, trading_dates)
-
-        print("--- 最终因子: total_revenue_growth_yoy 计算完成 ---")
-        return yoy_daily
  
     # === 动量与反转 (Momentum & Reversal) ===
     ###材料 是否需要填充 介绍:
@@ -464,36 +330,12 @@ class FactorCalculator:
         """
         print("    > 正在计算因子: momentum_20d...")
         close_df = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
-        # close_df.reset_index(trading_index = self.factor_manager.data_manager.trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
+        # close_df.reset_index(trading_index = self.factor_manager.data_manager._prebuffer_trading_dates() 不需要，raw_dfs生成的时候 就已经是trading_index了
         # close_df.ffill(axis=0, inplace=True)
         momentum_df = close_df.pct_change(periods=20)
         return momentum_df
 
     # === 风险 (Risk) ===
-    def _calculate_volatility_90d(self) -> pd.DataFrame:
-        """
-        计算90日年化波动率。
-
-        金融逻辑:
-        衡量个股自身在过去约一个季度内的价格波动风险，也称为特质风险。
-        经典的“低波动异象”(Low Volatility Anomaly)指出，长期来看，
-        低波动率的股票组合能提供优于高波动率股票的风险调整后收益。
-        """
-        logger.info("    > 正在计算因子: volatility_90d...")
-        # 1. 获取日收益率数据
-        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy()
-
-        # 2. 计算90日滚动标准差
-        #    min_periods=60 表示在计算初期，即使窗口不满90天，只要有60天数据也开始计算
-        #    这是一个在保证数据质量和及时性之间的常见权衡。
-        rolling_std_df = pct_chg_df.rolling(window=90, min_periods=60).std()
-
-        # 3. 年化处理：标准差是时间的平方根的函数
-        #    一年约有252个交易日
-        annualized_vol_df = rolling_std_df * np.sqrt(252)
-
-        logger.info("    > volatility_90d 计算完成。")
-        return annualized_vol_df
 
     def _calculate_beta(self, benchmark_index, window: int = 60,
                         min_periods: int = 20) -> pd.DataFrame:
@@ -527,58 +369,28 @@ class FactorCalculator:
         )
         return beta_df_full
 
+        # 重构后的波动率因子
+
+    def _calculate_volatility_90d(self) -> pd.DataFrame:
+        """
+       计算90日年化波动率。
+
+       金融逻辑:
+       衡量个股在过去约半年内的价格波动风险。经典的“低波动异象”认为，
+       低波动率的股票长期来看反而有更高的风险调整后收益。
+
+       数据处理逻辑:
+       - 停牌期间的收益率为NaN，这是正确的，不应该填充为0
+       - rolling.std()会自动忽略NaN值进行计算
+       - min_periods=60确保至少有60个有效交易日才计算波动率
+       """
+        return self._create_rolling_volatility_factor(window=90, min_periods=45)
+
     def _calculate_volatility_120d(self) -> pd.DataFrame:
-        """
-        计算120日年化波动率。
+        return self._create_rolling_volatility_factor(window=120, min_periods=60)
 
-        金融逻辑:
-        衡量个股在过去约半年内的价格波动风险。经典的“低波动异象”认为，
-        低波动率的股票长期来看反而有更高的风险调整后收益。
-
-        数据处理逻辑:
-        - 停牌期间的收益率为NaN，这是正确的，不应该填充为0
-        - rolling.std()会自动忽略NaN值进行计算
-        - min_periods=60确保至少有60个有效交易日才计算波动率
-        """
-        print("    > 正在计算因子: volatility_120d...")
-        # pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
-        close_hfq = self.factor_manager.get_raw_factor('close_hfq').copy()
-
-        # 2. 计算120个交易日前的价格到今天的收益率
-        #    使用 .pct_change() 是最直接且能处理NaN的pandas原生方法
-        annualized_vol_df = close_hfq.pct_change().rolling(window=120, min_periods=60).std() * np.sqrt(252)
-        # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
-        # 这样计算出的波动率更准确，只基于实际交易日的收益率
-
-        return annualized_vol_df
     def _calculate_volatility_40d(self) -> pd.DataFrame:
-        """
-        计算120日年化波动率。
-
-        金融逻辑:
-        衡量个股在过去约半年内的价格波动风险。经典的“低波动异象”认为，
-        低波动率的股票长期来看反而有更高的风险调整后收益。
-
-        数据处理逻辑:
-        - 停牌期间的收益率为NaN，这是正确的，不应该填充为0
-        - rolling.std()会自动忽略NaN值进行计算
-        - min_periods=60确保至少有60个有效交易日才计算波动率
-        """
-        # print("    > 正在计算因子: volatility_120d...")
-        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
-
-        # 【修复】不填充NaN，让rolling函数自然处理停牌期间的缺失值
-        # 这样计算出的波动率更准确，只基于实际交易日的收益率
-
-        rolling_std_df = pct_chg_df.rolling(window=40, min_periods=20).std()
-        annualized_vol_df = rolling_std_df * np.sqrt(252)
-
-        # 【新增】数据质量检查
-        if annualized_vol_df.isna().all().all():
-            raise ValueError("警告：波动率计算结果全为NaN，请检查输入数据")
-
-        return annualized_vol_df
-
+        return self._create_rolling_volatility_factor(window=40, min_periods=20)
     # === 流动性 (Liquidity) ===
     def _calculate_rolling_mean_turnover_rate(self, window: int, min_periods: int) -> pd.DataFrame:
         """【私有引擎】计算滚动平均换手率（以小数形式）。"""
@@ -725,7 +537,7 @@ class FactorCalculator:
             data_loader_func=load_balancesheet_df,
             source_column='total_liab'  # Tushare资产负债表中的“负债合计”字段
         )
-
+    #对齐方案：事件类型
     def _calculate_total_assets(self) -> pd.DataFrame:
         """
         【生产级】获取每日可用的最新总资产。
@@ -806,50 +618,12 @@ class FactorCalculator:
         公式: abs(滚动平均净利润) / 滚动净利润标准差
         这是一个正向指标，值越高，盈利相对越稳定。
         """
-        logger.info("    > 正在计算因子: earnings_stability (盈利稳定性) - 修正版...")
-
-        # 1. 获取单季度净利润长表数据 (此部分不变)
-        net_profit_q_long = self._get_single_q_long_df(
+        return self._create_general_quarterly_factor_engine(
+            factor_name='earnings_stability',
             data_loader_func=load_income_df,
-            source_column='n_income_attr_p',  # 归母净利润
-            single_q_col_name='net_profit_single_q'
+            source_column='n_income_attr_p',
+            calculation_logic_func=self._earnings_stability_logic
         )
-
-        # 2. 计算滚动的平均值和标准差 (核心改动)
-        # window=20 -> 5年 * 4季度/年
-        # 使用 groupby + rolling 的标准模式
-        grouped = net_profit_q_long.groupby('ts_code')['net_profit_single_q']
-        rolling_stats = grouped.rolling(window=20, min_periods=12)
-
-        mean_col = 'earnings_mean'
-        std_col = 'earnings_std'
-        net_profit_q_long[mean_col] = rolling_stats.mean().reset_index(level=0, drop=True)
-        net_profit_q_long[std_col] = rolling_stats.std().reset_index(level=0, drop=True)
-
-        # 3. 计算稳定性（信噪比），并进行风险控制
-        stability_col = 'earnings_stability'
-
-        # 风控1: 标准差极小（接近0），意味着盈利极其稳定。给一个封顶的大值，防止无穷大。
-        # 风控2: 平均利润的绝对值也极小，此时信噪比无意义，设为0或NaN。
-        # 这里我们创建一个条件，当标准差大于1e-6且平均利润绝对值也大于一个小数（如1000元）时才计算
-
-        # 盈利标准差，处理极小值，避免除零
-        std_safe = net_profit_q_long[std_col].clip(lower=1e-6)  # 将小于1e-6的值替换为1e-6
-
-        # 盈利均值，处理绝对值过小的情况
-        mean_safe = net_profit_q_long[mean_col].where(abs(net_profit_q_long[mean_col]) > 1000, 0)
-
-        net_profit_q_long[stability_col] = abs(mean_safe) / std_safe
-
-        # 4. 将结果广播到每日的宽表 (此部分不变)
-        stability_long_df = net_profit_q_long[['ts_code', 'ann_date', 'end_date', stability_col]].dropna()
-        stability_wide = stability_long_df.pivot_table(
-            index='ann_date', columns='ts_code', values=stability_col, aggfunc='last'
-        )
-        trading_dates = self.factor_manager.data_manager.trading_dates
-        stability_daily_df = _broadcast_ann_date_to_daily(stability_wide, trading_dates)
-
-        return stability_daily_df
 
         # === 新增情绪类因子 (Sentiment) ===
     ##
@@ -907,7 +681,7 @@ class FactorCalculator:
 
     ###惊喜
     # (确保在文件顶部导入):
-    # from pandas.tseries.offsets import BDay # BDay代表Business Day
+
     ##
     # 核心逻辑：SUE衡量的是盈利的“惊喜”程度。
     #
@@ -917,29 +691,17 @@ class FactorCalculator:
     # pead Post-Earnings Announcement Drift) #
     def _calculate_pead(self) -> pd.DataFrame:
         """
-        计算修正后的PEAD因子，基于“盈利意外”而非未来收益。
+        【V3.0 - 引擎版】计算SUE因子 (标准化盈利意外)。
+        公式: earnings_surprise_numerator / total_mv
         """
-        logger.info(f"    > 正在计算【修正版】PEAD因子...")
+        logger.info("  > [引擎版] 正在计算 PEAD (SUE) 因子...")
 
-        # 1. 加载包含“净利润”和“公告日”的财报数据
-        income_df_long = load_income_df()  # 假设包含 'net_profit' 字段
-
-        # 2. 计算某种形式的“盈利意外” (Earnings Surprise)
-        #    这里使用一个简化版：(当季净利 - 去年同期净利) / |去年同期净利|
-        #    一个更严谨的版本需要TTM数据或分析师预期数据。
-        income_df_long['surprise'] = income_df_long.groupby('ts_code')['net_profit_ttm'].pct_change(periods=4)
-
-        ann_surprise_long = income_df_long[['ts_code', 'ann_date', 'surprise']].dropna()
-        ann_surprise_long['ann_date'] = pd.to_datetime(ann_surprise_long['ann_date'])
-
-        # 3. 将稀疏的“盈利意外”事件，广播成每日因子值
-        pead_series = ann_surprise_long.set_index(['ann_date', 'ts_code'])['surprise']
-        pead_wide_sparse = pead_series.unstack()
-
-        trading_dates = self.factor_manager.data_manager.trading_dates
-        pead_daily_df = _broadcast_ann_date_to_daily(pead_wide_sparse, trading_dates)
-
-        return pead_daily_df
+        # 直接调用我们强大的金融比率引擎，一行代码完成所有对齐、风控和计算
+        return self._create_financial_ratio_factor(
+            numerator_factor='earnings_surprise_numerator',  # 使用我们刚刚创建的新因子
+            denominator_factor='total_mv',
+            numerator_must_be_positive=False  # 盈利意外可以是负数
+        )
     ##
     # 核心逻辑：分析师评级调整反映的是“聪明钱”对公司基本面预期的持续改善。
     #
@@ -998,7 +760,139 @@ class FactorCalculator:
         market_pct_chg.name = index_code
 
         return market_pct_chg
+    #伞兵函数 共一个将使用 没啥复用意义，只是清晰而已，
+    def _calculate_earnings_surprise_numerator(self) -> pd.DataFrame:
+        """
+        【V3.0 - 核心组件】计算盈利意外的分子 (TTM归母净利同比变动额)。
+        公式: net_profit_ttm(t) - net_profit_ttm(t-1_year)
+        这是一个事件驱动的日度因子。
+        """
+        logger.info("  > [核心组件] 正在计算: earnings_surprise_numerator...")
+
+        # 1. 获取TTM归母净利润因子。
+        #    这个因子已经是通过我们修正后的引擎计算出来的，它已经是每日频率、且无前视偏差的了。
+        net_profit_ttm_df = self.factor_manager.get_raw_factor('net_profit_ttm')
+
+        # 2. 获取大约一年前的TTM归母净利润。
+        #    在日度数据上，shift(252) 是对一年前最常用的近似。
+        net_profit_ttm_last_year_df = net_profit_ttm_df.shift(252)
+
+        # 3. 计算两者差额，即为盈利意外的绝对值
+        surprise_numerator_df = net_profit_ttm_df - net_profit_ttm_last_year_df
+
+        return surprise_numerator_df
+    # --- 为引擎创建可复用的“计算逻辑”函数 ---
+    def _yoy_growth_logic(self, df: pd.DataFrame, col_name: str, factor_name: str) -> pd.DataFrame:
+        df_sorted = df.sort_values(by=['ts_code', 'end_date'])
+        last_year_q = df_sorted.groupby('ts_code')[col_name].shift(4)
+        last_year_q_safe = last_year_q.where(last_year_q > 0)
+        df[factor_name] = df_sorted[col_name] / last_year_q_safe - 1
+        return df
+
+    def _earnings_stability_logic(self, df: pd.DataFrame, col_name: str, factor_name: str) -> pd.DataFrame:
+
+        # 【核心修正】必须先按股票和时间排序，确保rolling操作的时序正确性
+        df_sorted = df.sort_values(by=['ts_code', 'end_date'])
+
+        grouped = df_sorted.groupby('ts_code')[col_name]
+        rolling_stats = grouped.rolling(window=20, min_periods=12)
+
+        mean_val = rolling_stats.mean().reset_index(level=0, drop=True)
+        std_val = rolling_stats.std().reset_index(level=0, drop=True)
+
+        # 后续逻辑保持不变...
+        std_safe = std_val.clip(lower=1e-6)
+        mean_safe = mean_val.where(abs(mean_val) > 1000, 0)
+
+        # 注意：因为df_sorted和df的索引是一样的，这里可以直接赋值
+        df[factor_name] = abs(mean_safe) / std_safe
+        return df
     ##以下是模板
+    def _create_rolling_volatility_factor(self, window: int, min_periods: int) -> pd.DataFrame:
+        """【V3.0 通用滚动波动率引擎】计算指定窗口的年化波动率。"""
+        logger.info(f"    > [波动率引擎] 正在计算 {window}日 年化波动率...")
+        pct_chg_df = self.factor_manager.get_raw_factor('pct_chg').copy(deep=True)
+        rolling_std_df = pct_chg_df.rolling(window=window, min_periods=min_periods).std()
+        annualized_vol_df = rolling_std_df * np.sqrt(252)
+        return annualized_vol_df
+    def _create_general_quarterly_factor_engine(self,
+                                                factor_name: str,
+                                                data_loader_func: Callable[[], pd.DataFrame],
+                                                source_column: str,
+                                                calculation_logic_func: Callable[[pd.DataFrame, str, str], pd.DataFrame]
+                                                ) -> pd.DataFrame:
+        """
+        【通用季度因子引擎】根据指定的单季度财务数据和计算逻辑，延展为每日因子。
+        """
+        logger.info(f"--- [通用季度引擎] 正在为因子 '{factor_name}' 执行计算 ---")
+
+        # 步骤一：获取基础的单季度数据长表
+        single_q_col = f"{source_column}_single_q"
+        long_df = self._get_single_q_long_df(
+            data_loader_func=data_loader_func,
+            source_column=source_column,
+            single_q_col_name=single_q_col
+        )
+
+        # 步骤二：应用传入的、自定义的计算逻辑
+        long_df_calculated =  calculation_logic_func(long_df, single_q_col, factor_name)
+
+        # 步骤三：格式化为日度因子矩阵
+        final_long_df = long_df_calculated[['ts_code', 'ann_date', 'end_date', factor_name]].dropna()
+        if final_long_df.empty:
+            raise ValueError(f"警告: 因子 '{factor_name}' 的计算逻辑没有产生任何有效数据点。")
+
+        final_long_df['ann_date'] = pd.to_datetime(final_long_df['ann_date'])
+        final_long_df['trade_date'] = map_ann_dates_to_tradable_dates(
+            ann_dates=final_long_df['ann_date'],
+            trading_dates=self.factor_manager.data_manager._prebuffer_trading_dates
+        )
+        final_long_df = final_long_df.sort_values(by=['ts_code', 'end_date'])
+        final_wide = final_long_df.pivot_table(
+            index='trade_date',  # 已修正
+            columns='ts_code',
+            values=factor_name,
+            aggfunc='last'
+        )
+
+        daily_factor_df = _broadcast_ann_date_to_daily(final_wide, self.factor_manager.data_manager._prebuffer_trading_dates)
+
+        logger.info(f"--- [通用季度引擎] 因子 '{factor_name}' 计算完成 ---")
+        return daily_factor_df
+    def _create_financial_ratio_factor(self,
+                                       numerator_factor: str,
+                                       denominator_factor: str,
+                                       numerator_must_be_positive: bool = False) -> pd.DataFrame:
+        """
+        【V3.0 通用金融比率引擎】根据指定的分子和分母因子，计算比率类因子。
+
+        Args:
+            numerator_factor (str): 分子因子的名称。
+            denominator_factor (str): 分母因子的名称。
+            numerator_must_be_positive (bool): 是否要求分子也必须为正数。
+
+        Returns:
+            pd.DataFrame: 计算出的比率因子。
+        """
+        logger.info(f"  > [比率引擎] 正在计算: {numerator_factor} / {denominator_factor}...")
+
+        # 1. 获取分子和分母 (它们已经是每日对齐的、无前视偏差的因子)
+        numerator_df = self.factor_manager.get_raw_factor(numerator_factor).copy(deep=True)
+        denominator_df = self.factor_manager.get_raw_factor(denominator_factor).copy(deep=True)
+
+        # 2. 对齐数据 (使用 inner join 保证数据质量)
+        num_aligned, den_aligned = numerator_df.align(denominator_df, join='inner', axis=None)
+
+        # 3. 防止除0
+        den_positive = den_aligned.where(den_aligned > 0)
+
+        num_final = num_aligned
+        if numerator_must_be_positive:
+            num_final = num_aligned.where(num_aligned > 0)
+
+        # 4. 计算并返回
+        ratio_df = num_final / den_positive
+        return ratio_df.replace([np.inf, -np.inf], np.nan)
 
     # --- 私有的、可复用的计算引擎 ---
     def _calculate_financial_ttm_growth_factor(self,
@@ -1046,7 +940,7 @@ class FactorCalculator:
 
         ###A股市场早期，或一些公司在特定时期，只会披露年报和半年报，而缺少一季报和三季报的累计值。这会导致在我们的完美季度时间标尺上出现NaN。
         ### 所以这就是解决方案：实现了填充 跳跃的季度区间，新增填充的列：filled_col ，计算就在filled_col上面做diff。然后在平滑diff上做rolling。done
-        ## 季度性数据ttm通用计算， 模板计算函数 ok
+        ## 季度性数据ttm通用计算， 模板计算函数 ok (且是安全ffill ann_Date
     def _calculate_financial_ttm_factor(self,
                                         factor_name: str,
                                         data_loader_func: Callable[[], pd.DataFrame],
@@ -1076,32 +970,29 @@ class FactorCalculator:
             raise ValueError(f"警告: 计算因子 {factor_name} 后没有产生任何有效的TTM数据点。")
 
         ttm_long_df = ttm_long_df.sort_values(by=['ts_code', 'end_date'])
+        ttm_long_df['ann_date'] = pd.to_datetime(ttm_long_df['ann_date'])
+        ttm_long_df['trade_date'] = map_ann_dates_to_tradable_dates(
+            ann_dates=ttm_long_df['ann_date'],
+            trading_dates = self.factor_manager.data_manager._prebuffer_trading_dates
+        )
+
         ttm_wide = ttm_long_df.pivot_table(
-            index='ann_date', #以ann_date 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只
+            index='trade_date', #以ann_date 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只
             columns='ts_code',
             values=factor_name,
             aggfunc='last'
-        )#执行完之后的ttm_Wide 可能到处都是nan，原因：（以ann_date 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只）
-        # ttm_daily = (ttm_wide.reindex(self.factor_manager.data_manager.trading_dates) #注意 满目苍翼的ttmwide然后还被对齐索引（截断，）从trading开始日开始截，万一刚好这一天 股票值为nan，那么后面ffill也是nan，直到下一个有效ann_date
-        #              .ffill())
-        # filled_wide = ttm_wide.ffill() #基于上面的注意，这里单独做处理！
-        ##
-        # 很隐蔽的bug
-        # 基于ann_date作为index
-        # 也就意味着，比如整个7月没有任何股票进行发报告，即 ann_date不会出现在整个8月
-        # 尽管有填充：filled_wide = ttm_wide.ffill() #基于上面的注意，这里单独做处理！ 可能是下一个月ann_date才有值 比如0905是下一个ann_date，上一个ann_date是0730
-        # 如果我们传入的ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill() 交易日，是0804
-        # 开始的，那么无法找到filled_wide的index是这一天的 那么默认就算是nan，然后经过fiil，到下一个ann_date(0905） 全是nan！！！#
-        # ttm_daily = filled_wide.reindex(self.factor_manager.data_manager.trading_dates).ffill() 解决：避免阶段，提前全局弄
-        # 1. 获取交易日历
-        trading_dates = self.factor_manager.data_manager.trading_dates
-        ret = _broadcast_ann_date_to_daily(ttm_wide, trading_dates)
+        )#执行完之后的ttm_Wide 可能到处都是nan，原因：（以index='trade_date' （ann_date） 作为索引，这是无规则的index。假设100只股票，可能同一天有发布报告的股票只有一只）
+        # ttm_daily = (ttm_wide.reindex(self.factor_manager.data_manager._prebuffer_trading_dates) #注意 满目苍翼的ttm_wide然后还被对齐索引（截断，）从trading开始日开始截，万一刚好交易日这一天 数值为nan，那么后面ffill也是nan，直到下一个有效ann_date
+        #              .ffill()) #强化理解。ann_date [0701,0801],但传入的tradingList是0715，那么 reindex之后，就是nan ffill这个nan，跟0701ann的值矛盾！
+        #解决办法如下：这是解决所有财报类因子“期初NaN”问题的最终解决方案。
+        ret = _broadcast_ann_date_to_daily(ttm_wide, self.factor_manager.data_manager._prebuffer_trading_dates)
 
         print(f"--- [引擎] 因子: {factor_name} 计算完成 ---")
 
         return ret
 
     # 加载财报中的“时点”数据，并将其正确地映射到每日的时间序列上。 ok
+    #对齐方案：事件类型
     def _calculate_financial_snapshot_factor(self,
                                              factor_name: str,
                                              data_loader_func: Callable[[], pd.DataFrame],
@@ -1131,18 +1022,24 @@ class FactorCalculator:
         snapshot_long_df=snapshot_long_df.dropna(inplace=False)
         if snapshot_long_df.empty:
             raise ValueError(f"警告: 计算因子 {factor_name} 时，从 {source_column} 字段未获取到有效数据。")
+            # 步骤二：【核心修正】应用“公告日转交易日”模块
+        snapshot_long_df['ann_date'] = pd.to_datetime(snapshot_long_df['ann_date'])
+        snapshot_long_df['trade_date'] = map_ann_dates_to_tradable_dates(
+            ann_dates=snapshot_long_df['ann_date'],
+            trading_dates=self.factor_manager.data_manager._prebuffer_trading_dates
+        )
 
         # 步骤二：透视
         snapshot_long_df=snapshot_long_df.sort_values(by=['ts_code', 'end_date'], inplace=False).copy(deep=True)
         snapshot_wide = snapshot_long_df.pivot_table(
-            index='ann_date',
+            index='trade_date',
             columns='ts_code',
             values=source_column,
             aggfunc='last'
         )
         # --- 步骤三：【核心修正】使用合并索引的方法，进行稳健的重索引和填充 ---
         # 1. 获取交易日历
-        trading_dates = self.factor_manager.data_manager.trading_dates
+        trading_dates = self.factor_manager.data_manager._prebuffer_trading_dates
 
         # 2. 将稀疏的“公告日”索引与密集的“交易日”索引合并，并排序
         combined_index = snapshot_wide.index.union(trading_dates)

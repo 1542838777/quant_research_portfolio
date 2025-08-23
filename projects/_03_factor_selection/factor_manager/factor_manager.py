@@ -12,11 +12,9 @@ from typing import Dict, List, Optional, Any, Union, Tuple
 import numpy as np
 import pandas as pd
 from numpyencoder import NumpyEncoder
-from tushare.stock.trading import factor_adj
-from websockets.legacy.handshake import check_request
 
 from quant_lib import setup_logger
-from quant_lib.config.logger_config import log_warning, log_notice
+from quant_lib.config.logger_config import log_warning, log_notice, log_error
 from .classifier.factor_calculator.factor_calculator import FactorCalculator
 from .classifier.factor_classifier import FactorClassifier
 # 导入子模块
@@ -24,6 +22,7 @@ from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMeta
 from .storage.single_storage import add_single_factor_test_result
 from ..config.factor_direction_config import FACTOR_DIRECTIONS
 from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool, my_align
+from ..utils.data.check_data import check_data_quality_detail
 
 logger = setup_logger(__name__)
 
@@ -113,7 +112,7 @@ class FactorResultsManager:
                 df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
         for period, df in quantile_returns_series_periods_dict_processed.items():
             df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
-        if q_daily_returns_df_raw:
+        if not q_daily_returns_df_raw.empty:
             q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
         q_daily_returns_df_processed.to_parquet(output_path / f'q_daily_returns_df_processed.parquet')
 
@@ -180,11 +179,13 @@ class FactorManager:
         Args:
             results_dir: 测试结果保存目录
             registry_path: 注册表文件路径
+            config: 配置字典，包含因子定义等信息
         """
         # 因子缓存字典，用于存储已经计算好的因子，避免重复计算
         self.factors_cache: Dict[str, pd.DataFrame] = {}  # 添加其他测试结果
         self.calculator = FactorCalculator(self)
         self.data_manager = data_manager
+        self.config = config or {}  # 保存配置，用于智能时间对齐
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -276,7 +277,7 @@ class FactorManager:
             raw_factor_df = method_to_call(**params)
         elif factor_name in self.data_manager.raw_dfs and not params:
             log_warning(
-                f"{factor_name}高度重视---这是宽表 index为全交易日，所以：停牌期的行全是nan，请思考这突如其来的nan对下面公式计算是否有影响，有影响是否ffill解决，参考adj_close计算")
+                f"{factor_name}高度重视---这是宽表 index为全交易日，所以：停牌期的行全是nan，请思考这突如其来的nan对下面公式计算是否有影响，有影响是否ffill解决 ")
             raw_factor_df = self.data_manager.raw_dfs[factor_name]
         else:
             raise ValueError(f"获取因子失败：{factor_request}")
@@ -640,35 +641,67 @@ class FactorManager:
     # 跟股票池对齐，在股票池里面马上进行测试 处于快要到分析阶段，可以调用，因为理解确实需要对齐股票池。目前没发现什么场景不需要对其的，所i无脑掉 没错
     def get_raw_factor_for_analysis(self, factor_request: Union[str, tuple], for_test: bool = True):
         """
-        【新架构】获取原始因子数据，不进行股票池对齐
-        保持因子数据的完整性，延迟到分析时再对齐
+        【智能时间对齐】获取原始因子数据，根据配置自动处理时间偏移
+        
+        支持三种时间对齐模式：
+        - 'no_shift': 价格数据，保持T日值
+        - 'shift': 传统因子，需要shift到T-1
+        - 'pre_aligned': 事件因子，底层已校正时间
         """
         if not for_test:
             raise ValueError('必须是用于测试前做的数据提取')
 
         factor_with_direction = self.get_factor_by_rule(factor_request)
-
-        # 【时间处理】更精确地区分价格数据和因子数据
         factor_name_str = factor_request[0] if isinstance(factor_request, tuple) else factor_request
 
-        # 明确定义价格数据的完整列表
+        # 【智能时间处理】从配置中获取时间对齐方式
+
+        time_alignment = self._get_factor_time_alignment(factor_name_str)
+        
+        if time_alignment == 'no_shift':
+            # 价格数据保持T日值，用于计算收益率
+            logger.info(f"{factor_request}: 价格数据保持T日值")
+            return factor_with_direction
+        elif time_alignment == 'pre_aligned':
+            # 事件因子，底层已校正时间，不再shift
+            logger.info(f"{factor_request}: 事件因子已预校正，保持原值")
+            return factor_with_direction
+        else:  # time_alignment == 'shift' 或默认
+            # 传统因子数据shift到T-1，用于交易决策
+            logger.info(f"{factor_request}: 因子数据shift到T-1，用于交易决策")
+            return factor_with_direction.shift(1)
+
+    def _get_factor_time_alignment(self, factor_name: str) -> str:
+        """
+        【智能配置查找】获取因子的时间对齐配置
+        
+        优先级：
+        1. 配置文件中的显式声明
+        2. 价格数据自动识别
+        3. 默认shift处理
+        """
+        # 1. 从配置文件获取显式声明
+        factor_definitions = self.config.get('factor_definition', [])
+        for factor_def in factor_definitions:
+            if factor_def.get('name') == factor_name:
+                alignment = factor_def.get('time_alignment')
+                if alignment:
+                    return alignment
+        
+        # 2. 价格数据自动识别（向后兼容）
         price_data_names = {
             'close_raw', 'close_hfq', 'close_hfq_filled',
             'open_raw', 'open_hfq', 'open_hfq_filled',
             'high_raw', 'high_hfq', 'high_hfq_filled',
             'low_raw', 'low_hfq', 'low_hfq_filled',
-
+            'close', 'open', 'high', 'low'  # 简化命名
         }
-
-        is_price_data = factor_name_str in price_data_names
-
-        if is_price_data:
-            # 价格数据保持T日值，用于计算收益率
-            return factor_with_direction
-        else:
-            # 因子数据shift到T-1，用于交易决策
-            logger.info(f"{factor_request}因子数据shift到T-1，用于交易决策")
-            return factor_with_direction.shift(1)
+        
+        if factor_name in price_data_names:
+            return 'no_shift'
+        
+        # 3. 默认处理：传统因子需要shift
+        return 'shift'
 
     def get_prepare_aligned_factor_for_analysis(self, factor_request: Union[str, tuple], stock_pool_index_name,
                                                 for_test):
@@ -682,7 +715,7 @@ class FactorManager:
         # 1. 获取原始因子数据 t-1
         factor_data = self.get_raw_factor_for_analysis(REQUEST, for_test)
         #
-        self._validate_data_quality(factor_data, REQUEST, des='原生数据')
+        # self._validate_data_quality(factor_data, REQUEST, des='最原生数据') #这里检查意义不大！！因为原生计算出来的 随便一个shift252 都导致好多nan
 
         # 2. 与股票池对齐
         ret = self.align_factor_with_pool(factor_data, factor_request, stock_pool_index_name)
@@ -700,22 +733,17 @@ class FactorManager:
 
         # 2. 检查是否存在异常的完美分布
         unique_ratio = factor_flat.nunique() / len(factor_flat)
-        if unique_ratio < 0.1:  # 唯一值比例过低
-            log_notice(f"⚠️  因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
+        if unique_ratio < 0.1:  # 唯一值比例过低 很正常啊，3快-15快 1200个数据/1000*800
+            log_notice(f"因子-{factor_name}-{des} 唯一值比例过低: {unique_ratio:.3f}")
 
-        # 3. 检查截面标准化的痕迹
-        daily_means = factor_data.mean(axis=1).dropna()
-        daily_stds = factor_data.std(axis=1).dropna()
-
-        # 如果每日均值接近0且标准差接近1，可能是截面标准化的结果
-        mean_close_to_zero = abs(daily_means.mean()) < 0.01
-        std_close_to_one = abs(daily_stds.mean() - 1.0) < 0.1
-
-        if mean_close_to_zero and std_close_to_one:
-            logger.info(f"📊 因子-{factor_name}-{des} 检测到截面标准化特征")
-
+        check_report  = check_data_quality_detail(factor_data)
+        if check_report['serious_data']:
+            log_error(f"因子-{factor_name}-{des}-报告:{check_report}")
+            raise ValueError('数据严重问题')
+        logger.info(f"因子-{factor_name}-{des}- 数据质量分数: {check_report['quality_score']:.3f}")
         # 4. 检查时间序列的连续性
         missing_ratio = factor_data.isna().sum().sum() / (factor_data.shape[0] * factor_data.shape[1])
+        #因为长达5年，股票轮换，列不再是目标列，zz500 长时间轮换 ->最后变成800列 浅浅一算：固定缺300/800=缺37.5%都很正常！
         if missing_ratio >= 0.5:
             log_notice(f"因子-{factor_name}-{des}- 缺失值比例过高: {missing_ratio:.3f}")
 
@@ -728,7 +756,7 @@ class FactorManager:
         pool = self.data_manager.stock_pools_dict[stock_pool_index_name]
 
         temp_date = my_align(factor_data, self.get_raw_factor('close_hfq').notna().shift(1))
-        self._validate_data_quality(temp_date,factor_name_str,'原生数据 仅对齐未停牌的close_df ')
+        # self._validate_data_quality(temp_date,factor_name_str,'原生数据 仅对齐未停牌的close_df ')
         return fill_and_align_by_stock_pool(
             factor_name=factor_name_str,
             df=factor_data,

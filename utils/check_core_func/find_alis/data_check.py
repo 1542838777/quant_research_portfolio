@@ -60,12 +60,12 @@ def analyze_factor_performance(factor_data, return_data, factor_name, return_hor
         day_returns = return_subset.loc[date]
 
         # 移除缺失值
-        valid_mask = day_factors.notna() & day_returns.notna()#关键操作 step remind
+        valid_mask = day_factors.notna() & day_returns.notna()  # 关键操作 step remind
         if valid_mask.sum() < n_quantiles * 10:  # 确保有足够样本
             continue
 
         day_factors = day_factors[valid_mask]
-        day_returns = day_returns[valid_mask] #关键操作 step
+        day_returns = day_returns[valid_mask]  # 关键操作 step
 
         # 按因子值分组
         try:
@@ -134,7 +134,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def check_data_quality(factor_df, factor_name=None):
+def check_data_quality(factor_df, factor_name=None, neet_see=False):
     """
     检查因子数据质量
 
@@ -289,13 +289,13 @@ def check_data_quality(factor_df, factor_name=None):
 
 # 使用示例
 def run_check(factor_df):
-        # 检查数据质量
-        quality_report = check_data_quality(factor_df, "波动率因子")
+    # 检查数据质量
+    quality_report = check_data_quality(factor_df, "波动率因子")
 
-        # 可以根据质量报告做出进一步决策
-        if quality_report['quality_score'] < 60:
-            print("\n警告: 数据质量较差，可能影响分析结果")
-            print("建议进行数据清洗和处理")
+    # 可以根据质量报告做出进一步决策
+    if quality_report['quality_score'] < 60:
+        print("\n警告: 数据质量较差，可能影响分析结果")
+        print("建议进行数据清洗和处理")
 
 
 def check_cross_sectional_duplicates(factor_df, threshold=0.1):
@@ -407,8 +407,6 @@ def check_cross_sectional_duplicates(factor_df, threshold=0.1):
     return duplicate_report
 
 
-
-
 # 使用示例
 def check_cross_sectional_duplicates_run():
     # 读取测试数据
@@ -416,7 +414,6 @@ def check_cross_sectional_duplicates_run():
         factor_df = pd.read_csv(
             '/tests/workspace/mem_momentum_12_1.csv',
             index_col=0, parse_dates=True)
-
 
         # 检查截面重复值
         duplicate_report = check_cross_sectional_duplicates(factor_df)
@@ -434,7 +431,8 @@ def check_cross_sectional_duplicates_run():
         print(f"数据处理出错: {e}")
         import traceback
 
-        traceback.print_exc()
+
+
 
 if __name__ == "__main__":
 
@@ -447,8 +445,8 @@ if __name__ == "__main__":
         returns_df = pd.read_csv(
             '/tests/workspace/mem_forward_return_o2c.csv',
             index_col=0, parse_dates=True)
-        #检查因子数据质量
-        run_check(factor_df )
+        # 检查因子数据质量
+        run_check(factor_df)
 
         # 选择要分析的因子和收益率期限
         # 假设因子数据只有一列，或者您可以选择特定列

@@ -132,6 +132,8 @@ class DataManager:
             self.raw_dfs = {}
             self.stock_pools_dict = None
             self.trading_dates = self.data_loader.get_trading_dates(self.backtest_start_date, self.backtest_end_date)
+            #用于计算ttm年度shift252 ，，预热数据
+            self._prebuffer_trading_dates = self.data_loader.get_trading_dates(self.buffer_start_date, self.backtest_end_date)
             self._existence_matrix = None
             self.pit_map = None
 
@@ -888,6 +890,7 @@ class DataManager:
     def get_base_require_factors(self, target_factors_name: list[str]) -> set:
         result = set()
         for name in target_factors_name:
+            logger.info(f"name------{name}")
             factor_config = self.get_factor_definition(name)
             if factor_config['cal_require_base_fields_from_daily'].iloc[0]:
                 base_fields = factor_config['cal_require_base_fields'].iloc[0]

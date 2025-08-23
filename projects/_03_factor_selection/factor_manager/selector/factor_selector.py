@@ -280,15 +280,15 @@ class FactorSelectorV2:
 
         final_leaderboard = pd.DataFrame(champions_data).set_index('factor_name', drop=False)
         ##
-        # [
-        #              ['ic_mean_processed_c2c', 'ic_ir_processed_c2c', 'monotonicity_spearman_processed_c2c',
-        #
-        #             'Final_Score',
-        #               'ic_mean_raw_c2c', 'ic_ir_raw_c2c', 'tmb_sharpe_raw_c2c', 'tmb_max_drawdown_raw_c2c',
-        #             'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
-        #             'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
-        #             'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
-        #             'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period','factor_name']]#
+        [
+                     ['ic_mean_processed_c2c', 'ic_ir_processed_c2c', 'monotonicity_spearman_processed_c2c',
+
+                    'Final_Score',
+                      'ic_mean_raw_c2c', 'ic_ir_raw_c2c', 'tmb_sharpe_raw_c2c', 'tmb_max_drawdown_raw_c2c',
+                    'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
+                    'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
+                    'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
+                    'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period','factor_name']]#
         ret  = final_leaderboard.sort_values(by='Final_Score', ascending=False)
         return ret
 
@@ -378,9 +378,9 @@ if __name__ == '__main__':
     selector = FactorSelectorV2()
 
     # 【决策】在这里做出你的战略决策，选择你的主战场
+    TARGET_UNIVERSE = INDEX_CODES['HS300']  # 以中证300为主战场
     TARGET_UNIVERSE = INDEX_CODES['ZZ500']  # 以中证1000为主战场
     TARGET_UNIVERSE = INDEX_CODES['ZZ800']  # 以中证1000为主战场
-    TARGET_UNIVERSE = INDEX_CODES['HS300']  # 以中证300为主战场
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,

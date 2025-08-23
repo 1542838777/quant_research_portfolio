@@ -138,7 +138,8 @@ class DataLoader:
                         continue
                         # 'turnover_rate', 'circ_mv', 'total_mv'  这些是“纯净原材料”，它们是每日更新的、不依赖于财报发布时间的随时点（Point-in-Time）数据
                     not_allow_load_fieds_for_not_fq = ['adj_factor', 'pe_ttm', 'pb', 'ps_ttm']
-                    if (col in not_allow_load_fieds_for_not_fq):  #
+                    not_allow_load_fieds_for_不知道内部逻辑_万一人家数据有前世偏差呢 = [ 'pe_ttm', 'pb', 'ps_ttm']
+                    if (col in not_allow_load_fieds_for_not_fq or (col in not_allow_load_fieds_for_不知道内部逻辑_万一人家数据有前世偏差呢)):  #
                         continue  # (f'严谨加载依赖报告日发布的数据{col} 非daily数据 ,请将config 用adj_factor的 from_daily配置 置为false，这样就不会此阶段加载了')
                     if col not in field_to_files_map:
                         field_to_files_map[col] = logical_name

@@ -101,7 +101,9 @@ EVAL_SETTING_FAST = {
 EVAL_SETTING_STANDARD = {
     "forward_periods": [5, 21, 60], # 短、中、长
     "returns_calculator": [ 'c2c'], # 对比两种方式
-    "style_factor_list":style_factor_list
+    "style_factor_list":style_factor_list,
+    "eva_data": ['raw','processed']  # 控制测试哪种数据状态：'raw'(原始)，'processed'(处理后)
+
 }
 
 # 模板3: 全面批量测试设置 (Massive Test Setting)
@@ -110,7 +112,8 @@ EVAL_SETTING_FULL = {
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [1, 5, 10, 21, 40, 60, 120],
     "returns_calculator": [ 'c2c'],
-    "style_factor_list": style_factor_list
+    "style_factor_list": style_factor_list,
+    "eva_data": ['raw', 'processed']  # 控制测试哪种数据状态：'raw'(原始)，'processed'(处理后)
 }
 # 东
 dongbei_SETTING = {
@@ -132,7 +135,16 @@ fast_eva_SETTING = {
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
-    "forward_periods": [1,30,80],
+    "forward_periods": [21],
+    "returns_calculator": ['c2c'],
+    "style_factor_list": [
+    ],
+    "eva_data": ['processed']  # 控制测试哪种数据状态：'raw'(原始)，'processed'(处理后)
+}
+
+really_eva_SETTING = {
+    "quantiles": 5, # 兼容旧命名
+    "forward_periods": [21],
     "returns_calculator": ['c2c'],
     "style_factor_list": [
     ],
@@ -174,6 +186,7 @@ CSI300_none_FFT_most_basic_profile = make_pool_profile('institutional_stock_pool
 CSI300_none_FFF_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000300',False,False,False, 0, 0)
 ALL_none_FFF_most_basic_profile = make_pool_profile('ALL', False, INDEX_CODES['ZZ_ALL'],False,False,False, 0, 0)
 fast_hs300_profile = make_pool_profile('fast', True, INDEX_CODES['HS300'], False, False, False, 0, 0)
+东北_zz500_profile = make_pool_profile('ZZ500', True, INDEX_CODES['ZZ500'], True, True, True, 0, 0)
 CSI500_none_FFF_most_basic_profile = make_pool_profile('microstructure_stock_pool', True, INDEX_CODES['ZZ500'],False,False,False, 0, 0)
 CSI500_most_basic_profile = make_pool_profile('institutional_stock_pool', True, '000905', True,True,True,0, 0)
 # 用于我需要在最真实的环境，交易，需要必须要过滤流动差劲的

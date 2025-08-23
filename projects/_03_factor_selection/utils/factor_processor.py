@@ -362,7 +362,7 @@ class FactorProcessor:
                 prev_trading_date = trading_dates_series.shift(1).loc[date]
                 # 处理回测第一天的边界情况
                 if pd.isna(prev_trading_date):
-                    log_warning(f"正常现象：日期 {date} 是回测首日，没有前一天的行业数据，跳过分行业处理。")
+                    # log_warning(f"正常现象：日期 {date} 是回测首日，没有前一天的行业数据，跳过分行业处理。")
                     processed_data[date] = daily_factor_series  # 当天不做处理或执行全市场处理
                     continue
 
@@ -764,7 +764,7 @@ class FactorProcessor:
                 prev_trading_date = trading_dates_series.shift(1).loc[date]
                 # 处理回测第一天的边界情况
                 if pd.isna(prev_trading_date):
-                    log_warning(f"正常现象：日期 {date} 是回测首日，没有前一天的行业数据，跳过分行业处理。")
+                    # log_warning(f"正常现象：日期 {date} 是回测首日，没有前一天的行业数据，跳过分行业处理。")
                     processed_data[date] = daily_factor_series  # 当天不做处理或执行全市场处理
                     continue
 
