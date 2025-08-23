@@ -207,16 +207,19 @@ class FactorSelectorV2:
         row = {'factor_name': factor_dir.name}
         for r_type, stats_data in [('c2c', stats_o2c)]:
             for d_type in ['raw', 'processed']:
-                ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
-                q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})
-                if not ic_stats or not q_stats: continue  # 如果该周期数据不完整，则返回None
+                try:
+                    ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
+                    q_stats = stats_data.get(f'quantile_backtest_{d_type}', {}).get(period, {})
+                    if not ic_stats or not q_stats: continue  # 如果该周期数据不完整，则返回None
 
-                row[f'ic_mean_{d_type}_{r_type}'] = ic_stats.get('ic_mean')
-                row[f'ic_ir_{d_type}_{r_type}'] = ic_stats.get('ic_ir')
+                    row[f'ic_mean_{d_type}_{r_type}'] = ic_stats.get('ic_mean')
+                    row[f'ic_ir_{d_type}_{r_type}'] = ic_stats.get('ic_ir')
 
-                row[f'tmb_sharpe_{d_type}_{r_type}'] = q_stats['tmb_sharpe']
-                row[f'tmb_max_drawdown_{d_type}_{r_type}'] = q_stats['tmb_max_drawdown']
-                row[f'monotonicity_spearman_{d_type}_{r_type}'] = q_stats['monotonicity_spearman']
+                    row[f'tmb_sharpe_{d_type}_{r_type}'] = q_stats['tmb_sharpe']
+                    row[f'tmb_max_drawdown_{d_type}_{r_type}'] = q_stats['tmb_max_drawdown']
+                    row[f'monotonicity_spearman_{d_type}_{r_type}'] = q_stats['monotonicity_spearman']
+                except:
+                    continue
 
             fm_stats = stats_data.get('fama_macbeth', {}).get(period, {})
             row[f'fm_t_statistic_processed_{r_type}'] = fm_stats.get('t_statistic')
@@ -276,16 +279,17 @@ class FactorSelectorV2:
             raise ValueError(f"在路径 {base_path} 下，没有找到任何可以生成冠军排行榜的因子。")
 
         final_leaderboard = pd.DataFrame(champions_data).set_index('factor_name', drop=False)
-
-        ret  = final_leaderboard.sort_values(by='Final_Score', ascending=False)[
-             ['ic_mean_processed_c2c', 'ic_ir_processed_c2c', 'monotonicity_spearman_processed_c2c',
-
-            'Final_Score',
-              'ic_mean_raw_c2c', 'ic_ir_raw_c2c', 'tmb_sharpe_raw_c2c', 'tmb_max_drawdown_raw_c2c',
-            'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
-            'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
-            'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
-            'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period','factor_name']]
+        ##
+        # [
+        #              ['ic_mean_processed_c2c', 'ic_ir_processed_c2c', 'monotonicity_spearman_processed_c2c',
+        #
+        #             'Final_Score',
+        #               'ic_mean_raw_c2c', 'ic_ir_raw_c2c', 'tmb_sharpe_raw_c2c', 'tmb_max_drawdown_raw_c2c',
+        #             'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
+        #             'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
+        #             'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
+        #             'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period','factor_name']]#
+        ret  = final_leaderboard.sort_values(by='Final_Score', ascending=False)
         return ret
 
     def get_top_factors(self, leaderboard_df: pd.DataFrame, results_path: str, stock_pool: str,
@@ -374,9 +378,9 @@ if __name__ == '__main__':
     selector = FactorSelectorV2()
 
     # 【决策】在这里做出你的战略决策，选择你的主战场
-    TARGET_UNIVERSE = INDEX_CODES['HS300']  # 以中证300为主战场
     TARGET_UNIVERSE = INDEX_CODES['ZZ500']  # 以中证1000为主战场
     TARGET_UNIVERSE = INDEX_CODES['ZZ800']  # 以中证1000为主战场
+    TARGET_UNIVERSE = INDEX_CODES['HS300']  # 以中证300为主战场
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,

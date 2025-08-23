@@ -16,7 +16,7 @@ from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 
 fast_periods = ('20190328', '20190612')
-fast_train_period = ('20190328', '20210328')
+fast_train_period = ('20190328', '20200328')
 period_东北研报 = ('20220101','20250710')
 fast_periods_2 = ('20240301', '20250710')
 period_six_year = ('20190710', '20250710')

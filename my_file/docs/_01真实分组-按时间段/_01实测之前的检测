@@ -1,4 +1,5 @@
 #todo 记得切换成上线版 的 下面注释版本
     # # 合成测试，单因子测试 解开todo
 
-            # b) 将本次配置的所有结果打包 todo 解开
+
+        # self.factors_cache[factor_request] = raw_factor_df #排查问题中 先关了 todo缓存打开

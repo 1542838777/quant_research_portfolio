@@ -101,19 +101,20 @@ class FactorResultsManager:
         fm_returns_series_periods_dict = results.get("fm_returns_series_periods_dict", {})
 
         # b) 保存时间序列数据 (以 Parquet 格式，更高效)
-        for period, series in ic_series_periods_dict_raw.items():
-            df = series.to_frame(name='ic_series_raw')  # 给一列起名，比如 'ic'
-            df.to_parquet(output_path / f'ic_series_raw_{period}.parquet')
+        if ic_series_periods_dict_raw:
+            for period, series in ic_series_periods_dict_raw.items():
+                df = series.to_frame(name='ic_series_raw')  # 给一列起名，比如 'ic'
+                df.to_parquet(output_path / f'ic_series_raw_{period}.parquet')
         for period, series in ic_series_periods_dict_processed.items():
             df = series.to_frame(name='ic_series_processed')  # 给一列起名，比如 'ic'
             df.to_parquet(output_path / f'ic_series_processed_{period}.parquet')
-
-        for period, df in quantile_returns_series_periods_dict_raw.items():
-            df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
+        if quantile_returns_series_periods_dict_raw:
+            for period, df in quantile_returns_series_periods_dict_raw.items():
+                df.to_parquet(output_path / f'quantile_returns_raw_{period}.parquet')
         for period, df in quantile_returns_series_periods_dict_processed.items():
             df.to_parquet(output_path / f'quantile_returns_processed_{period}.parquet')
-
-        q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
+        if q_daily_returns_df_raw:
+            q_daily_returns_df_raw.to_parquet(output_path / f'q_daily_returns_df_raw.parquet')
         q_daily_returns_df_processed.to_parquet(output_path / f'q_daily_returns_df_processed.parquet')
 
         for period, series in fm_returns_series_periods_dict.items():

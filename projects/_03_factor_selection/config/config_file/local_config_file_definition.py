@@ -127,14 +127,16 @@ fast_eva_SETTING = {
     "returns_calculator": ['c2c'],
     "style_factor_list": [
 
-    ]
+    ],
+    'eva_data':['processed']
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [1,30,80],
     "returns_calculator": ['c2c'],
     "style_factor_list": [
-    ]
+    ],
+    "eva_data": ['processed']  # 控制测试哪种数据状态：'raw'(原始)，'processed'(处理后)
 }
 # ==============================================================================
 # 预设股票池模板 (Stock Pool Presets)

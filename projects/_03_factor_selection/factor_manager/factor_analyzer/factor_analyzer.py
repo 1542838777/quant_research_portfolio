@@ -378,7 +378,7 @@ class FactorAnalyzer:
                 neutral_dfs=final_neutral_dfs,  # <--- 传入权威的中性化数据篮子
                 style_category=style_category,
                 pit_map=self.factor_manager.data_manager.pit_map,
-                need_standardize = False
+                need_standardize = True
             )
         else:
             # 2. 原始因子的最小预处理（仅去极值，保持原始特征）
@@ -995,41 +995,56 @@ class FactorAnalyzer:
             = self.prepare_date_for_entity_service(
             factor_name, stock_pool_index_name)
 
+        # 获取eva_data配置，默认测试两种数据状态
+        eva_data_config = self.config.get('evaluation', {}).get('eva_data', ['raw', 'processed'])
+
         all_configs_results = {}
         if is_composite_factor:
             return self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,
                                                                         stock_pool_index_name, test_configurations,
                                                                         start_date, end_date, stock_pool_index_code)
+        
         for calculator_name, func in test_configurations.items():
-            # 执行测试
-            # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
-            raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
-                target_factor_name=factor_name,
-                factor_data_shifted=factor_data_shifted,
-                stock_pool_index_name=stock_pool_index_name,
-                returns_calculator=func,
-                preprocess_method="standard",
-                start_date=start_date,
-                end_date=end_date,
-                need_process_factor=False,
-                do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
-                # do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
-                do_style_correlation_test=False
-            )
-            # log_flow_start(f"因子{factor_name}处理状态 进入comprehensive_test测试 ")
-            proceessed_df, ic_s, ic_st, q_r_processed, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
-                = self.comprehensive_test(
-                target_factor_name=factor_name,
-                factor_data_shifted=factor_data_shifted,
-                stock_pool_index_name=stock_pool_index_name,
-                returns_calculator=func,
-                preprocess_method="standard",
-                start_date=start_date,
-                end_date=end_date,
-                need_process_factor=True,
-                do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
-                do_style_correlation_test=True
-            )
+            single_config_results = {}
+            
+            # 初始化变量为None
+            raw_factor_df = ic_s_raw = ic_st_raw = q_r_raw = q_daily_returns_df_raw = q_st_raw = None
+            proceessed_df = ic_s = ic_st = q_r_processed = q_daily_returns_df_proc = q_st = turnover = fm_returns_series_dict = fm_t_stats_series_dict = fm_summary_dict = style_correlation_dict = None
+            
+            # 根据配置决定执行哪些测试
+            if 'raw' in eva_data_config:
+                logger.info(f"🔄 执行原始因子测试: {factor_name}")
+                raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
+                    target_factor_name=factor_name,
+                    factor_data_shifted=factor_data_shifted,
+                    stock_pool_index_name=stock_pool_index_name,
+                    returns_calculator=func,
+                    preprocess_method="standard",
+                    start_date=start_date,
+                    end_date=end_date,
+                    need_process_factor=False,
+                    do_ic_test=True, do_quantile_test=True, do_turnover_test=False, do_fama_test=False,
+                    # do_style_correlation_test do_fama_test do_turnover_test 再未经过预测里的数据上测试没有意义! 所以置为false
+                    do_style_correlation_test=False
+                )
+                
+            if 'processed' in eva_data_config:
+                logger.info(f"⚙️ 执行处理后因子测试: {factor_name}")
+                proceessed_df, ic_s, ic_st, q_r_processed, q_daily_returns_df_proc, q_st, turnover, fm_returns_series_dict, fm_t_stats_series_dict, fm_summary_dict, style_correlation_dict \
+                    = self.comprehensive_test(
+                    target_factor_name=factor_name,
+                    factor_data_shifted=factor_data_shifted,
+                    stock_pool_index_name=stock_pool_index_name,
+                    returns_calculator=func,
+                    preprocess_method="standard",
+                    start_date=start_date,
+                    end_date=end_date,
+                    need_process_factor=True,
+                    do_ic_test=True, do_turnover_test=True, do_quantile_test=True, do_fama_test=True,
+                    do_style_correlation_test=True
+                )
+            
+            # 构建结果字典
             single_config_results = {
                 "raw_factor_df": raw_factor_df,  # 注意 都是经过shift1的
                 "processed_factor_df": proceessed_df,  # 注意 都是经过shift1的
@@ -1051,6 +1066,7 @@ class FactorAnalyzer:
                 "turnover_stats_periods_dict": turnover,
                 "style_correlation_dict": style_correlation_dict
             }
+            
             # b) 将本次配置的所有结果打包
             self.factorResultsManager._save_factor_results(  # 假设保存函数在FactorManager中
                 factor_name=factor_name,
@@ -1061,10 +1077,6 @@ class FactorAnalyzer:
                 results=single_config_results
             )
             all_configs_results[calculator_name] = single_config_results
-        # overrall_summary_stats = self.landing_for_core_three_analyzer_result(target_factor_df, target_factor_name,
-        #                                                                      style_category, "standard",
-        #                                                                      ic_s, ic_st, q_r_processed, q_st, fm_r, fm_st, turnover_st, style_corr
-        #                                                                      )
         return all_configs_results
         # 合成测试，单因子测试
     # def test_factor_entity_service_route(self,
