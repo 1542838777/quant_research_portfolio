@@ -825,9 +825,9 @@ class FactorProcessor:
            """
         # 1. 根据因子门派，从配置中获取基础的中性化列表
         base_neutralization_list = FACTOR_STYLE_RISK_MODEL.get(style_category, FACTOR_STYLE_RISK_MODEL['default'])
-
-        logger.info(
-            f"因子 '{target_factor_name}' (style列别: {style_category}) 的初始中性化列表为: {base_neutralization_list}")
+        #
+        # logger.info(
+        #     f"因子 '{target_factor_name}' (style列别: {style_category}) 的初始中性化列表为: {base_neutralization_list}")
 
         # 2. 【核心逻辑】: 动态排除 - 防止因子对自己进行中性化
         # 使用列表推导式，这是一种更Pythonic、更健壮的方式

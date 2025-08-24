@@ -143,15 +143,7 @@ def check_backtest_periods(start_date, end_date):
         raise ValueError("回测时间太短")
 
 ################################################################################################################
-trans_pram =  {
-    'mode': 'massive_test',
-    'pools': {
-        **_massive_test_ZZ800_profile
-    },
-    'period': really_train_period,
-    'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
-    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
-}
+
 
 trans_pram = {
     'mode': 'fast',
@@ -162,6 +154,18 @@ trans_pram = {
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }
+
+
+trans_pram =  {
+    'mode': 'massive_test',
+    'pools': {
+        **_massive_test_ZZ800_profile
+    },
+    'period': really_train_period,
+    'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
+    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
+}
+
 # 使用包含1日期间的完整测试模式
 is_debug = False
 

@@ -22,7 +22,6 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from projects._03_factor_selection.factory.strategy_factory import StrategyFactory
 from projects._03_factor_selection.multi_factor_optimizer.multi_factor_optimizer import MultiFactorOptimizer
-from projects._03_factor_selection.factor_manager.factor_analyzer.single_factor_analyzer import SingleFactorAnalyzer
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
