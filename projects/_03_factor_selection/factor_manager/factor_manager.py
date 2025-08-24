@@ -724,8 +724,6 @@ class FactorManager:
         FactorManager._validate_data_quality(ret, REQUEST, des='原生数据最终完全对齐股票池之后')
         return ret
 
-
-
     def align_factor_with_pool(self, factor_data: pd.DataFrame, factor_request: Union[str, tuple],
                                stock_pool_index_name: str):
         """

@@ -220,6 +220,22 @@ def verify_data(factor_manager):
     pass
 
 
+def save_close_hfq(stock_pool_name, factor_manager, data_manager):
+    stock_pool_index_code = factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
+
+    close_hfq = factor_manager.get_prepare_aligned_factor_for_analysis('close_hfq',stock_pool_name,True)
+    if close_hfq is None:
+        raise ValueError("close_hfq 数据为空，无法保存")
+
+    path = Path(
+        r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result"
+    ) / stock_pool_index_code /'close_hfq'/ f'{data_manager.backtest_start_date}_{data_manager.backtest_end_date}'
+
+    path.mkdir(parents=True, exist_ok=True)  # 确保目录存在
+    close_hfq.to_parquet(path / 'close_hfq.parquet')
+    print(f"保存 close_hfq 成功: {path / 'close_hfq.parquet'}")
+
+
 def main():
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
@@ -236,6 +252,7 @@ def main():
     # 6. 批量测试因子
     #读取 实验文件，获取需要做的实验
     experiments_df = data_manager.get_experiments_df()
+    save_close_hfq(experiments_df.iloc[0]['stock_pool_name'], factor_manager,data_manager)
 
     # 批量测试
     results = []
@@ -260,7 +277,6 @@ def main():
 
         except Exception as e:
             raise ValueError(f"✗ 因子 {factor_name} 测试失败: {e}") from e
-
     log_success(f"✓ 批量测试完成，成功测试 {len(results)} 个因子")
     return results
 

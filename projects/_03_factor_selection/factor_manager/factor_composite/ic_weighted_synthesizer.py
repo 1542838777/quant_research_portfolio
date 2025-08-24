@@ -22,6 +22,7 @@ import warnings
 
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
+from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import RollingICManager, ICCalculationConfig, ICSnapshot
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -319,6 +320,16 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         self.weight_calculator = ICWeightCalculator(self.config)
         self.quality_filter = FactorQualityFilter(self.config)
         
+        # 滚动IC管理器 - 核心改进
+        rolling_ic_config = ICCalculationConfig(
+            lookback_months=12,
+            forward_periods=self.config.lookback_periods,
+            calculation_frequency='M'
+        )
+        
+        storage_root = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\rolling_ic"
+        self.rolling_ic_manager = RollingICManager(storage_root, rolling_ic_config)
+        
         # 缓存IC统计数据，避免重复计算
         self._ic_stats_cache = {}
     
@@ -382,6 +393,102 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         
         logger.info(f"✅ IC加权因子合成完成: {composite_factor_name}")
         return composite_factor_df, synthesis_report
+    
+    def calculate_rolling_weights(
+        self,
+        candidate_factor_names: List[str],
+        stock_pool_index_name: str,
+        calculation_date: str,
+        factor_data_source=None,
+        return_data_source=None
+    ) -> Dict[str, float]:
+        """
+        滚动权重计算 - 核心改进：完全避免前视偏差
+        
+        Args:
+            candidate_factor_names: 候选因子列表
+            stock_pool_index_name: 股票池名称
+            calculation_date: 权重计算时点（严格不使用此时点之后的数据）
+            factor_data_source: 因子数据源
+            return_data_source: 收益数据源
+            
+        Returns:
+            Dict[factor_name, weight]: 基于历史IC的权重分配
+        """
+        logger.info(f"🔄 开始滚动权重计算 @ {calculation_date}")
+        logger.info(f"📊 候选因子: {len(candidate_factor_names)} 个")
+        
+        # 第一步：获取截止到calculation_date的历史IC数据
+        historical_ic_stats = {}
+        
+        for factor_name in candidate_factor_names:
+            try:
+                # 从滚动IC管理器获取历史IC快照
+                latest_snapshot = self.rolling_ic_manager.get_ic_at_timepoint(
+                    factor_name, stock_pool_index_name, calculation_date
+                )
+                
+                if latest_snapshot and latest_snapshot.ic_stats:
+                    historical_ic_stats[factor_name] = latest_snapshot.ic_stats
+                    logger.debug(f"  ✅ {factor_name}: 获取历史IC @ {calculation_date}")
+                else:
+                    # 如果没有现成的快照，需要实时计算（但仅使用历史数据）
+                    if factor_data_source and return_data_source:
+                        snapshot = self.rolling_ic_manager._calculate_ic_snapshot(
+                            factor_name, stock_pool_index_name, calculation_date,
+                            factor_data_source, return_data_source
+                        )
+                        
+                        if snapshot and snapshot.ic_stats:
+                            historical_ic_stats[factor_name] = snapshot.ic_stats
+                            # 保存快照以供后续使用
+                            self.rolling_ic_manager._save_snapshot(snapshot)
+                            logger.debug(f"  🔄 {factor_name}: 实时计算IC @ {calculation_date}")
+                        else:
+                            logger.warning(f"  ❌ {factor_name}: 无法计算历史IC")
+                    else:
+                        logger.warning(f"  ⚠️ {factor_name}: 缺少数据源，跳过")
+                        
+            except Exception as e:
+                logger.error(f"  ❌ {factor_name}: IC获取失败 - {e}")
+                continue
+        
+        if not historical_ic_stats:
+            logger.error("❌ 无任何因子的历史IC数据，无法计算权重")
+            return {}
+        
+        logger.info(f"📊 成功获取 {len(historical_ic_stats)} 个因子的历史IC数据")
+        
+        # 第二步：基于历史IC进行质量筛选
+        qualified_factor_stats, quality_reports = self.quality_filter.filter_factors_by_quality(
+            historical_ic_stats
+        )
+        
+        if not qualified_factor_stats:
+            logger.warning("⚠️ 无因子通过质量筛选，返回等权重")
+            equal_weight = 1.0 / len(candidate_factor_names)
+            return {name: equal_weight for name in candidate_factor_names}
+        
+        # 第三步：计算权重（仅基于历史IC表现）
+        factor_weights = self.weight_calculator.calculate_ic_based_weights(
+            qualified_factor_stats
+        )
+        
+        # 第四步：为未通过筛选的因子分配0权重
+        final_weights = {}
+        for factor_name in candidate_factor_names:
+            final_weights[factor_name] = factor_weights.get(factor_name, 0.0)
+        
+        # 日志记录
+        selected_factors = [name for name, weight in final_weights.items() if weight > 0]
+        logger.info(f"✅ 滚动权重计算完成 @ {calculation_date}")
+        logger.info(f"📊 选中因子: {len(selected_factors)}/{len(candidate_factor_names)}")
+        
+        for factor_name, weight in sorted(final_weights.items(), key=lambda x: x[1], reverse=True):
+            if weight > 0:
+                logger.info(f"  🎯 {factor_name}: {weight:.1%}")
+        
+        return final_weights
     
     def _collect_factor_ic_stats(
         self, 

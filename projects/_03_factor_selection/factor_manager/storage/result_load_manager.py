@@ -1,4 +1,9 @@
 import json
+from pathlib import Path
+
+import  pandas as pd
+
+from quant_lib.evaluation import calculate_forward_returns_c2c
 
 
 #ic_series_processed_60d.parquet
@@ -27,16 +32,44 @@ def load_ic_stats(json:json=None,is_raw_factor:bool=False):
         subfix='_raw'
     ic_stas =json.get(f'ic_analysis{subfix}')
     return ic_stas
-
 class ResultLoadManager:
-    main_work_path='D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
-    #D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\
-    # 000906\volatility_90d\c2c\20190328_20231231
-    #多periods
-    def get_ic_stats_from_local(self,  stock_pool_name,factor_name,calcu_type='c2c',version='20190328_20231231',core_eveluation_type='ic',is_raw_factor:bool=False):
-        path = self.main_work_path + f'/{stock_pool_name}/{factor_name}/{calcu_type}/{version}'
-        ret = load_summary_stats(path+'/summary_stats.json')
-        ic_stas = load_ic_stats(ret,is_raw_factor)
+    def __init__(self, calcu_type='c2c', version='20190328_20231231',
+                 core_eveluation_type='ic', is_raw_factor: bool=False):
+        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
+        self.calcu_type = calcu_type
+        self.version = version
+        self.core_eveluation_type = core_eveluation_type
+        self.is_raw_factor = is_raw_factor
+
+    def get_ic_stats_from_local(self, stock_pool_name, factor_name):
+        path = self.get_factor_self_path(stock_pool_name, factor_name)
+        ret = load_summary_stats(path / "summary_stats.json")
+        ic_stas = load_ic_stats(ret, self.is_raw_factor)
         return ic_stas
+
+    def get_factor_data(self, factor_name, stock_pool_name, start_date, end_date):
+        if self.is_raw_factor:
+            raise ValueError('暂不支持raw因子数据')
+        factor_self_path = self.get_factor_self_path(stock_pool_name, factor_name)
+        df = pd.read_parquet(factor_self_path / "processed_factor.parquet")
+        df.index = pd.to_datetime(df.index)
+        df = df.loc[start_date:end_date]
+        return df
+
+    def get_return_data(self, stock_pool_name,start_date, end_date, period_days):
+        path = self.main_work_path / stock_pool_name /'close_hfq'/ self.version / 'close_hfq.parquet'
+        df =pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        returns = calculate_forward_returns_c2c(period=period_days, close_df=df)
+        #过滤时间"
+        returns = returns.loc[start_date:end_date]
+
+        return returns
+
+    def get_factor_self_path(self, stock_pool_name, factor_name):
+        return self.main_work_path / stock_pool_name / factor_name / self.calcu_type / self.version
+
 if __name__ == '__main__':
-    ResultLoadManager().get_ic_stats_from_local('000906','volatility_90d','c2c','20190328_20231231','ic',False)
+    manager = ResultLoadManager()
+    # manager.get_factor_data('volatility_90d','000906', '20190328', '20231231')
+    manager.get_return_data( '000906','20230601', '20240710', 1)
