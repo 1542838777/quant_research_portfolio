@@ -203,8 +203,8 @@ class FactorAnalyzer:
             raise RuntimeError("config 没有传递过来！")
         self.factor_manager = factor_manager
         data_manager = factor_manager.data_manager
-        if self.factor_manager.data_manager is None or 'close_hfq' not in self.factor_manager.data_manager.raw_dfs:
-            raise ValueError('close的df是必须的，请写入！')
+        if self.factor_manager.data_manager is None :
+            raise ValueError('self.factor_manager.data_manager is None！')
 
         config = data_manager.config
         self.config = data_manager.config

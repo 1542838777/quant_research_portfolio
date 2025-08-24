@@ -58,6 +58,7 @@ class StrategyFactory:
 
         # 加载配置
         self.config = _load_local_config_functional(config_path)
+        self.experiments_path =  'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\factory\\experiments.yaml'
         self.config_path = config_path
 
         # 初始化核心组件
@@ -110,7 +111,7 @@ class StrategyFactory:
             dir_path.mkdir(parents=True, exist_ok=True)
 
         # 数据管理器
-        self.data_manager = DataManager(self.config_path)
+        self.data_manager = DataManager(self.config_path,self.experiments_path)
 
         # 因子管理器
         registry_path = self.workspace_dir / "factor_registry.json"
