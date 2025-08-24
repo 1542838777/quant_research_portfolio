@@ -14,8 +14,6 @@ sys.path.insert(0, str(project_root))
 
 from utils.file_utils import update_json_file
 
-from utils.file_utils import update_json_file
-
 
 # 现在可以导入utils模块
 def add_single_factor_test_result(filepath, new_data):

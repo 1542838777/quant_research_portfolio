@@ -21,6 +21,7 @@ from pathlib import Path
 import warnings
 
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
+from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -136,8 +137,14 @@ class ICWeightCalculator:
         if len(period_scores) == 1:
             return period_scores[0]
         else:
-            # 短期(5d)权重60%，中期(21d)权重40%
-            weights = [0.6, 0.4][:len(period_scores)]
+            # --- 改进的加权方案 ---
+            # 使用指数衰减权重，给短期更高权重，但依然考虑所有周期
+            # decay_rate 越小，权重衰减越慢
+            decay_rate = 0.75
+            weights = np.array([decay_rate ** i for i in range(len(period_scores))])
+            weights /= weights.sum()  # 权重归一化
+
+            logger.debug(f"  多周期权重 (从1d到120d): {[f'{w:.2f}' for w in weights]}")
             return np.average(period_scores, weights=weights)
     
     def _convert_scores_to_weights(self, factor_scores: Dict[str, float]) -> Dict[str, float]:
@@ -260,7 +267,6 @@ class FactorQualityFilter:
         # 质量评估
         risk_flags = []
         selection_reason = ""
-        
         if avg_ic_mean < self.config.min_ic_mean:
             risk_flags.append(f"IC均值过低({avg_ic_mean:.3f})")
         if avg_ic_ir < self.config.min_ic_ir:
@@ -418,22 +424,14 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         """从保存的测试结果中加载IC统计数据"""
         try:
             # 构建结果文件路径 (基于你现有的保存逻辑)
-            from projects._03_factor_selection.factor_manager.storage.result_storage import ResultStorage
-            
-            storage = ResultStorage(self.factor_manager.data_manager.config)
-            
-            # 加载因子测试结果
-            result_data = storage.load_factor_result(factor_name, stock_pool_name)
-            
-            if result_data and 'ic_stats' in result_data:
-                return result_data['ic_stats']
-            else:
-                return None
-                
+            from projects._03_factor_selection.factor_manager.storage import ResultStorage
+            stats= ResultLoadManager.get_ic_stats_from_local( stock_pool_name,factor_name)
+
+            if stats is None:
+                raise ValueError("未找到IC统计数据")
         except Exception as e:
-            logger.debug(f"加载{factor_name}的IC数据失败: {e}")
-            return None
-    
+            raise ValueError(f"加载{factor_name}的IC数据失败: {e}")
+
     def _execute_weighted_synthesis(
         self,
         composite_factor_name: str,
@@ -450,7 +448,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             logger.info(f"  🔄 处理因子: {factor_name} (权重: {weight:.3f})")
             
             # 处理单个因子
-            processed_df = self.process_sub_factor(factor_name, stock_pool_index_name)
+            processed_df = self.get_pre_processed_sub_factor_df(factor_name, stock_pool_index_name)
             
             processed_factors.append(processed_df)
             weights_list.append(weight)
