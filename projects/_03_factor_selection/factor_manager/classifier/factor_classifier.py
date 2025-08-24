@@ -374,9 +374,9 @@ class FactorClassifier:
         return cls._match(
             name=factor_name,
             exact=['industry'],
-            prefixes=['industry_']
+            prefixes=['industry_'],
+            keywords=['sw_l1', 'sw_l2']  # 🔑 新增：关键字匹配
         )
-
     @classmethod
     def is_beta_factor(cls, factor_name: str) -> bool:
         """判断是否为Beta类因子 (使用正则，更精确)"""

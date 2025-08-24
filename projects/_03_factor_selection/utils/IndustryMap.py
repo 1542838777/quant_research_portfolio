@@ -57,7 +57,10 @@ class PointInTimeIndustryMap:
         # 使用二分查找找到正确的事件日索引
         # bisect_right 会找到 query_date 应该插入的位置
         # 它之前的那个事件日，就是我们需要的快照日期
-        idx = bisect_right(self._event_dates, query_date) #event_Dates 间隔就是静态的日期，现在 需要查询query_date 位于哪段时间，返回query_date 左侧最接近的event_Date 就是我们这段时期的start。直接取用整个静态的结果！（但是这个函数返回的是目标query_date的索引，所以我们需要-1 才是左侧最接近event_date的start
+        idx = bisect_right(self._event_dates, query_date)
+        #_event_dates:快照起始日：  快照起始日0101 快照起始日0104 . 快照起始日（0110）
+        #query_date（0110）
+        #return idx:3 这个索引上的快照起始日，是query_Date无法触摸的坎 so后面-1
 
         if idx == 0:
             # 如果查询日期比最早的事件日还早
@@ -74,6 +77,7 @@ def get_industry_record_df_processed():
 
     # 按 ts_code + in_date + out_date 排序，NaT 默认在最后
     df = df.sort_values(by=['ts_code', 'in_date', 'out_date'])
+
 
     # 分组处理
     def resolve_timeline_conflicts(group: pd.DataFrame) -> pd.DataFrame:
@@ -110,4 +114,11 @@ def get_industry_record_df_processed():
     df=df.drop_duplicates(subset=['ts_code', 'in_date', 'out_date'], keep='first', inplace=False)
 
     return df.reset_index(drop=True)
+def _simple_insdustry_record():
+    ret = get_industry_record_df_processed()
+    mask = (ret['in_date'] >= pd.to_datetime('2022-01-01') )&  (ret['out_date'] <= pd.to_datetime('2024-12-31'))
+    ret = ret[mask]
+    ret = ret[ret['ts_code'].isin(['301217.SZ','688592.SH'])]
+    ret = ret.sort_values(by=['ts_code', 'in_date', 'out_date'])
 
+    return ret

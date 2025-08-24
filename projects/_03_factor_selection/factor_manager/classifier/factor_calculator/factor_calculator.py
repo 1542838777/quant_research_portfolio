@@ -5,7 +5,10 @@ import pandas as pd
 import pandas_ta as ta
 
 from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
-    load_balancesheet_df, load_dividend_events_long, load_fina_indicator_df
+    load_balancesheet_df, load_fina_indicator_df
+from projects._03_factor_selection.factor_manager.classifier.factor_calculator.momentum.sw_factor import \
+    IndustryMomentumFactor
+from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
 from projects._03_factor_selection.utils.date.trade_date_utils import map_ann_dates_to_tradable_dates
 from quant_lib import logger
 
@@ -844,7 +847,15 @@ class FactorCalculator:
         market_pct_chg.name = index_code
 
         return market_pct_chg
+    #分类 行业~~~
+    def _calculate_sw_l1_momentum_21d(self, pointInTimeIndustryMap: PointInTimeIndustryMap):
+        fa = IndustryMomentumFactor(pointInTimeIndustryMap)
+        ret = fa.compute(self.factor_manager.data_manager._prebuffer_trading_dates, 'l1_code')
+        return ret
     #伞兵函数 共一个将使用 没啥复用意义，只是清晰而已，
+
+
+
     def _calculate_earnings_surprise_numerator(self) -> pd.DataFrame:
         """
         【V3.0 - 核心组件】计算盈利意外的分子 (TTM归母净利同比变动额)。
@@ -1266,6 +1277,7 @@ class FactorCalculator:
         close_hfq = self.factor_manager.get_raw_factor('close_hfq').copy(deep=True)
         ret  = close_hfq.pct_change()
         return  ret
+
 
     #daily_hfq亲测 后复权的close是可用的，因为涨跌幅跟聚宽一模一样！ 我们直接用，不需要下面这样复杂的计算！
     # #ok 对的上daily的pct_chg字段（ pct_chg, float, 涨跌幅【基于除权后的昨收计算的涨跌幅：（今收-除权昨收）/除权昨收

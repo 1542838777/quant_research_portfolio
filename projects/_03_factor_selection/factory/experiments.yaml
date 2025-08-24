@@ -121,7 +121,9 @@
 #- factor_name: 'large_trade_ratio_10d'
 #  stock_pool_name: 'ZZ800'
 
-
+##行业
+#- factor_name: 'sw_l1_momentum_21d'
+#  stock_pool_name: 'ZZ800'
 
 
 
@@ -132,38 +134,8 @@
 #-----------------------模板2
 
  ##linshi1
-
-
-- factor_name: 'turnover_rate_monthly_mean'
+- factor_name: 'sw_l1_momentum_21d'
   stock_pool_name: 'ZZ800'
-
-
-- factor_name: 'ln_turnover_value_90d'
-  stock_pool_name: 'ZZ800'
-
-
-
-- factor_name: 'volatility_120d'
-  stock_pool_name: 'ZZ800'
-
-- factor_name: 'volatility_90d'
-  stock_pool_name: 'ZZ800'
-
-
-
-- factor_name: 'volatility_40d'
-  stock_pool_name: 'ZZ800'
-
-
-
-
-
-- factor_name: 'rsi'
-  stock_pool_name: 'ZZ800'
-
-- factor_name: 'cci'
-  stock_pool_name: 'ZZ800'
-
 
 #- factor_name: 'value_composite'
 #  stock_pool_name: 'ZZ800'

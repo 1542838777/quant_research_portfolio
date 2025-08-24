@@ -13,6 +13,36 @@ def load_index_daily(index_code):
     # set_index() 也将创建一个 DatetimeIndex，这对于时间序列分析至关重要
     index_df = index_daily.sort_values(by='trade_date').set_index('trade_date')
     return index_df
+
+
+
+def load_sw_l_n_codes(l_n:str):#'一级行业指数'
+    if l_n is None:
+        raise ValueError("load_sw_l_n_codes 参数不能为空")
+    if l_n=='l1_code':
+        category='一级行业指数'
+    if l_n=='l2_code':
+        raise  ValueError("sw_daily.parquet暂时只有l1数据 ，请下载保存！")
+
+    ret = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'index_basic.parquet')
+    ret = ret[ret['category']== category]
+    return ret['ts_code']
+#ok
+def load_sw_l_n_daily(ln_code:str):
+    l_n_codes = ['l1_code','l2_code']
+    if ln_code   not in l_n_codes:
+        raise ValueError(f'load_sw_l_n_daily传入l_n_code有问题-->{ln_code}')
+    ts_codes = load_sw_l_n_codes(ln_code)
+    sw_daily = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'sw_daily.parquet')
+    sw_daily = sw_daily[sw_daily['ts_code'].isin(ts_codes)]
+    sw_daily['trade_date'] = pd.to_datetime(sw_daily['trade_date'])
+    #改名！
+    sw_daily = sw_daily.rename(columns={'ts_code':ln_code})
+    # 保留 trade_date 列，同时把它作为索引
+    index_df = sw_daily.sort_values([ln_code, 'trade_date']).set_index('trade_date', drop=False)
+    return index_df
+
+
 def load_trading_lists(start,end):
     # 获取该年度所有交易日
     trade_cal = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'trade_cal.parquet')

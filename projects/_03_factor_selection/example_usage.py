@@ -17,6 +17,7 @@ from typing import Dict
 
 from data.local_data_load import load_suspend_d_df, load_dividend_events_long
 from projects._03_factor_selection.data_manager.data_manager import DataManager
+from projects._03_factor_selection.factor_manager.classifier.factor_classifier import FactorClassifier
 from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from projects._03_factor_selection.factor_manager.registry.factor_registry import FactorCategory

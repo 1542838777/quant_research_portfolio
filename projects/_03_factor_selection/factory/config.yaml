@@ -544,7 +544,14 @@ factor_definition:
     time_alignment: 'shift'
     cal_require_base_fields: [ 'pct_chg', 'amount' ]
     cal_require_base_fields_from_daily: False
-
+  # === 行业~~~  ===
+  - name: 'sw_l1_momentum_21d'
+    style_category: 'sw_industry'
+    description: ' 板块轮动效应。买入近期表现强势的行业中的股票。'
+    action: 'technical_calcu'
+    time_alignment: 'shift'
+    cal_require_base_fields: [ 'sw_close' ]
+    cal_require_base_fields_from_daily: False
 
   # === 质量类深化 (Advanced Quality) - 源于财报，应为 pre_aligned ===
   - name: 'operating_accruals'

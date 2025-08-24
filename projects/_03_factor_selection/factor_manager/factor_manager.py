@@ -261,6 +261,8 @@ class FactorManager:
             elif factor_name in ['close_hfq_filled', 'open_hfq_filled', 'high_hfq_filled',
                                  'low_hfq_filled']:  # 元凶 这里 if 导致 命中下一个else
                 params = {'limit': factor_request[1]}
+            elif factor_name in ['sw_l1_momentum_21d']:
+                params = {'pointInTimeIndustryMap': factor_request[1]}
             # 未来可以扩展到其他因子，如 'momentum'
             # elif factor_name == 'momentum':
             #     params = {'window': factor_request[1]}
@@ -910,7 +912,7 @@ class FactorManager:
     #     )
     # 鉴于部分因子，必须传递参数！ 这里强加判断！ ，没有传递参数，我们尽可能补充上
     def check_and_return_right_request(self, factor_request, stock_pool_index_name):
-        must_need_params = ['beta']
+        must_need_params = ['beta','sw_l1_momentum_21d']
         REQUEST = None
         # 如果是str类型， 判断是否必要加传参数 不加的话 直接return，
         # 如果是元组类型。   判断是否已有参数 有 直接return
@@ -928,6 +930,9 @@ class FactorManager:
         if factor_request == 'beta':
             REQUEST = ('beta',
                        self.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name))
+        if factor_request == 'sw_l1_momentum_21d':
+            REQUEST = ('sw_l1_momentum_21d',
+                       self.data_manager.pit_map)
         return REQUEST
 
     @staticmethod

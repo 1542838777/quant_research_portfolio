@@ -36,6 +36,14 @@ def get_year_end(year):
         return '20250711'
     return f'{year}1231'
 
+def get_all_industry_l_n_codes(category:str='一级行业指数'):
+    ret = call_pro_tushare_api('index_basic',market='SW')
+    ret = ret[ret['category']== category]
+    return ret['ts_code']
+def download_sw_basic_info():
+    ret = call_pro_tushare_api('index_basic',market='SW')
+    ret.to_parquet(LOCAL_PARQUET_DATA_DIR / 'sw_basic_info.parquet')
+    print("保存完成")
 
 def download_index_weights():
     """下载指数成分股历史数据"""
@@ -278,7 +286,30 @@ def download_balancesheet(name='资产负债表'):
     else:
         print(f"{name}已存在，跳过下载。")
 
+def download_sw_daily(name='sw日线行情'):
+    basic_path = LOCAL_PARQUET_DATA_DIR / 'sw_daily.parquet'
+    if not basic_path.exists():
+        print(f"--- 正在下载{name}信息 ---")
+        l1_codes = get_all_industry_l_n_codes()
+        # 2. 循环获取每个行业的日线行情
+        all_industry_daily = []
+        for code in l1_codes:  #
+            df = call_pro_tushare_api('sw_daily', ts_code=code, start_date='20100711', end_date='20250711')
+            all_industry_daily.append(df)
 
+        industry_daily_df = pd.concat(all_industry_daily)
+
+        industry_daily_df['trade_date'] = pd.to_datetime(industry_daily_df['trade_date'])
+        industry_daily_df = industry_daily_df.sort_values(['ts_code', 'trade_date'])
+        industry_daily_df = industry_daily_df.drop_duplicates(subset=['ts_code', 'trade_date'], inplace=False)
+
+        # 4. 格式化输出，方便后续合并
+        # **注意：这里的行业代码格式是 801010.SI，需要处理成 801010 以便和你的映射工具对齐**
+        # industry_daily_df['l1_code'] = industry_daily_df['ts_code'].str.split('.').str[0]
+        industry_daily_df.to_parquet(basic_path)
+        print(f'{name}保存完毕')
+    else:
+        print(f"{name}已存在，跳过下载。")
 def get_all_stock_basic_from_api():
     stock_list = call_pro_tushare_api("stock_basic", list_status='L,D,P', fields='ts_code')['ts_code'].tolist()
     return  stock_list

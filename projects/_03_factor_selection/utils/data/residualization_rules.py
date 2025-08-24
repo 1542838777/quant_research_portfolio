@@ -153,7 +153,7 @@ def _need_residualization_by_category(style_category: str, factor_name: str) -> 
         return _is_high_autocorr_momentum_factor(factor_name)
     elif category == 'risk':
         return _is_high_autocorr_risk_factor(factor_name)
-    elif category in ['value', 'quality', 'growth', 'size','return','event','market_microstructure','money_flow']:
+    elif category in ['value', 'quality', 'growth', 'size','return','event','market_microstructure','money_flow','sw_industry']:
         # 对于明确不需要的类别，直接返回False
         return False
     else:
