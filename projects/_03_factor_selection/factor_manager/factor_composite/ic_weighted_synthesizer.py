@@ -399,8 +399,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         candidate_factor_names: List[str],
         stock_pool_index_name: str,
         calculation_date: str,
-        factor_data_source=None,
-        return_data_source=None
+        resultLoadManager: ResultLoadManager
     ) -> Dict[str, float]:
         """
         滚动权重计算 - 核心改进：完全避免前视偏差
@@ -432,23 +431,17 @@ class ICWeightedSynthesizer(FactorSynthesizer):
                     historical_ic_stats[factor_name] = latest_snapshot.ic_stats
                     logger.debug(f"  ✅ {factor_name}: 获取历史IC @ {calculation_date}")
                 else:
-                    # 如果没有现成的快照，需要实时计算（但仅使用历史数据）
-                    if factor_data_source and return_data_source:
-                        snapshot = self.rolling_ic_manager._calculate_ic_snapshot(
-                            factor_name, stock_pool_index_name, calculation_date,
-                            factor_data_source, return_data_source
-                        )
-                        
-                        if snapshot and snapshot.ic_stats:
-                            historical_ic_stats[factor_name] = snapshot.ic_stats
-                            # 保存快照以供后续使用
-                            self.rolling_ic_manager._save_snapshot(snapshot)
-                            logger.debug(f"  🔄 {factor_name}: 实时计算IC @ {calculation_date}")
-                        else:
-                            logger.warning(f"  ❌ {factor_name}: 无法计算历史IC")
+                    snapshot = self.rolling_ic_manager._calculate_ic_snapshot(
+                        factor_name, stock_pool_index_name, calculation_date,
+                        resultLoadManager
+                    )
+                    if snapshot and snapshot.ic_stats:
+                        historical_ic_stats[factor_name] = snapshot.ic_stats
+                        # 保存快照以供后续使用
+                        self.rolling_ic_manager._save_snapshot(snapshot)
+                        logger.debug(f"  🔄 {factor_name}: 实时计算IC @ {calculation_date}")
                     else:
-                        logger.warning(f"  ⚠️ {factor_name}: 缺少数据源，跳过")
-                        
+                        logger.warning(f"  ❌ {factor_name}: 无法计算历史IC--正常：因为不满足120个观测点！")
             except Exception as e:
                 logger.error(f"  ❌ {factor_name}: IC获取失败 - {e}")
                 continue
