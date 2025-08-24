@@ -125,7 +125,7 @@ class FactorProcessor:
             logger.info("2. 跳过标准化处理...")
 
         # 统计处理结果
-        FactorManager._validate_data_quality(factor_df_shifted, processed_target_factor_df,'预处理完之后：')
+        FactorManager._validate_data_quality(processed_target_factor_df ,target_factor_name,'预处理完之后：')
 
         return processed_target_factor_df
 

@@ -63,11 +63,11 @@ def need_residualization_in_neutral_processing(factor_name: str, style_category:
     Returns:
         bool: 是否需要残差化
     """
-    
-    # 方案一：基于因子名称的精确匹配（优先级最高）
-    if factor_name in get_residualization_factor_whitelist():
-        logger.debug(f"✅ {factor_name}: 在残差化白名单中")
-        return True
+    #
+    # # 方案一：基于因子名称的精确匹配（优先级最高）
+    # if factor_name in get_residualization_factor_whitelist():
+    #     logger.debug(f"✅ {factor_name}: 在残差化白名单中")
+    #     return True
 
     #先注释调。 我自己强保证！
     # # 方案二：基于因子名称模式匹配
@@ -80,7 +80,7 @@ def need_residualization_in_neutral_processing(factor_name: str, style_category:
         logger.debug(f"✅ {factor_name}: 基于类别({style_category})需要残差化")
         return True
     
-    logger.debug(f"❌ {factor_name}: 不需要残差化")
+    logger.debug(f"❌ {factor_name}:基于类别({style_category}) 不需要残差化")
     return False
 
 
@@ -165,9 +165,7 @@ def _is_high_autocorr_liquidity_factor(factor_name: str) -> bool:
     """
     # 需要残差化的流动性因子
     high_autocorr_liquidity = {
-        'turnover_rate_90d_mean',
-        'turnover_rate_monthly_mean', 
-        'ln_turnover_value_90d'
+
     }
     
     # 不需要残差化的流动性因子
@@ -175,6 +173,10 @@ def _is_high_autocorr_liquidity_factor(factor_name: str) -> bool:
         'amihud_liquidity',    # Amihud流动性的绝对水平很重要
         'turnover_rate',       # 单日换手率波动本身就大
         'turnover_t1_div_t20d_avg',       # 单日换手率波动本身就大
+        #亲测下面残差后表现极差！
+        'turnover_rate_90d_mean', # 如果残差：-0.05315123787885707 --->-0.01433680051466378  10d     如果不做残差化直接中性化：-0.04663723878250377
+        'turnover_rate_monthly_mean',#如果残差：-0.031346797401695686  -0.006203743313116326
+        'ln_turnover_value_90d'#如果残差：-0.028998347667171864   -0.018800373908799514
     }
     
     if factor_name in high_autocorr_liquidity:
@@ -194,13 +196,13 @@ def _is_high_autocorr_sentiment_factor(factor_name: str) -> bool:
     """
     # 需要残差化的因子
     high_autocorr = {
-        'cci',
-        'rsi'
+
     }
 
     # 不需要残差化的因子
     low_autocorr = {
-
+        'rsi',  # 原先经过残差化   -0.017846921724055536,-0.008593362640905006
+        'cci',  # 原先经过残差化  -0.017931541610051054,-0.007463005120771512
     }
 
     if factor_name in high_autocorr:
@@ -217,10 +219,12 @@ def _is_high_autocorr_sentiment_factor(factor_name: str) -> bool:
 def _is_high_autocorr_technical_factor(factor_name: str) -> bool:
     """判断是否为高自相关的技术指标因子"""
     high_autocorr = {
-        'rsi', 'cci', 'macd_signal', # MACD的信号线通常较平滑
+      'macd_signal', # MACD的信号线通常较平滑
     }
     low_autocorr = {
         'macd_hist', # MACD的柱状图本身就是差异，波动大
+
+
     }
     if factor_name in high_autocorr:
         return True
@@ -233,15 +237,18 @@ def _is_high_autocorr_risk_factor(factor_name: str) -> bool:
     """判断是否为高自相关的风险因子"""
     # 当波动率作为Alpha因子（低波异象）时，我们关心其“异常变化”，因此需要残差化。
     high_autocorr = {
-        'volatility_120d',
-        'volatility_90d',
-        'volatility_60d',
-        'volatility_40d',
-        'volatility_20d',
+
     }
     # Beta的绝对水平是核心，代表系统风险敞口，不应残差化。
     low_autocorr = {
         'beta',
+        'volatility_120d',# 原先经过残差化 -0.04437990893204699,-0.010864010877199395
+
+        'volatility_90d',# 原先经过残差化 -0.06692222000796344,-0.010442950337841927
+      
+
+        'volatility_40d', # 原先经过残差化：-0.05480784268382542 -0.0025366013058551106
+        'volatility_20d',
     }
     if factor_name in high_autocorr:
         return True
@@ -331,7 +338,7 @@ if __name__ == "__main__":
     # 测试一些因子
     test_factors = [
         ('turnover_rate_90d_mean', 'liquidity'),
-        ('rsi', 'sentiment'), 
+        ('rsi', 'sentiment'),
         ('bm_ratio', 'value'),
         ('volatility_90d', 'risk'),
         ('turnover_t1_div_t20d_avg', 'liquidity'),
