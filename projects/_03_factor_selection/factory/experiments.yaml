@@ -134,11 +134,35 @@
  ##linshi1
 
 
-- factor_name: 'turnover_rate_90d_mean'
+- factor_name: 'turnover_rate_monthly_mean'
+  stock_pool_name: 'ZZ800'
+
+
+- factor_name: 'ln_turnover_value_90d'
   stock_pool_name: 'ZZ800'
 
 
 
+- factor_name: 'volatility_120d'
+  stock_pool_name: 'ZZ800'
+
+- factor_name: 'volatility_90d'
+  stock_pool_name: 'ZZ800'
+
+
+
+- factor_name: 'volatility_40d'
+  stock_pool_name: 'ZZ800'
+
+
+
+
+
+- factor_name: 'rsi'
+  stock_pool_name: 'ZZ800'
+
+- factor_name: 'cci'
+  stock_pool_name: 'ZZ800'
 
 
 #- factor_name: 'value_composite'

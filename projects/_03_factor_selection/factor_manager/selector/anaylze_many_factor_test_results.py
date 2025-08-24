@@ -1,6 +1,5 @@
 import pandas as pd
 
-from projects._03_factor_selection.factor_manager.selector.factor_selector import FactorSelector
 
 
 def choose_top_n_factors():

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import warnings
 
-from projects._03_factor_selection.factor_manager.factor_composite.factors_composite import FactorSynthesizer
+from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)

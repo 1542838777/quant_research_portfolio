@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from data.local_data_load import load_trading_lists
-from projects._03_factor_selection.config.base_config import INDEX_CODES
+from projects._03_factor_selection.config.base_config import INDEX_CODES_for_tushare
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
@@ -20,7 +20,13 @@ from quant_lib.utils.report_date import get_reporting_period_day_list
 START_YEAR = 2018
 END_YEAR = datetime.now().year
 BATCH_SIZE = 20
-
+INDEX_CODES_for_tushare = {
+    "HS300": "000300",     # 沪深300
+    "ZZ500": "000905",     # 中证500
+    "ZZ800": "000906",     # 中证800
+    "ZZ1000": "000852",    # 中证1000
+    'ZZ_ALL': "000985",    #中证全指
+}
 
 # --- 3. 辅助函数 ---
 def get_year_end(year):
@@ -37,15 +43,15 @@ def download_index_weights():
     print("\n===== 开始下载指数成分股数据 =====")
 
     # 常用指数列表
-    index_codes = [
+    INDEX_CODES_for_tushare = [
         '000300.SH',  # 沪深300
         '000905.SH',  # 中证500
         '000906.SH',  # 中证800
         '000852.SH',  # 中证1000
-        'ALL_A'#所有大A
+        '000985.SH'#所有大A
     ]
 
-    for index_code in index_codes:
+    for index_code in INDEX_CODES_for_tushare:
         index_path = LOCAL_PARQUET_DATA_DIR / 'index_weights' / f"{index_code.replace('.', '_')}"
 
         for year in range(START_YEAR, END_YEAR + 1):
@@ -108,7 +114,7 @@ def download_index_daily_info():
     """获取上证指数日线数据"""
     print("\n===== 开始下载指数成分股数据 =====")
     all = []
-    for index_code_key,value in INDEX_CODES.items():
+    for index_code_key,value in INDEX_CODES_for_tushare.items():
         final_df = call_pro_tushare_api('index_daily', ts_code=value, start_date='20100101', end_date='20250711')
         all.append(final_df)
     path = LOCAL_PARQUET_DATA_DIR / 'index_daily.parquet'
