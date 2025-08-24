@@ -10,7 +10,6 @@ import pandas as pd
 from tqdm import tqdm
 
 from data.local_data_load import load_trading_lists
-from projects._03_factor_selection.config.base_config import INDEX_CODES_for_tushare
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api, call_ts_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient

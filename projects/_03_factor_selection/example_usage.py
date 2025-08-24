@@ -222,28 +222,19 @@ def verify_data(factor_manager):
 def main():
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
-
-    # 【修复】使用绝对路径避免工作目录问题
     current_dir = Path(__file__).parent
-    config_path = current_dir / 'factory' / 'config.yaml'
-    experiments_path = current_dir / 'factory' / 'experiments.yaml'
-    data_manager = DataManager(config_path=str(config_path), experiments_config_path=str(experiments_path))
+    data_manager = DataManager(config_path=str(current_dir / 'factory' / 'config.yaml'), experiments_config_path=str(current_dir / 'factory' / 'experiments.yaml'))
     data_manager.prepare_basic_data()
     factor_manager = FactorManager(data_manager)
 
-    # 【修复】使用正式的缓存清理方法
-    logger.info("!!! 正在执行“硬重启”：强制清理因子缓存...")
+    # 使用正式的缓存清理方法
     factor_manager.clear_cache()
 
-    # 3. 创建示例因子
-    logger.info("3. 创建目标学术因子...")
     factor_analyzer = FactorAnalyzer(factor_manager=factor_manager )
 
     # 6. 批量测试因子
-    logger.info("5. 批量测试因子...")
     #读取 实验文件，获取需要做的实验
     experiments_df = data_manager.get_experiments_df()
-    logger.info(f"发现 {len(experiments_df)} 个实验配置")
 
     # 批量测试
     results = []
@@ -271,36 +262,6 @@ def main():
 
     log_success(f"✓ 批量测试完成，成功测试 {len(results)} 个因子")
     return results
-    # batch_results = factor_analyzer.batch_test_factors(
-    #     target_factors_dict=target_factors_dict
-    # )
-
-    #
-    # # 11. 多因子优化
-    # print("\n10. 多因子优化...")
-    # try:
-    #     optimized_factor = factory.optimize_factors(
-    #         factor_data_dict=target_factors_dict,
-    #         intra_method='ic_weighted',
-    #         cross_method='max_diversification'
-    #     )
-    #     print(f"✓ 多因子优化完成，生成最终因子: {optimized_factor.shape}")
-    # except Exception as e:
-    #     print(f"✗ 多因子优化失败: {e}")
-    #
-    # # 12. 导出结果
-    # print("\n11. 导出结果...")
-    # try:
-    #     exported_files = factory.export_results()
-    #     print("✓ 结果导出完成:")
-    #     for file_type, file_path in exported_files.items():
-    #         print(f"  {file_type}: {file_path}")
-    # except Exception as e:
-    #     print(f"✗ 结果导出失败: {e}")
-
-    print("\n" + "=" * 80)
-    print("演示完成!")
-    print("=" * 80)
 
 
 def verify_adj_factor(factor_manager, ts_code_to_check: str, ex_date_to_check: str):
