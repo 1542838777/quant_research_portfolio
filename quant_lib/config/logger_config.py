@@ -7,7 +7,7 @@ from quant_lib.config.symbols_constants import SUCCESS, WARNING, FAIL, RUNNING
 
 def setup_logger(
         name: str = None,
-        console_level: str = 'INFO',
+        console_level: str = 'DEBUG',
         log_dir: str = 'logs',
         file_level: str = 'DEBUG'
 ) -> logging.Logger:

@@ -623,7 +623,7 @@ factor_definition:
     description: '利用log_circ_mv'
     action: 'composite_by_rolling_ic'
     time_alignment: None # 合成因子，也不会用到这个字段，所以随便写
-    cal_require_base_fields: [ 'log_circ_mv' ]
+    cal_require_base_fields: [ 'log_circ_mv','volatility_40d' ]
     cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
 
 

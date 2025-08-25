@@ -15,7 +15,6 @@ import json
 
 from ..config.config_file.load_config_file import _load_local_config_functional
 from ..factor_manager.factor_manager import FactorManager
-from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from ..factor_manager.registry.factor_registry import FactorCategory
 from ..multi_factor_optimizer.multi_factor_optimizer import MultiFactorOptimizer
 from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool

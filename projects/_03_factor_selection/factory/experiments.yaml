@@ -134,9 +134,9 @@
 #-----------------------模板2
 
  ##linshi1
-#- factor_name: 'large_trade_ratio_10d'
+#- factor_name: 'volatility_40d'
 #  stock_pool_name: 'ZZ800'
 
-- factor_name: 'my_composite'
+- factor_name: 'log_circ_mv'
   stock_pool_name: 'ZZ800'
 

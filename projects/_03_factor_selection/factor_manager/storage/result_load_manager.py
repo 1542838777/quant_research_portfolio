@@ -33,12 +33,12 @@ def load_ic_stats(json:json=None,is_raw_factor:bool=False):
     ic_stas =json.get(f'ic_analysis{subfix}')
     return ic_stas
 class ResultLoadManager:
-    def __init__(self, calcu_return_type='c2c', version='20190328_20231231',
-                 core_eveluation_type='ic', is_raw_factor: bool=False):
+    def __init__(self, calcu_return_type='c2c', version:str=None, is_raw_factor: bool=False):
+        if version is None:
+            raise ValueError('请指定版本')
         self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
         self.calcu_type = calcu_return_type
         self.version = version
-        self.core_eveluation_type = core_eveluation_type
         self.is_raw_factor = is_raw_factor
     #严禁使用！这是整体的ic。整个周期的（严重未来寒函数
     # def get_ic_stats_from_local(self, stock_pool_index, factor_name):

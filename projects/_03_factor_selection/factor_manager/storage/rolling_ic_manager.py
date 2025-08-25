@@ -453,9 +453,9 @@ class RollingICManager:
         logger.info(f"清理完成，删除 {removed_count} 个过期快照")
 
 
-def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config,factor_names ):
+def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor_names):
     manager = ConfigSnapshotManager()
-    pool_index,s,e ,config_evaluation= manager.get_snapshot_config_content_details(snapshot_config)
+    pool_index,s,e ,config_evaluation= manager.get_snapshot_config_content_details(snapshot_config_id)
     version = f'{s}_{e}'
     config = ICCalculationConfig(
         lookback_months=12,
@@ -463,8 +463,8 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config,factor_nam
         min_observations=1,
         calculation_frequency='M'
     )
-    if len(config_evaluation['returns_calculator']) > 1:
-        raise ValueError("目前只支持一个返回计算器 请指定 ")
+    if 'c2c' not in config_evaluation['returns_calculator']:
+        raise ValueError("必须包含c2c ")
     calcu_return_type=config_evaluation['returns_calculator'][0]
     manager = RollingICManager(calcu_return_type, config,version)
 

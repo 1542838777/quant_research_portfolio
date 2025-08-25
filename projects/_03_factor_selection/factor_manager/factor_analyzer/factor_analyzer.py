@@ -1546,11 +1546,8 @@ class FactorAnalyzer:
             = self.prepare_date_for_entity_service(
             factor_name, stock_pool_index_name,his_snap_config_id)
 
-        # 获取eva_data配置，默认测试两种数据状态
-        eva_data_config = self.config.get('evaluation', {}).get('eva_data', ['raw', 'processed'])
         if not is_composite_factor:
             raise ValueError("只支持合成因子的测试")
-        all_configs_results = {}
         return self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,
-                                                                        stock_pool_index_code, test_configurations,
+                                                                        stock_pool_name, test_configurations,
                                                                         start_date, end_date, stock_pool_index_code)

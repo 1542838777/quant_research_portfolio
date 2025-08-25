@@ -19,11 +19,13 @@ from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from pathlib import Path
 import warnings
+import json
 
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
-from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import RollingICManager, \
-    ICCalculationConfig, ICSnapshot
+from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import (
+    RollingICManager, ICCalculationConfig, ICSnapshot, run_cal_and_save_rolling_ic_by_snapshot_config_id
+)
 from projects._03_factor_selection.factory.config_snapshot_manager import ConfigSnapshotManager
 from quant_lib.config.logger_config import setup_logger
 
@@ -34,14 +36,14 @@ logger = setup_logger(__name__)
 class FactorWeightingConfig:
     """因子权重配置"""
     # IC筛选标准
-    min_ic_mean: float = 0.02  # 最小IC均值阈值
-    min_ic_ir: float = 0.3  # 最小IC信息比率阈值
-    min_ic_win_rate: float = 0.50  # 最小IC胜率阈值
+    min_ic_mean: float = 0.015  # 最小IC均值阈值
+    min_ic_ir: float = 0.183  # 最小IC信息比率阈值
+    min_ic_win_rate: float = 0.52  # 最小IC胜率阈值
     max_ic_p_value: float = 0.10  # 最大IC显著性p值
 
     # 权重计算参数
     ic_decay_halflife: int = 60  # IC权重衰减半衰期(天)
-    max_single_weight: float = 0.50  # 单个因子最大权重
+    max_single_weight: float = 0.5  # 单个因子最大权重
     min_single_weight: float = 0.05  # 单个因子最小权重
 
     # 风险控制
@@ -254,7 +256,7 @@ class FactorQualityFilter:
                 risk_flags=["数据不足"]
             )
 
-        # 综合统计
+        # 综合统计 之前对 每个period 用不同的时间进行aver，现在对不同的period进行aver
         avg_ic_mean = np.mean(ic_means)
         avg_ic_ir = np.mean(ic_irs)
         avg_win_rate = np.mean(ic_win_rates)
@@ -322,15 +324,15 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         self.weight_calculator = ICWeightCalculator(self.config)
         self.quality_filter = FactorQualityFilter(self.config)
 
+        # 设置工作路径
+        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
+
         # 滚动IC管理器 - 核心改进
         rolling_ic_config = ICCalculationConfig(
             lookback_months=12,
             forward_periods=self.config.lookback_periods,
             calculation_frequency='M'
         )
-
-        storage_root = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\rolling_ic"
-        self.rolling_ic_manager = RollingICManager(storage_root, rolling_ic_config)
 
         # 缓存IC统计数据，避免重复计算
         self._ic_stats_cache = {}
@@ -386,7 +388,8 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         composite_factor_df = self._execute_weighted_synthesis(
             composite_factor_name,
             stock_pool_index,
-            factor_weights
+            factor_weights,
+            snap_config_id
         )
 
         # 生成合成报告
@@ -523,20 +526,142 @@ class ICWeightedSynthesizer(FactorSynthesizer):
                     logger.warning(f"  ⚠️ {factor_name}: 未找到IC统计数据，跳过")
 
             except Exception as e:
-                logger.error(f"  ❌ {factor_name}: 加载IC数据失败 - {e}")
-                continue
+                raise ValueError(f"  ❌ {factor_name}: 加载IC数据失败 - {e}")
 
         logger.info(f"📊 IC数据收集完成: {len(factor_ic_stats)}/{len(factor_names)} 个因子")
         return factor_ic_stats
 
-    def _load_factor_ic_stats(self, factor_name: str, stock_pool_index: str, calcu_type='c2c', snap_config_id:str=None) -> Optional[Dict]:
-         # todo 应该从calculate_and_store_rolling_ic 函数提取，请你设计 注意文件json内部， 确保下游使用没问题
+    def _load_factor_ic_stats(self, factor_name: str, stock_pool_index: str, calcu_type='c2c', snap_config_id: str = None) -> Optional[Dict]:
+        """
+        从滚动IC存储中提取因子的IC统计数据
+        Args:
+            factor_name: 因子名称
+            stock_pool_index: 股票池索引
+            calcu_type: 收益计算类型，默认'c2c'
+            snap_config_id: 配置快照ID，用于确定版本
+            
+        Returns:
+            Dict[period, ic_stats]: 各周期的IC统计数据，格式与RollingICManager一致
+        """
+        try:
+            if snap_config_id is None:
+                logger.warning(f"未提供snap_config_id，无法确定数据版本")
+                return None
+                
+            # 1. 从配置快照获取版本信息
+            config_manager = ConfigSnapshotManager()
+            pool_index, start_date, end_date, config_evaluation = config_manager.get_snapshot_config_content_details(snap_config_id)
+            version = f"{start_date}_{end_date}"
+            
+            # 2. 构建滚动IC文件路径
+            rolling_ic_dir = (self.main_work_path / stock_pool_index / factor_name / 
+                             calcu_type / version / 'rolling_ic')
+            
+            if not rolling_ic_dir.exists():
+                # 就地生成IC数据并保存到本地
+                logger.info(f"滚动IC目录不存在，开始就地生成: {factor_name}")
+                try:
+                    # 调用生成函数为当前因子生成IC数据
+                    run_cal_and_save_rolling_ic_by_snapshot_config_id(snap_config_id, [factor_name])
+                    logger.info(f"✅ 成功生成滚动IC数据: {factor_name}")
+                    
+                    # 重新检查目录是否存在
+                    if not rolling_ic_dir.exists():
+                        raise ValueError(f"for-{factor_name} 生成IC数据后目录仍不存在: {rolling_ic_dir}")
+                except Exception as e:
+                    raise ValueError(f"生成滚动IC数据失败 {factor_name}: {e}")
+
+            # 3. 查找所有IC快照文件
+            ic_files = list(rolling_ic_dir.glob("ic_snapshot_*.json"))
+            if not ic_files:
+                # 如果目录存在但无文件，可能是IC生成不完整，尝试重新生成
+                logger.warning(f"IC目录存在但无快照文件，尝试重新生成: {factor_name}")
+                try:
+                    run_cal_and_save_rolling_ic_by_snapshot_config_id(snap_config_id, [factor_name])
+                    
+                    # 重新查找文件
+                    ic_files = list(rolling_ic_dir.glob("ic_snapshot_*.json"))
+                    if not ic_files:
+                        raise ValueError(f"重新生成后仍无IC快照文件: {rolling_ic_dir}")
+                    logger.info(f"✅ 重新生成IC数据成功: {factor_name}")
+                except Exception as e:
+                    raise ValueError(f"重新生成IC数据失败 {factor_name}: {e}")
+
+            logger.debug(f"找到 {len(ic_files)} 个IC快照文件 for {factor_name}")
+            
+            # 4. 加载并聚合IC统计数据
+            all_periods_stats = {}
+            
+            for ic_file in ic_files:
+                try:
+                    with open(ic_file, 'r', encoding='utf-8') as f:
+                        snapshot_data = json.load(f)
+                    
+                    # 提取ic_stats字段
+                    ic_stats = snapshot_data.get('ic_stats', {})
+                    
+                    # 聚合各周期的统计数据
+                    for period, period_stats in ic_stats.items():
+                        if period not in all_periods_stats:
+                            all_periods_stats[period] = []
+                        all_periods_stats[period].append(period_stats)
+                        
+                except Exception as e:
+                    logger.warning(f"读取IC文件失败 {ic_file}: {e}")
+                    continue
+            
+            if not all_periods_stats:
+                logger.debug(f"未找到有效的IC统计数据")
+                return None
+            
+            # 5. 计算聚合统计指标
+            aggregated_stats = {}
+            for period, stats_list in all_periods_stats.items():
+                if not stats_list:
+                    continue
+                    
+                # 计算时间序列的平均指标
+                ic_means = [s.get('ic_mean', 0) for s in stats_list if s.get('ic_mean') is not None]
+                ic_stds = [s.get('ic_std', 0) for s in stats_list if s.get('ic_std') is not None]
+                ic_irs = [s.get('ic_ir', 0) for s in stats_list if s.get('ic_ir') is not None]
+                ic_win_rates = [s.get('ic_win_rate', 0.5) for s in stats_list if s.get('ic_win_rate') is not None]
+                ic_p_values = [s.get('ic_p_value', 1.0) for s in stats_list if s.get('ic_p_value') is not None]
+                ic_t_stats = [s.get('ic_t_stat', 0) for s in stats_list if s.get('ic_t_stat') is not None]
+                
+                if not ic_means:
+                    continue
+                
+                # 聚合统计
+                aggregated_stats[period] = {
+                    'ic_mean': np.mean(ic_means),
+                    'ic_std': np.mean(ic_stds) if ic_stds else 0,
+                    'ic_ir': np.mean(ic_irs) if ic_irs else 0,
+                    'ic_win_rate': np.mean(ic_win_rates) if ic_win_rates else 0.5,
+                    'ic_p_value': np.mean(ic_p_values) if ic_p_values else 1.0,
+                    'ic_t_stat': np.mean(ic_t_stats) if ic_t_stats else 0,
+                    'ic_count': len(ic_means),
+                    'snapshot_count': len(stats_list),
+                    'ic_mean_std': np.std(ic_means) if len(ic_means) > 1 else 0,  # IC均值的稳定性
+                    'ic_ir_std': np.std(ic_irs) if len(ic_irs) > 1 else 0  # IR的稳定性
+                }
+            
+            if not aggregated_stats:
+                logger.debug(f"聚合后无有效统计数据")
+                return None
+                
+            logger.debug(f"成功提取因子 {factor_name} 的IC统计: {list(aggregated_stats.keys())} 周期")
+            return aggregated_stats
+            
+        except Exception as e:
+            logger.error(f"加载因子IC统计失败 {factor_name}: {e}")
+            return None
 
     def _execute_weighted_synthesis(
             self,
             composite_factor_name: str,
             stock_pool_index_name: str,
-            factor_weights: Dict[str, float]
+            factor_weights: Dict[str, float],
+            snap_config_id:str
     ) -> pd.DataFrame:
         """执行加权因子合成"""
         logger.info(f"⚖️ 开始执行加权合成，使用{len(factor_weights)}个因子")
@@ -544,11 +669,11 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         processed_factors = []
         weights_list = []
 
-        for factor_name, weight in factor_weights.items():
+        for factor_name, weight in factor_weights.items():#todo 这里
             logger.info(f"  🔄 处理因子: {factor_name} (权重: {weight:.3f})")
 
             # 处理单个因子
-            processed_df = self.get_pre_processed_sub_factor_df(factor_name, stock_pool_index_name)
+            processed_df = self.get_sub_factor_df_from_local(factor_name, stock_pool_index_name,snap_config_id)
 
             processed_factors.append(processed_df)
             weights_list.append(weight)

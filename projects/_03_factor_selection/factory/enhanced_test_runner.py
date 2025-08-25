@@ -479,9 +479,13 @@ def run_test_composite_by_local_rolling_ic(his_snap_config_id):
 
 
     # 创建增强的测试运行器
-    test_runner = EnhancedTestRunner().init_and_test_for_smart_composite(his_snap_config_id=his_snap_config_id)
-if __name__ == "__main__":
     try:
-        run_test_composite_by_local_rolling_ic('20250825_091622_98ed2d09')
+        EnhancedTestRunner().init_and_test_for_smart_composite(his_snap_config_id=his_snap_config_id)
     except Exception as e:
-        raise ValueError("运行失败") from e
+        raise e
+
+
+if __name__ == "__main__":
+    run_test_by_config()
+    # run_test_composite_by_local_rolling_ic('20250825_091622_98ed2d09')
+

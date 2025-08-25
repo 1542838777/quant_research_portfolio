@@ -732,7 +732,7 @@ class FactorProcessor:
     def _standardize_robust(self, factor_data: pd.DataFrame,
                            pit_industry_map: PointInTimeIndustryMap = None) -> pd.DataFrame:
         """
-        【V3.0-PIT版】因子标准化函数。
+        因子标准化函数。
         支持全市场或分行业（带向上回溯功能）的Z-Score和排序标准化。
         """
         config = self.preprocessing_config.get('standardization', {})
