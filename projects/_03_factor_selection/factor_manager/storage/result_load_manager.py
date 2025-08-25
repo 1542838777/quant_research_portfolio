@@ -40,12 +40,12 @@ class ResultLoadManager:
         self.version = version
         self.core_eveluation_type = core_eveluation_type
         self.is_raw_factor = is_raw_factor
-
-    def get_ic_stats_from_local(self, stock_pool_index, factor_name):
-        path = self.get_factor_self_path(stock_pool_index, factor_name)
-        ret = load_summary_stats(path / "summary_stats.json")
-        ic_stas = load_ic_stats(ret, self.is_raw_factor)
-        return ic_stas
+    #严禁使用！这是整体的ic。整个周期的（严重未来寒函数
+    # def get_ic_stats_from_local(self, stock_pool_index, factor_name):
+    #     path = self.get_factor_self_path(stock_pool_index, factor_name)
+    #     ret = load_summary_stats(path / "summary_stats.json")
+    #     ic_stas = load_ic_stats(ret, self.is_raw_factor)
+    #     return ic_stas
 
     def get_factor_data(self, factor_name, stock_pool_index, start_date, end_date):
         if self.is_raw_factor:

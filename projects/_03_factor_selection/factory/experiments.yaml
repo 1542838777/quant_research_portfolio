@@ -1,7 +1,7 @@
 # ==============================================================================
 #                      Factor Experiments Configuration
 # ==============================================================================
-# This file defines the list of factor tests to be executed by the main script.
+# This file defines the list of factor tests to be executed by the run_test_by_config script.
 # Each entry represents a unique experiment combining a factor with a stock pool.
 # ------------------------------------------------------------------------------
 #
@@ -137,6 +137,6 @@
 #- factor_name: 'large_trade_ratio_10d'
 #  stock_pool_name: 'ZZ800'
 
-- factor_name: 'log_circ_mv'
+- factor_name: 'my_composite'
   stock_pool_name: 'ZZ800'
 

@@ -898,7 +898,7 @@ class FactorAnalyzer:
     # #合成测试，单因子测试
     # def test_factor_entity_service_route(self,
     #                                factor_name: str,
-    #                                stock_pool_index_name: str,
+    #                                stock_pool_name: str,
     #                                preprocess_method: str = "standard",
     #                                ) -> Dict[str, Any]:
     #     """
@@ -909,17 +909,17 @@ class FactorAnalyzer:
     #     """
     #     factor_data_shifted,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations\
     #         = self.prepare_date_for_entity_service(
-    #         factor_name,stock_pool_index_name)
+    #         factor_name,stock_pool_name)
     #     all_configs_results = {}
     #     if is_composite_factor:
-    #        return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,stock_pool_index_name, test_configurations, start_date, end_date, stock_pool_index_code)
+    #        return  self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,stock_pool_name, test_configurations, start_date, end_date, stock_pool_index_code)
     #     for calculator_name, func in test_configurations.items():
     #         # # 执行测试
     #         # # log_flow_start(f"因子{factor_name}原始状态 进入comprehensive_test测试 ")
     #         # raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw,q_st_raw, _, _, _, _, _ = self.comprehensive_test(
     #         #     target_factor_name=factor_name,
     #         #     factor_data_shifted =factor_data_shifted,
-    #         #     stock_pool_index_name=stock_pool_index_name,
+    #         #     stock_pool_name=stock_pool_name,
     #         #     returns_calculator=func,
     #         #     preprocess_method="standard",
     #         #     start_date=start_date,
@@ -933,7 +933,7 @@ class FactorAnalyzer:
     #             = self.comprehensive_test(
     #             target_factor_name=factor_name,
     #             factor_data_shifted=factor_data_shifted,
-    #             stock_pool_index_name = stock_pool_index_name,
+    #             stock_pool_name = stock_pool_name,
     #             returns_calculator=func,
     #             preprocess_method="standard",
     #             start_date=start_date,
@@ -1081,7 +1081,7 @@ class FactorAnalyzer:
         # 合成测试，单因子测试
     # def test_factor_entity_service_route(self,
     #                                      factor_name: str,
-    #                                      stock_pool_index_name: str,
+    #                                      stock_pool_name: str,
     #                                      preprocess_method: str = "standard",
     #                                      ) -> Dict[str, Any]:
     #     """
@@ -1092,12 +1092,12 @@ class FactorAnalyzer:
     #     """
     #     factor_data_shifted, is_composite_factor, start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations \
     #         = self.prepare_date_for_entity_service(
-    #         factor_name, stock_pool_index_name)
+    #         factor_name, stock_pool_name)
     #
     #     all_configs_results = {}
     #     if is_composite_factor:
     #         return self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,
-    #                                                                     stock_pool_index_name, test_configurations,
+    #                                                                     stock_pool_name, test_configurations,
     #                                                                     start_date, end_date, stock_pool_index_code)
     #     for calculator_name, func in test_configurations.items():
     #         # # 执行测试
@@ -1105,7 +1105,7 @@ class FactorAnalyzer:
     #         # raw_factor_df, ic_s_raw, ic_st_raw, q_r_raw, q_daily_returns_df_raw, q_st_raw, _, _, _, _, _ = self.comprehensive_test(
     #         #     target_factor_name=factor_name,
     #         #     factor_data_shifted=factor_data_shifted,
-    #         #     stock_pool_index_name=stock_pool_index_name,
+    #         #     stock_pool_name=stock_pool_name,
     #         #     returns_calculator=func,
     #         #     preprocess_method="standard",
     #         #     start_date=start_date,
@@ -1120,7 +1120,7 @@ class FactorAnalyzer:
     #             = self.comprehensive_test(
     #             target_factor_name=factor_name,
     #             factor_data_shifted=factor_data_shifted,
-    #             stock_pool_index_name=stock_pool_index_name,
+    #             stock_pool_name=stock_pool_name,
     #             returns_calculator=func,
     #             preprocess_method="standard",
     #             start_date=start_date,
@@ -1458,47 +1458,40 @@ class FactorAnalyzer:
         style_factor_dfs = self.get_style_factors(stock_pool_index_name)
         return close_df, circ_mv_df_shifted, style_factor_dfs
 
-    def prepare_date_for_entity_service(self, factor_name,stock_pool_index_name):
+    def prepare_date_for_entity_service(self, factor_name, stock_pool_name, his_snap_config_id=None):
         """
         【中央指挥部方案】准备T日的所有原材料，然后统一进行时间移位
         """
         # --- 步骤一：准备【所有】需要的【T日】原材料 ---
 
         is_composite_factor = self.factor_manager.data_manager.is_composite_factor(factor_name)
+        stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
 
         if is_composite_factor:
             factorComposite =  FactorSynthesizer(self.factor_manager,self,self.factor_processor)
             # 注意：合成因子内部已经处理了shift逻辑，这里直接使用
-            factor_data_t1 = factorComposite.do_composite(factor_name=factor_name,stock_pool_index_name=stock_pool_index_name)
+            factor_data_t1 = factorComposite.do_composite_route(factor_name=factor_name, stock_pool_index=stock_pool_index_code, snap_config_id=his_snap_config_id)
         else:
             # a) 获取已经对齐的T-1因子值 (get_prepare...函数现在内部已经shift并对齐)
-            factor_data_t1 = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
+            factor_data_t1 = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name, stock_pool_name, True)
 
             logger.info(f"★★★【时间对齐确认】因子 {factor_name} 已获取T-1值并与股票池对齐 ★★★")
 
         start_date = self.factor_manager.data_manager.config['backtest']['start_date']
         end_date = self.factor_manager.data_manager.config['backtest']['end_date']
-        stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_index_name)
         style_category_type = \
             self.factor_manager.data_manager.get_which_field_of_factor_definition_by_factor_name(factor_name,
                                                                                                  'style_category').iloc[
                 0]
 
         # b) 获取T日的价格数据（用于收益率计算，get_prepare_aligned_factor_for_analysis会自动识别并保持T日值）
-        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='close_hfq',stock_pool_index_name=stock_pool_index_name,for_test=True)
-        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='open_hfq',stock_pool_index_name=stock_pool_index_name,for_test=True)
+        close_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='close_hfq', stock_pool_index_name=stock_pool_name, for_test=True)
+        open_df = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_request='open_hfq', stock_pool_index_name=stock_pool_name, for_test=True)
 
         # 准备收益率计算器（价格数据不需要shift，因为我们要计算T日的收益率）
         c2c_calculator = partial(calculate_forward_returns_c2c, close_df=close_df)
         o2c_calculator = partial(calculate_forward_returns_tradable_o2c, close_df=close_df, open_df=open_df)
-        ###
-        #### 打点代码
-        close_df.to_csv(
-            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_close_hfq.csv')
-        open_df.to_csv(
-            'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_open_hfq.csv')
-        ###
-        ###
+
         # 定义测试配置
         test_configurations = {
             'o2c': o2c_calculator,
@@ -1506,7 +1499,7 @@ class FactorAnalyzer:
         }
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
         returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
-        return factor_data_t1,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_index_name,  style_category_type, returns_calculator_result
+        return factor_data_t1,is_composite_factor,start_date, end_date, stock_pool_index_code, stock_pool_name,  style_category_type, returns_calculator_result
 
     def test_factor_entity_service_for_composite_factor(self, factor_name, factor_data_shifted, stock_pool_index_name,test_configurations, start_date, end_date, stock_pool_index_code):
         all_configs_results = {}
@@ -1548,3 +1541,16 @@ class FactorAnalyzer:
             all_configs_results[calculator_name] = single_config_results
         return all_configs_results
 
+    def test_factor_entity_service_by_smart_composite(self, factor_name, stock_pool_index_name,his_snap_config_id):
+        factor_data_shifted, is_composite_factor, start_date, end_date, stock_pool_index_code, stock_pool_name, style_category, test_configurations \
+            = self.prepare_date_for_entity_service(
+            factor_name, stock_pool_index_name,his_snap_config_id)
+
+        # 获取eva_data配置，默认测试两种数据状态
+        eva_data_config = self.config.get('evaluation', {}).get('eva_data', ['raw', 'processed'])
+        if not is_composite_factor:
+            raise ValueError("只支持合成因子的测试")
+        all_configs_results = {}
+        return self.test_factor_entity_service_for_composite_factor(factor_name, factor_data_shifted,
+                                                                        stock_pool_index_code, test_configurations,
+                                                                        start_date, end_date, stock_pool_index_code)

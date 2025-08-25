@@ -146,7 +146,7 @@ def example_enhanced_test_runner():
         experiments_config_path = str(current_dir / 'experiments.yaml')
         
         # 创建测试运行器
-        test_runner = EnhancedTestRunner(config_path, experiments_config_path)
+        test_runner = EnhancedTestRunner()
         
         # 模拟运行测试（实际情况会执行真实的因子测试）
         print("🔧 创建测试运行器...")

@@ -9,7 +9,7 @@ from projects._03_factor_selection.utils.factor_processor import FactorProcessor
 
 
 class FactorSynthesizer:
-    def __init__(self, factor_manager, factor_analyzer,factor_processor):
+    def __init__(self, factor_manager, factor_analyzer, factor_processor):
         """
         初始化因子合成器。
         Args:
@@ -31,8 +31,8 @@ class FactorSynthesizer:
     # - 价格数据（close/open/high/low）返回T日值（用于计算收益率）
     # - 因子数据返回T-1值（用于交易决策）
     # 因此这里直接使用返回值即可，无需额外处理
-    #注意啊 ，目前有个大坑，如果你用 close open high low 当成 种子因子来参与的话get_prepare_aligned_factor_for_analysis 里面有个判断 ，会返回t日的数据！ 解决：我们这里兼容一下 ，跟着判断 补充好t-1的逻辑即可！
-    def get_pre_processed_sub_factor_df(self, factor_name: str, stock_pool_index_name:str) -> pd.DataFrame:
+    # 注意啊 ，目前有个大坑，如果你用 close open high low 当成 种子因子来参与的话get_prepare_aligned_factor_for_analysis 里面有个判断 ，会返回t日的数据！ 解决：我们这里兼容一下 ，跟着判断 补充好t-1的逻辑即可！
+    def get_pre_processed_sub_factor_df(self, factor_name: str, stock_pool_index_name: str) -> pd.DataFrame:
         """
         【核心】对单个细分因子，
         从raw 拿到
@@ -44,13 +44,15 @@ class FactorSynthesizer:
         print(f"\n--- 正在处理细分因子: {factor_name} ---")
 
         # 【修正】get_prepare_aligned_factor_for_analysis 现在已经返回T-1值（除了价格数据）
-        factor_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,stock_pool_index_name, True)
+        factor_df_shifted = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name,
+                                                                                        stock_pool_index_name, True)
         trade_dates = factor_df_shifted.index
         stock_codes = factor_df_shifted.columns
 
-        #生成t-1的数据 用于因子预处理
+        # 生成t-1的数据 用于因子预处理
         (final_neutral_dfs, style_category
-         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, trade_dates, stock_codes, stock_pool_index_name)
+         ) = self.factor_analyzer.prepare_date_for_process_factor(factor_name, trade_dates, stock_codes,
+                                                                  stock_pool_index_name)
         # 【删除】不再需要额外的shift(1)，因为get_prepare_aligned_factor_for_analysis已经处理了
         processed_df = self.processor.process_factor(
             factor_df_shifted=factor_df_shifted,
@@ -106,114 +108,62 @@ class FactorSynthesizer:
 
         return composite_factor_df
 
-
-    def do_composite(self, factor_name, stock_pool_index_name, use_ic_weighting=False, weighting_config=None):
+    def do_composite_eq_wights(self, factor_name, stock_pool_index_name):
+        # 这个合成就是老版本的合成（每次都是重新测试儿因子，效率差） 等权！，不可复用！
         """
         执行因子合成 - 支持等权和IC加权两种模式
-        
         Args:
             factor_name: 合成因子名称
             stock_pool_index_name: 股票池名称
-            use_ic_weighting: 是否使用IC加权（默认False，使用等权）
             weighting_config: IC权重配置（可选）
-            
         Returns:
             pd.DataFrame: 合成后的因子数据
         """
         # 获取子因子列表
         sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name)
-        
+        composite_df = self.synthesize_composite_factor(factor_name, stock_pool_index_name, sub_factor_names)
+        return composite_df
+
+    def do_composite_wights_by_rolling_ic(self, factor_name, stock_pool_index, weighting_config=None, snap_config_id: str = None):
+        """
+        Args:
+            factor_name: 合成因子名称
+            stock_pool_index: 股票池名称
+            weighting_config: IC权重配置（可选）
+        Returns:
+            pd.DataFrame: 合成后的因子数据
+        """
+        # 获取子因子列表
+        sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name) #todo 看是否会用dataloader
+
+        from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
+            ICWeightedSynthesizer, FactorWeightingConfig
+        )
+
+        # 创建IC加权合成器
+        config = weighting_config or FactorWeightingConfig()
+        ic_synthesizer = ICWeightedSynthesizer(
+            self.factor_manager,
+            self.factor_analyzer,
+            self.processor,
+            config
+        )
+
+        # 执行IC加权合成
+        composite_df, report = ic_synthesizer.synthesize_ic_weighted_factor(
+            composite_factor_name=factor_name,
+            stock_pool_index=stock_pool_index,
+            candidate_factor_names=sub_factor_names,
+            snap_config_id=snap_config_id
+
+        )
+        # 显示报告
+        ic_synthesizer.print_synthesis_report(report)
+
+        return composite_df
+    def do_composite_route(self, factor_name, stock_pool_index, use_ic_weighting=True, weighting_config=None, snap_config_id=None):
         if use_ic_weighting:
-            # 使用IC加权合成
-            from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
-                ICWeightedSynthesizer, FactorWeightingConfig
-            )
-            
-            # 创建IC加权合成器
-            config = weighting_config or FactorWeightingConfig()
-            ic_synthesizer = ICWeightedSynthesizer(
-                self.factor_manager, 
-                self.factor_analyzer, 
-                self.processor,
-                config
-            )
-            
-            # 执行IC加权合成
-            composite_df, report = ic_synthesizer.synthesize_ic_weighted_factor(
-                composite_factor_name=factor_name,
-                stock_pool_index_name=stock_pool_index_name, 
-                candidate_factor_names=sub_factor_names
-            )
-            
-            # 显示报告
-            ic_synthesizer.print_synthesis_report(report)
-            
-            return composite_df
+            composite_df = self.do_composite_wights_by_rolling_ic(factor_name, stock_pool_index, weighting_config,snap_config_id)
         else:
-            # 使用传统等权合成
-            composite_df = self.synthesize_composite_factor(factor_name, stock_pool_index_name, sub_factor_names)
-            return composite_df
-        # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
-        # # 准备数据
-        #
-        # stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
-        # close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-        #                                                                                         need_shift=False)[
-        #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-        # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-        # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
-        #     stock_pool_name]
-        #
-        # ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
-        #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
-        #                                    , target_factor_df= value_composite_df,
-        #                                    need_process_factor = False)
-        # todo 读取实验
-        # factor_analyzer.test_factor_entity_service(factor_name, value_composite_df, need_process_factor=False,
-        #                                            is_composite_factor=True)
-
-
-
-# if __name__ == '__main__':
-#     # --- 如何在你的主流程中使用 ---
-#     # 1. 实例化你的因子处理器 (假设它叫 'fp')
-#
-#     # 2. 实例化因子合成器
-#
-#     logger.info("1. 加载底层原始因子raw_dict数据...")
-#     config_path = Path(__file__).parent.parent.parent / 'factory' / 'config.yaml'
-#
-#     data_manager = DataManager(config_path)
-#     data_manager.prepare_basic_data()
-#
-#     factor_manager = FactorManager(data_manager)
-#     factor_analyzer = FactorAnalyzer(factor_manager=factor_manager)
-#
-#     synthesizer = FactorSynthesizer(factor_manager, factor_analyzer)
-#
-#     # 3. 定义你要合成的因子列表
-#     sub_factors = list(synthesizer.sub_factors)  # 改成 从config 里面读取
-#
-#     config_path = "factory/config.yaml",
-#
-#     # 4. 调用合成方法
-#     factor_name = factor_manager.data_manager.config['target_factors_for_evaluation']['fields'][0]
-#     value_composite_df = synthesizer.synthesize_composite_factor(factor_name, sub_factors)
-#     # 5. 拿到合成后的复合因子，你就可以对它进行单因子测试了！
-#     # # 准备数据
-#     #
-#     #
-#     # stock_pool_name = factor_analyzer.factor_manager.get_stock_pool_name_by_factor_name(factor_name)
-#     # close_df = factor_analyzer.factor_manager.build_df_dict_base_on_diff_pool_can_set_shift(factor_name='close',
-#     #                                                                                         need_shift=False)[
-#     #     stock_pool_name]  # 传入ic 、分组、回归的 close 必须是原始的  用于t日评测结果的
-#     # prepare_for_neutral_shift_base_own_stock_pools_dfs = \
-#     # factor_analyzer.prepare_for_neutral_data_dict_shift_diff_stock_pools()prepare_for_neutral_dfs_shift_diff_stock_pools_dict[
-#     #     stock_pool_name]
-#     #
-#     # ic_series_periods_dict, ic_stats_periods_dict, quantile_daily_returns_for_plot_dict, quantile_stats_periods_dict, factor_returns_series_periods_dict, fm_stat_results_periods_dict, \
-#     #     turnover_stats_periods_dict,style_correlation_dict = factor_analyzer.comprehensive_test(target_factor_name = factor_name
-#     #                                    , target_factor_df= value_composite_df,
-#     #                                    need_process_factor = False)
-#     factor_analyzer.test_factor_entity_service(factor_name, value_composite_df, need_process_factor=False,
-#                                                is_composite_factor=True)
+            composite_df = self.do_composite_eq_wights(factor_name, stock_pool_index)
+        return composite_df

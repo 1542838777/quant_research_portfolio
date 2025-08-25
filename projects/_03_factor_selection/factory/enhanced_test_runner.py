@@ -16,7 +16,7 @@
 import traceback
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -43,7 +43,7 @@ logger = setup_logger(__name__)
 class EnhancedTestRunner:
     """增强的测试运行器"""
     
-    def __init__(self, config_path: str, experiments_config_path: str):
+    def __init__(self):
         """
         初始化测试运行器
         
@@ -51,12 +51,15 @@ class EnhancedTestRunner:
             config_path: 主配置文件路径
             experiments_config_path: 实验配置文件路径
         """
+        current_dir = Path(__file__).parent
+        config_path = str(current_dir / 'config.yaml')
+        experiments_config_path = str(current_dir / 'experiments.yaml')
         self.config_path = Path(config_path)
         self.experiments_config_path = Path(experiments_config_path)
         self.workspace_root = self.config_path.parent.parent / "workspace"
         
         # 初始化配置快照管理器
-        self.config_snapshot_manager = ConfigSnapshotManager(str(self.workspace_root))
+        self.config_snapshot_manager = ConfigSnapshotManager()
         
         # 加载配置
         self.config = _load_local_config_functional(str(self.config_path))
@@ -132,54 +135,64 @@ class EnhancedTestRunner:
             return snapshot_id
             
         except Exception as e:
-            logger.error(f"❌ 创建配置快照失败: {e}")
-            return None
-    
-    def run_batch_tests(self, session_description: str = "批量因子测试") -> List[Dict]:
+            raise ValueError("创建配置快照失败") from e
+
+    def _init_and_test(
+            self,
+            session_description: str,
+            test_func: Callable[..., Any],
+            **test_kwargs
+    ) -> List[Dict]:
         """
-        运行批量测试并自动管理配置快照
-        
+        通用批量因子测试模板
+
         Args:
             session_description: 测试会话描述
-            
+            test_func: 具体的测试执行函数（单因子/组合因子）
+            test_kwargs: 传给 test_func 的额外参数
+
         Returns:
             List[Dict]: 测试结果列表
         """
-        logger.info(f"🚀 开始批量测试会话: {session_description}")
-        
+        logger.info(f"🚀 开始测试-会话: {session_description}")
+
         # 1. 初始化管理器
         self.initialize_managers()
-        
+
         # 2. 创建会话配置快照
         session_snapshot_id = self.create_session_snapshot(session_description)
         if not session_snapshot_id:
             raise ValueError("⚠️ 配置快照创建失败，继续测试但无法追踪配置")
-        
+
         # 3. 准备实验配置
         experiments_df = self.data_manager.get_experiments_df()
         logger.info(f"📊 准备执行 {len(experiments_df)} 个实验")
-        
+
         # 4. 保存价格数据
         self._save_close_hfq_if_needed(experiments_df)
-        
+
         # 5. 执行批量测试
         results = []
         successful_tests = 0
-        
+        stock_pool_name = experiments_df.iloc[0]['stock_pool_name']
+
         for index, config in experiments_df.iterrows():
             try:
                 factor_name = config['factor_name']
                 stock_pool_name = config['stock_pool_name']
-                
-                logger.info(f"🧪 [{index+1}/{len(experiments_df)}] 测试因子: {factor_name} (股票池: {stock_pool_name})")
-                
+
+                logger.info(
+                    f"🧪 [{index + 1}/{len(experiments_df)}] 测试因子: {factor_name} (股票池: {stock_pool_name})"
+                )
+
                 # 执行单个因子测试
-                test_result = self._run_single_factor_test(
+                test_result = test_func(
                     factor_name=factor_name,
                     stock_pool_name=stock_pool_name,
-                    session_snapshot_id=session_snapshot_id
+                    session_snapshot_id=session_snapshot_id,
+                    **test_kwargs
                 )
-                
+
                 results.append({
                     'factor_name': factor_name,
                     'stock_pool_name': stock_pool_name,
@@ -187,14 +200,14 @@ class EnhancedTestRunner:
                     'snapshot_id': session_snapshot_id,
                     'test_timestamp': datetime.now().isoformat()
                 })
-                
+
                 successful_tests += 1
                 self.current_session['test_count'] += 1
-                
-                logger.info(f"✅ [{index+1}/{len(experiments_df)}] 因子 {factor_name} 测试完成")
-                
+
+                logger.info(f"✅ [{index + 1}/{len(experiments_df)}] 因子 {factor_name} 测试完成")
+
             except Exception as e:
-                logger.error(f"❌ [{index+1}/{len(experiments_df)}] 因子 {factor_name} 测试失败: {e}")
+                logger.error(f"❌ [{index + 1}/{len(experiments_df)}] 因子 {factor_name} 测试失败: {e}")
                 results.append({
                     'factor_name': factor_name,
                     'stock_pool_name': stock_pool_name,
@@ -203,64 +216,98 @@ class EnhancedTestRunner:
                     'snapshot_id': session_snapshot_id,
                     'test_timestamp': datetime.now().isoformat()
                 })
-                
-                # 根据需要决定是否继续
+
                 if not self._should_stop_on_error():
                     raise ValueError("⚠️ 遇到错误，停止批量测试")
 
         # 6. 生成测试会话摘要
         self._generate_session_summary(results, successful_tests, session_snapshot_id)
-        
-        log_success(f"✅ 批量测试会话完成: 成功 {successful_tests}/{len(experiments_df)} 个因子")
+
+        log_success(f"✅ 测试会话完成: 成功 {successful_tests}/{len(experiments_df)} 个因子")
         return results
-    
-    def _run_single_factor_test(
-        self, 
-        factor_name: str, 
-        stock_pool_name: str,
-        session_snapshot_id: Optional[str]
+
+    def init_and_test_for_simple(self, session_description: str = "批量因子测试") -> List[Dict]:
+        return self._init_and_test(
+            session_description=session_description,
+            test_func=self._run_single_factor_test
+        )
+
+    def init_and_test_for_smart_composite(self, session_description: str = "ic集权合成因子测试", his_snap_config_id: str = None) -> List[Dict]:
+        return self._init_and_test(
+            session_description=session_description,
+            test_func=self._run_composite_test_for_smart_composite,
+            his_snap_config_id=his_snap_config_id
+        )
+
+    def _run_single_factor_test(self, factor_name, stock_pool_name, session_snapshot_id):
+        return self._run_factor_test(
+            factor_name,
+            stock_pool_name,
+            session_snapshot_id,
+            test_func=self.factor_analyzer.test_factor_entity_service_route
+        )
+
+    def _run_factor_test(
+            self,
+            factor_name: str,
+            stock_pool_name: str,
+            session_snapshot_id: Optional[str],
+            test_func: Callable[..., Any],
+            **test_kwargs
     ) -> Any:
         """
-        执行单个因子测试并关联配置快照
-        
+        执行因子测试并关联配置快照（通用模板）
+
         Args:
             factor_name: 因子名称
-            stock_pool_name: 股票池名称  
+            stock_pool_name: 股票池名称
             session_snapshot_id: 会话配置快照ID
-            
+            test_func: 具体的因子测试函数
+            test_kwargs: 额外传入测试函数的参数
+
         Returns:
             测试结果
         """
         # 执行因子测试
-        test_result = self.factor_analyzer.test_factor_entity_service_route(
+        test_result = test_func(
             factor_name=factor_name,
             stock_pool_index_name=stock_pool_name,
+            **test_kwargs
         )
-        
+
         # 关联配置快照
         if session_snapshot_id:
             try:
                 stock_pool_index = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
-                
+
                 success = self.config_snapshot_manager.link_test_result(
                     snapshot_id=session_snapshot_id,
                     factor_name=factor_name,
                     stock_pool=stock_pool_index,
-                    calc_type='c2c',  # 默认值，可以从配置中读取
+                    calc_type='c2c',
                     version=f"{self.data_manager.backtest_start_date}_{self.data_manager.backtest_end_date}",
                     test_description=f"批量测试_{self.current_session['session_id']}"
                 )
-                
+
                 if success:
                     logger.debug(f"✅ 配置快照关联成功: {factor_name} -> {session_snapshot_id}")
                 else:
                     logger.warning(f"⚠️ 配置快照关联失败: {factor_name}")
-                    
+
             except Exception as e:
                 logger.error(f"❌ 配置快照关联异常: {factor_name} - {e}")
-        
+
         return test_result
-    
+
+    def _run_composite_test_for_smart_composite(self, factor_name, stock_pool_name, session_snapshot_id, his_snap_config_id):
+        return self._run_factor_test(
+            factor_name,
+            stock_pool_name,
+            session_snapshot_id,
+            test_func=self.factor_analyzer.test_factor_entity_service_by_smart_composite,
+            his_snap_config_id=his_snap_config_id
+        )
+
     def _save_close_hfq_if_needed(self, experiments_df: pd.DataFrame):
         try:
             # 获取第一个实验的股票池（用于保存价格数据）
@@ -280,7 +327,7 @@ class EnhancedTestRunner:
             logger.info(f"📊 价格数据保存成功: {path / 'close_hfq.parquet'}")
             
         except Exception as e:
-            logger.warning(f"⚠️ 价格数据保存失败: {e}")
+            raise ValueError(f"⚠️ 价格数据保存失败:") from e
     
     def _detect_runtime_modifications(self) -> Dict[str, Any]:
         """检测运行时的配置修改"""
@@ -404,20 +451,17 @@ class EnhancedTestRunner:
         # 比较配置差异
         return self.config_snapshot_manager.compare_configs(snapshot_id1, snapshot_id2)
 
-
-def main():
+#单因子测试主入口
+def run_test_by_config():
     """主函数 - 使用增强的测试运行器"""
     try:
-        # 配置路径
-        current_dir = Path(__file__).parent
-        config_path = str(current_dir / 'config.yaml') #todo check
-        experiments_config_path = str(current_dir / 'experiments.yaml')
+
         
         # 创建增强的测试运行器
-        test_runner = EnhancedTestRunner(config_path, experiments_config_path)
+        test_runner = EnhancedTestRunner()
         
         # 运行批量测试
-        results = test_runner.run_batch_tests(
+        results = test_runner.init_and_test_for_simple(
             session_description="生产环境_因子筛选_V2.0"
         )
         
@@ -431,6 +475,13 @@ def main():
         traceback.print_exc()
         raise
 
+def run_test_composite_by_local_rolling_ic(his_snap_config_id):
 
+
+    # 创建增强的测试运行器
+    test_runner = EnhancedTestRunner().init_and_test_for_smart_composite(his_snap_config_id=his_snap_config_id)
 if __name__ == "__main__":
-    main()
+    try:
+        run_test_composite_by_local_rolling_ic('20250825_091622_98ed2d09')
+    except Exception as e:
+        raise ValueError("运行失败") from e

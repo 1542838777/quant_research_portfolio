@@ -106,7 +106,7 @@ class FactorSelectorV2:
         # top_factors_df = self.get_top_factors(
         #     leaderboard_df=champion_leaderboard,
         #     results_path=RESULTS_PATH,
-        #     stock_pool=TARGET_STOCK_POOL,
+        #     stock_pool_index=TARGET_STOCK_POOL,
         #     quality_score_threshold=0.0,  # 建议设置一个有意义的门槛分，比如40分
         #     top_n_final=top_n_final,
         #     correlation_threshold=correlation_threshold

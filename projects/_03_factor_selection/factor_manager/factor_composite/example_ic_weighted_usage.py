@@ -92,7 +92,7 @@ def demonstrate_ic_weighted_synthesis():
         
         composite_factor_df, synthesis_report = synthesizer.synthesize_ic_weighted_factor(
             composite_factor_name=composite_factor_name,
-            stock_pool_index_name=stock_pool_name,
+            stock_pool_index=stock_pool_name,
             candidate_factor_names=candidate_factors,
             force_recalculate_ic=False  # 使用缓存的IC数据
         )

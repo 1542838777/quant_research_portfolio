@@ -17,7 +17,8 @@ import pandas as pd
 from data.local_data_load import load_suspend_d_df
 from projects._03_factor_selection.config.config_file.debug_temp_fast_config import IS_DEBUG_TEMP
 from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional, _load_file
-from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, FILL_STRATEGY_FFILL_UNLIMITED, \
+from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, \
+    FILL_STRATEGY_FFILL_UNLIMITED, \
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
 from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
 from quant_lib.data_loader import DataLoader
@@ -60,37 +61,37 @@ def check_field_level_completeness(raw_df: Dict[str, pd.DataFrame]):
             logger.info(f'\t{tip}')
 
 
-def _get_nan_comment(field: str, rate: float) :
+def _get_nan_comment(field: str, rate: float):
     logger.info(f"field：{field}在原始raw_df 确实占比为：{rate}")
     if field in ['delist_date']:
         # f"{field} in 白名单，这类因子缺失率很高很正常"
-        return  None
+        return None
     if rate >= 0.4:
         raise ValueError(f'field:{field}缺失率超过50% 必须检查')
     """根据字段名称和缺失率，提供专家诊断意见"""
     if field in ['pe_ttm', 'pe', 'pb',
-                 'pb_ttm','amount'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
+                 'pb_ttm', 'amount'] and rate <= 0.4:  # 亲测 很正常，有的垃圾股票 price earning 为负。那么tushare给我的数据就算nan，合理！
         # " (正常现象: 主要代表公司亏损)"
-        return  None
+        return None
 
     if field in ['dv_ttm', 'dv_ratio']:
-         # " (正常现象: 主要代表公司不分红, 后续应填充为0)"
+        # " (正常现象: 主要代表公司不分红, 后续应填充为0)"
         return None
     if field in ['industry']:  # 亲测 industry 可以直接放行，不需要care 多少缺失率！因为也就300个，而且全是退市的，
         # return "正常现象：不需要care 多少缺失率"
-        return  None
-    if field in ['circ_mv',  'total_mv',
-                 'turnover_rate', 
-                 'close_raw','open_raw', 'high_raw', 'low_raw','vol_raw',
-                 'close_hfq','open_hfq', 'high_hfq', 'low_hfq',
+        return None
+    if field in ['circ_mv', 'total_mv',
+                 'turnover_rate',
+                 'close_raw', 'open_raw', 'high_raw', 'low_raw', 'vol_raw',
+                 'close_hfq', 'open_hfq', 'high_hfq', 'low_hfq',
                  'pre_close', 'amount'] and rate < 0.25:  # 亲测 一大段时间，可能有的股票最后一个月才上市，导致前面空缺，有缺失 那很正常！
         # "正常现象：不需要care 多少缺失率"
-        return  None
+        return None
     if field in ['list_date'] and rate <= 0.01:
         # "正常现象：不需要care 多少缺失率"
         return None
     if field in ['beta'] and rate <= 0.25:
-        #return "正常"
+        # return "正常"
         return None
     if field in ['ps_ttm'] and rate <= 0.25:
         # return "正常"
@@ -132,8 +133,9 @@ class DataManager:
             self.raw_dfs = {}
             self.stock_pools_dict = None
             self.trading_dates = self.data_loader.get_trading_dates(self.backtest_start_date, self.backtest_end_date)
-            #用于计算ttm年度shift252 ，，预热数据
-            self._prebuffer_trading_dates = self.data_loader.get_trading_dates(self.buffer_start_date, self.backtest_end_date)
+            # 用于计算ttm年度shift252 ，，预热数据
+            self._prebuffer_trading_dates = self.data_loader.get_trading_dates(self.buffer_start_date,
+                                                                               self.backtest_end_date)
             self._existence_matrix = None
             self.pit_map = None
 
@@ -153,7 +155,7 @@ class DataManager:
         self.raw_dfs = self.data_loader.get_raw_dfs_by_require_fields(fields=all_required_fields,
                                                                       buffer_start_date=self.buffer_start_date,
                                                                       end_date=self.backtest_end_date)
-        #加载辅助数据，
+        # 加载辅助数据，
         self.pit_map = PointInTimeIndustryMap()  # 它能自动加载数据
 
         check_field_level_completeness(self.raw_dfs)
@@ -193,7 +195,7 @@ class DataManager:
     def build_diff_stock_pools(self):
         stock_pool_df_dict = {}
         stock_pool_profiles = self.config['stock_pool_profiles']
-        #按需生成动态股票池
+        # 按需生成动态股票池
         experiments_pool_names = self.get_experiments_pool_names()
         for pool_name in experiments_pool_names:
             pool_config = stock_pool_profiles[pool_name]
@@ -204,7 +206,6 @@ class DataManager:
     # institutional_profile   = stock_pool_profiles['institutional_profile']#为“基本面派”和“趋势派”因子，提供一个高市值、高流动性的环境
     # microstructure_profile = stock_pool_profiles['microstructure_profile']#用于 微观（量价/情绪）因子
     # product_universe =self.product_universe (microstructure_profile,trading_dates)
-
 
     def _get_required_fields(self) -> List[str]:
         """获取所有需要的字段"""
@@ -222,7 +223,7 @@ class DataManager:
             'delist_date',  # 退市日期,用于构建标准动态股票池
             'close_raw',  # 为了计算出adj_factor
             'vol_raw',
-            'close_hfq','open_hfq', 'high_hfq', 'low_hfq',
+            'close_hfq', 'open_hfq', 'high_hfq', 'low_hfq',
             # 'pe_ttm', 'ps_ttm',  # 前视数据  tushare 根据报告起始日给的数据！！ 我们需要根据ann_date来才对！
         ])
         # 鉴于 get_raw_dfs_by_require_fields 针对没有trade_date列的parquet，对整个parquet的字段，是进行无脑 广播的。 需要注意：报告期(每个季度最后一天的日期）也就是end_date 现金流量表举例来说，就只有end_Date字段，不适合广播！
@@ -300,7 +301,7 @@ class DataManager:
         #    如果 当前日期 < 退市日期, 则为True
         delist_not_null_count = delist_date_panel.notna().sum().sum()
         if delist_not_null_count == 0:
-            raise  ValueError('严重数据异常：delist_date_df全为空')
+            raise ValueError('严重数据异常：delist_date_df全为空')
         # 原有逻辑：使用退市日期
         before_delisting_mask = (dates_matrix < delist_dates_filled)
 
@@ -313,7 +314,7 @@ class DataManager:
         true_cells = existence_matrix.sum().sum()
         false_cells = total_cells - true_cells
         print(f"存在性矩阵统计: 总单元格={total_cells}, True={true_cells}, False={false_cells}")
-        print(f"False比例: {false_cells/total_cells:.1%} (这些是'不存在'的股票-日期对)")
+        print(f"False比例: {false_cells / total_cells:.1%} (这些是'不存在'的股票-日期对)")
         logger.info("    股票“存在性”矩阵构建完毕。")
         # 缓存起来，因为它在一次回测中是不变的
         self._existence_matrix = existence_matrix
@@ -376,13 +377,13 @@ class DataManager:
 
             # d. 【核心】状态传播 (Forward Fill)
             # ffill会用前一个有效值填充后面的NaN，完美模拟了状态的持续性
-            status_series=status_series.ffill(inplace=False)
+            status_series = status_series.ffill(inplace=False)
 
             # 将这只股票计算好的完整状态序列，填充到总矩阵中
             tradeable_matrix[ts_code] = status_series
 
         # e. 收尾工作：对于没有任何停复牌历史的股票，它们列可能依然是NaN，默认为可交易
-        tradeable_matrix=tradeable_matrix.fillna(True, inplace=False)
+        tradeable_matrix = tradeable_matrix.fillna(True, inplace=False)
 
         logger.info("每日‘可交易’状态矩阵重建完毕。")
         self._tradeable_matrix_by_suspend_resume = tradeable_matrix.astype(bool)
@@ -412,7 +413,7 @@ class DataManager:
 
         # 【关键】必须按“生效日”排序，以确保状态的正确延续和覆盖
         namechange_df['start_date'] = pd.to_datetime(namechange_df['start_date'])
-        namechange_df= namechange_df.sort_values(by=['ts_code', 'start_date'], inplace=False)
+        namechange_df = namechange_df.sort_values(by=['ts_code', 'start_date'], inplace=False)
 
         # 【关键】必须用 np.nan 初始化，作为“未知状态”
         st_matrix = pd.DataFrame(np.nan, index=trading_dates, columns=ts_codes)
@@ -437,7 +438,7 @@ class DataManager:
 
         # --- 3. “传播”与“收尾” ---
         st_matrix = st_matrix.ffill(inplace=False)
-        st_matrix= st_matrix.fillna(False, inplace=False)
+        st_matrix = st_matrix.fillna(False, inplace=False)
 
         logger.info("每日‘已知风险’状态矩阵重建完毕。")
         self.st_matrix = st_matrix.astype(bool)
@@ -653,8 +654,6 @@ class DataManager:
 
         return stock_pool_df
 
-
-
     # ok 这个属于感知未来，用不得！ todo 用的时候 必须考虑 ：open_df = self.raw_dfs['open'] 要不要是后复权的
     ##
     #
@@ -786,8 +785,8 @@ class DataManager:
         # --- 定义指数构成规则，方便未来扩展 ---
         index_composition_rules = {
             '000906': ['000300', '000905'],  # 中证800 = 沪深300 + 中证500
-            '000300': ['000300'],             # 沪深300
-            '000905': ['000905'],             # 中证500
+            '000300': ['000300'],  # 沪深300
+            '000905': ['000905'],  # 中证500
             # ... 未来可以轻松扩展更多指数，例如国证2000等
         }
 
@@ -808,7 +807,7 @@ class DataManager:
             # 2. 从加载器高效获取成分股集合 (内部有缓存，速度飞快)
             daily_components = self.component_loader.get_members_on_date(prev_date, component_source_codes)
             # print(f"基础数据每天目标指数内的股票数量{len(daily_components)}")
-            if not daily_components: # 如果当天（T-1）获取不到成分股，则当天股票池为空
+            if not daily_components:  # 如果当天（T-1）获取不到成分股，则当天股票池为空
                 index_stock_pool_df.loc[date, :] = False
                 continue
 
@@ -822,7 +821,6 @@ class DataManager:
         self.show_stock_nums_for_per_day(f'by_成分股指数_filter{index_code}', index_stock_pool_df)
         return index_stock_pool_df
 
-
     def get_universe(self) -> pd.DataFrame:
         """获取股票池"""
         return self.stock_pool_df
@@ -830,6 +828,7 @@ class DataManager:
     def get_stock_codes(self) -> pd.DataFrame:
         first_df = next(iter(self.raw_dfs.values()))  # 取第一个 DataFrame
         return first_df.columns.tolist()
+
     def get_namechange_data(self) -> pd.DataFrame:
         """获取name改变的数据"""
         namechange_path = LOCAL_PARQUET_DATA_DIR / 'namechange.parquet'
@@ -882,7 +881,7 @@ class DataManager:
         logger.info(f"      最多每日股票数: {daily_count.max():.0f}")
         # 统计过滤后的覆盖度
         total_cells = pool_df.size
-        valid_cells = (pool_df!=False).sum().sum()
+        valid_cells = (pool_df != False).sum().sum()
         coverage = valid_cells / total_cells if total_cells > 0 else 0
         logger.info(f"  {describe_text}: 后形状 {pool_df.shape}, 为true状态股票覆盖度 {coverage:.1%}")
 
@@ -897,11 +896,12 @@ class DataManager:
 
         return result
 
-    def get_cal_require_base_fields_for_composite(self,name):
+    def get_cal_require_base_fields_for_composite(self, name):
         factor_config = self.get_factor_definition(name)
-        if  factor_config['action'].iloc[0] =='composite'  :
+        if factor_config['action'].iloc[0] in ['composite', 'composite_by_rolling_ic']:
             base_fields = factor_config['cal_require_base_fields'].iloc[0]
             return base_fields
+
     # ok #ok
     def create_stock_pool(self, stock_pool_config_profile, pool_name):
         """
@@ -934,7 +934,8 @@ class DataManager:
             # ✅ 在这里进行列修剪是合理的！ 因为中证800成分股是基于外部规则，不是基于未来数据表现
             valid_stocks = final_stock_pool_df.columns[final_stock_pool_df.any(axis=0)]
             final_stock_pool_df = final_stock_pool_df[valid_stocks]
-            logger.info(f"根据指数裁剪股票池：形状：{final_stock_pool_df.shape} 二：为true状态股票覆盖度:{(final_stock_pool_df!=False).sum().sum()/final_stock_pool_df.size}")
+            logger.info(
+                f"根据指数裁剪股票池：形状：{final_stock_pool_df.shape} 二：为true状态股票覆盖度:{(final_stock_pool_df != False).sum().sum() / final_stock_pool_df.size}")
         # 其他各种指标过滤条件
         universe_filters = stock_pool_config_profile['filters']
 
@@ -979,7 +980,7 @@ class DataManager:
         return pd.DataFrame(self.config['factor_definition'])
 
     def is_composite_factor(self, factor_name):
-        return self.get_factor_definition(factor_name).get('action').iloc[0] == 'composite'
+        return self.get_factor_definition(factor_name).get('action').iloc[0] in ['composite', 'composite_by_rolling_ic']
 
     def get_pool_profiles(self):
         return self.config['stock_pool_profiles']
@@ -1011,7 +1012,6 @@ class DataManager:
 
     def get_experiments_pool_names(self):
         return list(pd.DataFrame(self.get_experiments_df())['stock_pool_name'].unique())
-
 
     def get_experiments_df(self):
         df = pd.DataFrame(self.experiments_config)
@@ -1057,6 +1057,7 @@ def fill_self(factor_name, df, _existence_matrix):
 
     raise RuntimeError(f"此因子{factor_name}没有指明频率，无法进行填充")
 
+
 # 对于 是先 fill 还是先where 的考量 ：还是别先ffill了：极端例子：停牌了99天的，100。 若先ffill那么 这100天都是借来的数据！  如果先where。那么直接统统nan了。在ffill也是nan，更具真实
 # 跟stock——pool对齐，这是铁的防线！，因为市场环境：1000只股票。可能就50能交易的，。我们不跟可交易股票池进行对齐，那么后面的ic、分组，用上无相关的950的股票池做计算，那有什么用，所以一定要对齐过滤！！
 def fill_and_align_by_stock_pool(factor_name=None, df=None,
@@ -1068,15 +1069,16 @@ def fill_and_align_by_stock_pool(factor_name=None, df=None,
 
     # df = fill_self(factor_name, df, _existence_matrix)
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
-    return my_align(df,stock_pool_df)
+    return my_align(df, stock_pool_df)
 
 
-def my_align(df,stock_pool_df):
+def my_align(df, stock_pool_df):
     # 步骤1: 对齐到修剪后的股票池 对齐到主模板（stock_pool_df的形状）
     aligned_df = df.reindex(index=stock_pool_df.index, columns=stock_pool_df.columns)
     aligned_df = aligned_df.sort_index()
     aligned_df = aligned_df.where(stock_pool_df)
     return aligned_df
+
 
 def create_data_manager(config_path: str) -> DataManager:
     """

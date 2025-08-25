@@ -53,7 +53,7 @@ class ICSnapshot:
     """IC快照数据结构"""
     calculation_date: str  # 计算时点
     factor_name: str  # 因子名称
-    stock_pool: str  # 股票池
+    stock_pool_index: str  # 股票池
     window_start: str  # 回看窗口起点
     window_end: str  # 回看窗口终点
     ic_stats: Dict[str, Dict]  # 各周期IC统计
@@ -230,7 +230,7 @@ class RollingICManager:
             snapshot = ICSnapshot(
                 calculation_date=calculation_date,
                 factor_name=factor_name,
-                stock_pool=stock_pool,
+                stock_pool_index=stock_pool_index,
                 window_start=window_start.strftime('%Y-%m-%d'),
                 window_end=window_end.strftime('%Y-%m-%d'),
                 ic_stats=ic_stats,
@@ -335,7 +335,7 @@ class RollingICManager:
     def _save_snapshot(self, snapshot: ICSnapshot):
         """保存IC快照"""
         # 构建文件路径
-        snapshot_dir = self.main_work_path / snapshot.stock_pool / snapshot.factor_name/self.calcu_return_type/self.version/'rolling_ic'
+        snapshot_dir = self.main_work_path / snapshot.stock_pool_index / snapshot.factor_name / self.calcu_return_type / self.version / 'rolling_ic'
         snapshot_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"ic_snapshot_{snapshot.calculation_date}.json"
@@ -345,7 +345,7 @@ class RollingICManager:
         snapshot_dict = {
             'calculation_date': snapshot.calculation_date,
             'factor_name': snapshot.factor_name,
-            'stock_pool': snapshot.stock_pool,
+            'stock_pool_index': snapshot.stock_pool_index,
             'window_start': snapshot.window_start,
             'window_end': snapshot.window_end,
             'ic_stats': snapshot.ic_stats,
@@ -357,7 +357,7 @@ class RollingICManager:
             json.dump(snapshot_dict, f, ensure_ascii=False, indent=2)
 
         # 更新索引
-        snapshot_key = f"{snapshot.factor_name}_{snapshot.stock_pool}_version_{self.version}_calculation_date_{snapshot.calculation_date}"
+        snapshot_key = f"{snapshot.factor_name}_{snapshot.stock_pool_index}_version_{self.version}_calculation_date_{snapshot.calculation_date}"
         self._ic_index[snapshot_key] = {
             'calculation_date': snapshot.calculation_date,
             'filepath': str(filepath),
@@ -367,9 +367,9 @@ class RollingICManager:
         self._save_ic_index()
         logger.debug(f"IC快照已保存: {filepath}")
 
-    def _load_snapshot(self, factor_name: str, stock_pool: str, calculation_date: str) -> Optional[ICSnapshot]:
+    def _load_snapshot(self, factor_name: str, stock_pool_index: str, calculation_date: str) -> Optional[ICSnapshot]:
         """加载IC快照"""
-        snapshot_key = f"{factor_name}_{stock_pool}_{calculation_date}"
+        snapshot_key =f'{factor_name}_{stock_pool_index}_version_{self.version}_calculation_date_{calculation_date}'
 
         if snapshot_key not in self._ic_index:
             return None

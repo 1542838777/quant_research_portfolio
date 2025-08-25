@@ -617,5 +617,15 @@ factor_definition:
     cal_require_base_fields: [ 'momentum_120d', 'volatility_90d' ]
     cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
 
+  # 合成 rolling
+  - name: 'my_composite'
+    style_category: 'quality'
+    description: '利用log_circ_mv'
+    action: 'composite_by_rolling_ic'
+    time_alignment: None # 合成因子，也不会用到这个字段，所以随便写
+    cal_require_base_fields: [ 'log_circ_mv' ]
+    cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
+
+
 
 #todo  、 大单、...

@@ -790,25 +790,25 @@ class FactorManager:
     #
     # def do_shift_and_align_for_dict(self, factor_name=None, data_dict=None, _existence_matrix: pd.DataFrame = None):
     #     result = {}
-    #     for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
-    #         ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool,
+    #     for stock_name, stock_pool_index in self.data_manager.stock_pools_dict.items():
+    #         ret = self.do_shift_and_align_where_stock_pool(factor_name, data_dict[stock_name], stock_pool_index,
     #                                                        _existence_matrix=_existence_matrix)
     #         result[stock_name] = ret
     #     return result
     #
     # def do_align_for_dict(self, factor_name, data_dict):
     #     result = {}
-    #     for stock_name, stock_pool in self.data_manager.stock_pools_dict.items():
-    #         ret = self.do_align(factor_name, data_dict[stock_name], stock_pool)
+    #     for stock_name, stock_pool_index in self.data_manager.stock_pools_dict.items():
+    #         ret = self.do_align(factor_name, data_dict[stock_name], stock_pool_index)
     #         result[stock_name] = {factor_name: ret}
     #     return result
     #
-    # def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool,
+    # def do_shift_and_align_where_stock_pool(self, factor_name, data_to_deal, stock_pool_index,
     #                                         _existence_matrix: pd.DataFrame = None):
     #     # 率先shift
     #     data_to_deal_by_shifted = self.do_shift(data_to_deal)
     #     # 对齐
-    #     result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool, _existence_matrix=_existence_matrix)
+    #     result = self.do_align(factor_name, data_to_deal_by_shifted, stock_pool_index, _existence_matrix=_existence_matrix)
     #     return result
 
     # def do_shift(
@@ -845,7 +845,7 @@ class FactorManager:
     #             f"但收到的是 {type(data_to_shift).__name__}"
     #         )
     #
-    # def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool,
+    # def do_align(self, factor_name, data_to_align: Union[pd.DataFrame, Dict[str, pd.DataFrame]], stock_pool_index,
     #              _existence_matrix: pd.DataFrame = None
     #              ) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
     #     # --- 情况一：输入是字典 ---
@@ -856,14 +856,14 @@ class FactorManager:
     #                 raise ValueError("do_align失败,dict内部不是df结构")
     #             # 对字典中的每个DataFrame执行shift操作
     #             shifted_dict[key] = fill_and_align_by_stock_pool(factor_name=key, df=df,
-    #                                                              stock_pool_df=stock_pool,
+    #                                                              stock_pool_df=stock_pool_index,
     #                                                              _existence_matrix=_existence_matrix)
     #         return shifted_dict
     #
     #     # --- 情况二：输入是单个DataFrame ---
     #     elif isinstance(data_to_align, pd.DataFrame):
     #         return fill_and_align_by_stock_pool(factor_name=factor_name, df=data_to_align,
-    #                                             stock_pool_df=stock_pool, _existence_matrix=_existence_matrix)
+    #                                             stock_pool_df=stock_pool_index, _existence_matrix=_existence_matrix)
     #
     #     # --- 其他情况：输入类型错误，主动报错 ---
     #     else:
@@ -896,8 +896,8 @@ class FactorManager:
     #
     #     # 1. 整合所有股票池的股票代码，形成一个总的股票列表
     #     all_unique_stocks = set()
-    #     for stock_pool in self.data_manager.stock_pools_dict.values():
-    #         all_unique_stocks.update(stock_pool.columns)
+    #     for stock_pool_index in self.data_manager.stock_pools_dict.values():
+    #         all_unique_stocks.update(stock_pool_index.columns)
     #
     #     master_stock_list = sorted(list(all_unique_stocks))
     #
