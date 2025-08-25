@@ -6,7 +6,7 @@ import pandas_ta as ta
 
 from data.local_data_load import load_index_daily, load_cashflow_df, load_income_df, \
     load_balancesheet_df, load_fina_indicator_df
-from projects._03_factor_selection.factor_manager.classifier.factor_calculator.momentum.sw_factor import \
+from projects._03_factor_selection.factor_manager.factor_calculator.momentum.sw_factor import \
     IndustryMomentumFactor
 from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
 from projects._03_factor_selection.utils.date.trade_date_utils import map_ann_dates_to_tradable_dates

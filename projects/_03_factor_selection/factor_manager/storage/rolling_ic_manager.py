@@ -24,6 +24,7 @@ import json
 import logging
 
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
+from projects._03_factor_selection.factory.config_snapshot_manager import ConfigSnapshotManager
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -452,28 +453,30 @@ class RollingICManager:
         logger.info(f"清理完成，删除 {removed_count} 个过期快照")
 
 
-if __name__ == "__main__":
-    # 示例用法
+def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config,factor_names ):
+    manager = ConfigSnapshotManager()
+    pool_index,s,e ,config_evaluation= manager.get_snapshot_config_content_details(snapshot_config)
+    version = f'{s}_{e}'
     config = ICCalculationConfig(
         lookback_months=12,
-        forward_periods=[1, 5, 10, 21, 40, 60, 120],
-        min_observations=120,
+        forward_periods=config_evaluation['forward_periods'],
+        min_observations=1,
         calculation_frequency='M'
     )
-    version = '20190328_20231231'
-    calcu_return_type='c2c'
+    if len(config_evaluation['returns_calculator']) > 1:
+        raise ValueError("目前只支持一个返回计算器 请指定 ")
+    calcu_return_type=config_evaluation['returns_calculator'][0]
     manager = RollingICManager(calcu_return_type, config,version)
 
     resultLoadManager = ResultLoadManager(calcu_return_type=calcu_return_type, version=version,
                                           core_eveluation_type='ic', is_raw_factor=False)
 
-    # 示例：计算滚动IC
-    factor_names = ['volatility_120d', 'sharpe_momentum_60d']
-    stock_pool = '000906'
+    stock_pool_index = pool_index
 
     snapshots = manager.calculate_and_store_rolling_ic(
-        factor_names, stock_pool, '20190328', '2023-12-31',
+        factor_names, stock_pool_index, s, e,
         resultLoadManager
     )
-
     print(f"计算完成，共生成 {sum(len(snaps) for snaps in snapshots.values())} 个IC快照")
+if __name__ == '__main__':
+    run_cal_and_save_rolling_ic_by_snapshot_config_id('20250825_091622_98ed2d09',factor_names = ['log_circ_mv'])

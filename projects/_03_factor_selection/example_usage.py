@@ -8,6 +8,7 @@
 4. 可视化和报告生成
 
 """
+import sys
 import traceback
 from pathlib import Path
 
@@ -33,7 +34,7 @@ from projects._03_factor_selection.factor_manager.registry.factor_registry impor
 # 导入重构后的模块 - 使用绝对导入
 from projects._03_factor_selection.factory.strategy_factory import StrategyFactory
 from quant_lib.config.constant_config import LOCAL_PARQUET_DATA_DIR
-from quant_lib.config.logger_config import setup_logger, log_success
+from quant_lib.config.logger_config import setup_logger, log_success, log_notice
 from quant_lib.tushare.api_wrapper import call_pro_tushare_api
 from quant_lib.tushare.tushare_client import TushareClient
 from quant_lib.utils.test import check_step
@@ -237,6 +238,8 @@ def save_close_hfq(stock_pool_name, factor_manager, data_manager):
 
 
 def main():
+    log_notice("注意不用此版本！用enhanced_test_runner.py")
+    sys.exit()
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
     current_dir = Path(__file__).parent

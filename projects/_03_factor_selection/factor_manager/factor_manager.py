@@ -15,8 +15,8 @@ from numpyencoder import NumpyEncoder
 
 from quant_lib import setup_logger
 from quant_lib.config.logger_config import log_warning, log_notice, log_error
-from .classifier.factor_calculator.factor_calculator import FactorCalculator
 from .classifier.factor_classifier import FactorClassifier
+from .factor_calculator.factor_calculator import FactorCalculator
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .storage.single_storage import add_single_factor_test_result
