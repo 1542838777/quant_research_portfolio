@@ -399,7 +399,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             factor_weights,
             quality_reports
         )
-        #todo 需要进行标准化吗
+
 
         logger.info(f"✅ IC加权因子合成完成: {composite_factor_name}")
         return composite_factor_df, synthesis_report

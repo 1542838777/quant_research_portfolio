@@ -460,7 +460,7 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
     config = ICCalculationConfig(
         lookback_months=12,
         forward_periods=config_evaluation['forward_periods'],
-        min_observations=1,
+        min_observations=120,
         calculation_frequency='M'
     )
     if 'c2c' not in config_evaluation['returns_calculator']:

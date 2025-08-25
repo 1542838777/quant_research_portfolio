@@ -148,7 +148,7 @@ class FactorSynthesizer:
             pd.DataFrame: 合成后的因子数据
         """
         # 获取子因子列表
-        sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name) #todo 看是否会用dataloader
+        sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name)
 
         from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
             ICWeightedSynthesizer, FactorWeightingConfig

@@ -117,9 +117,6 @@
 #- factor_name: 'vwap_deviation_20d'
 #  stock_pool_name: 'ZZ800'
 #
-## 资金流向类 money_flow
-#- factor_name: 'large_trade_ratio_10d'
-#  stock_pool_name: 'ZZ800'
 
 ##行业
 #- factor_name: 'sw_l1_momentum_21d'
@@ -130,13 +127,7 @@
 #--------------------------------------------------------------------------------------- 模板以上
 
 
-
-#-----------------------模板2
-
- ##linshi1
-#- factor_name: 'volatility_40d'
+#待新增：
+## 资金流向类 money_flow
+#- factor_name: 'large_trade_ratio_10d'
 #  stock_pool_name: 'ZZ800'
-
-- factor_name: 'log_circ_mv'
-  stock_pool_name: 'ZZ800'
-
