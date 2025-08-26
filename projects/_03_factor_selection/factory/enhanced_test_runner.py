@@ -49,7 +49,7 @@ class EnhancedTestRunner:
             experiments_config_path: 实验配置文件路径
         """
         current_dir = Path(__file__).parent
-        config_path = str(current_dir / 'config_manager.yaml')
+        config_path = str(current_dir / 'config.yaml')
         experiments_config_path = str(current_dir / 'experiments.yaml')
         self.config_path = Path(config_path)
         self.experiments_config_path = Path(experiments_config_path)

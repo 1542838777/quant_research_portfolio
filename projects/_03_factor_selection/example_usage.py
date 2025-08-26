@@ -243,7 +243,7 @@ def main():
     # 2. 初始化数据仓库
     logger.info("1. 加载底层原始因子raw_dict数据...")
     current_dir = Path(__file__).parent
-    data_manager = DataManager(config_path=str(current_dir / 'factory' / 'config_manager.yaml'), experiments_config_path=str(current_dir / 'factory' / 'experiments.yaml'))
+    data_manager = DataManager(config_path=str(current_dir / 'factory' / 'config.yaml'), experiments_config_path=str(current_dir / 'factory' / 'experiments.yaml'))
     data_manager.prepare_basic_data()
     factor_manager = FactorManager(data_manager)
 

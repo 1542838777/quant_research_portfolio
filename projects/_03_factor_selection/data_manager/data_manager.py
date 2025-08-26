@@ -1095,7 +1095,7 @@ def create_data_manager(config_path: str) -> DataManager:
 
 # if __name__ == '__main__':
 #     # dataManager_temp = DataManager(
-#     #     "../factory/config_manager.yaml",
+#     #     "../factory/config.yaml",
 #     #     need_data_deal=False
 #     # )
 #     #

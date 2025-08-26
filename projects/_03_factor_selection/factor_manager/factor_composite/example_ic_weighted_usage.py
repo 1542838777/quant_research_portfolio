@@ -49,7 +49,7 @@ def demonstrate_ic_weighted_synthesis():
     print("🚀 IC加权因子合成演示开始...")
     
     # 1. 初始化基础组件
-    config_path = Path(__file__).parent.parent.parent / 'factory' / 'config_manager.yaml'
+    config_path = Path(__file__).parent.parent.parent / 'factory' / 'config.yaml'
     
     data_manager = DataManager(config_path)
     data_manager.prepare_basic_data()

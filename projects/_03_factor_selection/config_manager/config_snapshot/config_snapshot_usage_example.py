@@ -140,7 +140,7 @@ def example_enhanced_test_runner():
     # 注意：这个示例需要实际的配置文件存在
     try:
         current_dir = Path(__file__).parent
-        config_path = str(current_dir / 'config_manager.yaml')
+        config_path = str(current_dir / 'config.yaml')
         experiments_config_path = str(current_dir / 'experiments.yaml')
         
         # 创建测试运行器

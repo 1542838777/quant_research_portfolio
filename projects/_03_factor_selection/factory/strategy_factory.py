@@ -43,7 +43,7 @@ class StrategyFactory:
     """
 
     def __init__(self,
-                 config_path: str = "config_manager.yaml",
+                 config_path: str = "config.yaml",
                  workspace_dir: str = "strategy_workspace"):
         """
         初始化策略工厂

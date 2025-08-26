@@ -329,7 +329,7 @@ def main():
     """主函数"""
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='机器学习选股模型')
-    parser.add_argument('--config_manager', type=str, default='config_manager.yaml', help='配置文件路径')
+    parser.add_argument('--config_manager', type=str, default='config.yaml', help='配置文件路径')
     args = parser.parse_args()
     
     # 获取当前脚本所在目录
@@ -347,7 +347,7 @@ def main():
     ensure_dir_exists(result_dir)
     
     # 保存配置副本
-    with open(result_dir / 'config_manager.yaml', 'w') as f:
+    with open(result_dir / 'config.yaml', 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
     
     # 加载数据
