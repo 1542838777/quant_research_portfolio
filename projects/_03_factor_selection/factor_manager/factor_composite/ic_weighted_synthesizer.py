@@ -19,6 +19,9 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 import json
+import statsmodels.api as sm
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
 
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
@@ -940,3 +943,679 @@ class ICWeightedSynthesizer(FactorSynthesizer):
                     print(f"    - {reason}: {count} 个因子")
 
         print(f"{'=' * 80}")
+
+    def execute_orthogonalization_plan(
+            self,
+            orthogonalization_plan: List[Dict],
+            stock_pool_index: str,
+            snap_config_id: str
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        执行正交化改造计划 - 核心功能：截面线性回归残差提取
+        
+        Args:
+            orthogonalization_plan: 正交化计划列表，每个元素包含：
+                - original_factor: 目标因子名称
+                - base_factor: 基准因子名称
+                - orthogonal_name: 正交化后的新因子名称
+                - correlation: 原始相关性
+                - base_score: 基准因子评分
+                - target_score: 目标因子评分
+            stock_pool_index: 股票池名称
+            snap_config_id: 配置快照ID
+            
+        Returns:
+            Dict[orthogonal_name, orthogonal_factor_df]: 正交化后的因子数据
+        """
+        if not orthogonalization_plan:
+            logger.info("⚪ 无正交化计划，跳过执行")
+            return {}
+            
+        logger.info(f"🔧 开始执行正交化计划，共 {len(orthogonalization_plan)} 项")
+        
+        orthogonal_factors = {}
+        
+        for plan_item in orthogonalization_plan:
+            try:
+                orthogonal_factor_df, avg_r_squared = self._execute_single_orthogonalization(
+                    plan_item, stock_pool_index, snap_config_id
+                )
+                
+                if orthogonal_factor_df is not None:
+                    orthogonal_factors[plan_item['orthogonal_name']] = orthogonal_factor_df
+                    logger.info(f"✅ 成功生成正交化因子: {plan_item['orthogonal_name']} (R²={avg_r_squared:.3f})")
+                else:
+                    logger.warning(f"⚠️ 正交化失败: {plan_item['orthogonal_name']}")
+                    
+            except Exception as e:
+                logger.error(f"❌ 正交化执行异常 {plan_item['orthogonal_name']}: {e}")
+                continue
+        
+        logger.info(f"🎯 正交化执行完成，成功生成 {len(orthogonal_factors)} 个正交化因子")
+        return orthogonal_factors
+
+    def _execute_single_orthogonalization(
+            self,
+            plan_item: Dict,
+            stock_pool_index: str,
+            snap_config_id: str
+    ) -> Tuple[Optional[pd.DataFrame], float]:
+        """
+        执行单个正交化改造 - 逐日截面OLS回归
+        
+        核心逻辑：
+        1. 加载目标因子和基准因子数据
+        2. 逐日进行截面线性回归：target_factor = α + β * base_factor + ε
+        3. 提取残差ε作为正交化后的因子值
+        
+        Args:
+            plan_item: 单个正交化计划
+            stock_pool_index: 股票池名称
+            snap_config_id: 配置快照ID
+            
+        Returns:
+            (正交化后的因子DataFrame, 平均R²): 用于IC调整
+        """
+        target_factor = plan_item['original_factor']
+        base_factor = plan_item['base_factor']
+        orthogonal_name = plan_item['orthogonal_name']
+        
+        logger.debug(f"  🔄 执行正交化: {target_factor} vs {base_factor} -> {orthogonal_name}")
+        
+        try:
+            # 1. 加载因子数据
+            target_df = self.get_sub_factor_df_from_local(target_factor, stock_pool_index, snap_config_id)
+            base_df = self.get_sub_factor_df_from_local(base_factor, stock_pool_index, snap_config_id)
+            
+            if target_df is None or base_df is None:
+                logger.error(f"  ❌ 无法加载因子数据: target={target_df is not None}, base={base_df is not None}")
+                return None, 0.0
+            
+            # 2. 数据对齐和预处理
+            aligned_target, aligned_base = self._align_factor_data(target_df, base_df)
+            
+            if aligned_target.empty or aligned_base.empty:
+                logger.error("  ❌ 因子数据对齐后为空")
+                return None, 0.0
+            
+            # 3. 逐日截面回归，获取R²用于IC调整
+            orthogonal_df, avg_r_squared = self._daily_cross_sectional_orthogonalization(
+                aligned_target, aligned_base, orthogonal_name
+            )
+            
+            # 记录R²信息用于后续IC调整
+            plan_item['avg_r_squared'] = avg_r_squared
+            
+            return orthogonal_df, avg_r_squared
+            
+        except Exception as e:
+            logger.error(f"  ❌ 单项正交化失败 {orthogonal_name}: {e}")
+            return None, 0.0
+
+    def _align_factor_data(
+            self,
+            target_df: pd.DataFrame,
+            base_df: pd.DataFrame
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        因子数据对齐 - 确保时间和股票维度一致
+        
+        Args:
+            target_df: 目标因子数据
+            base_df: 基准因子数据
+            
+        Returns:
+            (aligned_target, aligned_base): 对齐后的数据
+        """
+        # 找到共同的时间和股票
+        common_dates = target_df.index.intersection(base_df.index)
+        common_stocks = target_df.columns.intersection(base_df.columns)
+        
+        if len(common_dates) == 0 or len(common_stocks) == 0:
+            logger.error(f"  ❌ 无共同时间点或股票：日期={len(common_dates)}, 股票={len(common_stocks)}")
+            return pd.DataFrame(), pd.DataFrame()
+        
+        # 数据对齐
+        aligned_target = target_df.loc[common_dates, common_stocks]
+        aligned_base = base_df.loc[common_dates, common_stocks]
+        
+        logger.debug(f"  📊 数据对齐完成：{len(common_dates)}个交易日, {len(common_stocks)}只股票")
+        
+        return aligned_target, aligned_base
+
+    def _daily_cross_sectional_orthogonalization(
+            self,
+            target_df: pd.DataFrame,
+            base_df: pd.DataFrame,
+            orthogonal_name: str
+    ) -> Tuple[pd.DataFrame, float]:
+        """
+        逐日截面正交化 - 核心算法实现
+        
+        对每个交易日，执行截面回归：target[t,i] = α[t] + β[t] * base[t,i] + ε[t,i]
+        提取残差ε[t,i]作为正交化后的因子值
+        
+        Args:
+            target_df: 目标因子数据 (日期×股票)
+            base_df: 基准因子数据 (日期×股票) 
+            orthogonal_name: 正交化因子名称
+            
+        Returns:
+            (orthogonal_df, avg_r_squared): 正交化后的因子DataFrame 和 平均R²
+        """
+        logger.debug(f"  🧮 开始逐日截面回归，共{len(target_df)}个交易日")
+        
+        # 初始化结果DataFrame
+        orthogonal_df = pd.DataFrame(
+            index=target_df.index,
+            columns=target_df.columns,
+            dtype=np.float64
+        )
+        
+        successful_regressions = 0
+        r_squared_list = []
+        
+        # 逐日回归
+        for date in target_df.index:
+            try:
+                # 提取当日截面数据
+                y_cross = target_df.loc[date]  # 目标因子的横截面
+                x_cross = base_df.loc[date]    # 基准因子的横截面
+                
+                # 移除缺失值
+                valid_mask = (~y_cross.isna()) & (~x_cross.isna())
+                
+                if valid_mask.sum() < 10:  # 至少需要10个有效观测
+                    logger.debug(f"    ⚠️ {date}: 有效观测不足({valid_mask.sum()}个)，跳过")
+                    continue
+                
+                y_valid = y_cross[valid_mask]
+                x_valid = x_cross[valid_mask]
+                
+                # 执行截面OLS回归：y = α + β*x + ε
+                residuals, r_squared = self._perform_cross_sectional_ols(y_valid, x_valid, date)
+                
+                if residuals is not None:
+                    # 立即进行截面标准化（优化建议）
+                    if len(residuals) >= 5:  # 至少需要5个有效值
+                        mean_val = residuals.mean()
+                        std_val = residuals.std()
+                        
+                        if std_val > 1e-8:  # 避免除零
+                            standardized_residuals = (residuals - mean_val) / std_val
+                            orthogonal_df.loc[date, standardized_residuals.index] = standardized_residuals.values
+                            successful_regressions += 1
+                            
+                            # 收集R²用于IC调整
+                            if r_squared is not None:
+                                r_squared_list.append(r_squared)
+                
+            except Exception as e:
+                logger.debug(f"    ❌ {date}: 回归失败 - {e}")
+                continue
+        
+        if successful_regressions == 0:
+            logger.error("  ❌ 所有日期的回归都失败了")
+            return pd.DataFrame(), 0.0
+        
+        success_rate = successful_regressions / len(target_df)
+        avg_r_squared = np.mean(r_squared_list) if r_squared_list else 0.0
+        
+        logger.debug(f"  ✅ 截面回归完成：成功率 {success_rate:.1%} ({successful_regressions}/{len(target_df)})")
+        logger.debug(f"  📊 平均R²: {avg_r_squared:.3f} (用于IC调整)")
+        
+        return orthogonal_df, avg_r_squared
+
+    def _perform_cross_sectional_ols(
+            self,
+            y: pd.Series,
+            x: pd.Series,
+            date: str = None
+    ) -> Tuple[Optional[pd.Series], Optional[float]]:
+        """
+        执行单日截面OLS回归并提取残差
+        
+        回归方程：y = α + β*x + ε
+        重要：手动为自变量添加常数项，确保截距项正确估计
+        
+        Args:
+            y: 因变量（目标因子的截面数据）
+            x: 自变量（基准因子的截面数据）
+            date: 交易日期（用于调试）
+            
+        Returns:
+            (残差序列, R²值): 正交化后的因子值和回归拟合度
+        """
+        try:
+            # 手动添加常数项 - 这是关键步骤！
+            X_with_const = sm.add_constant(x)
+            
+            # 执行OLS回归
+            model = sm.OLS(y, X_with_const).fit()
+            
+            # 提取残差和R²
+            residuals = model.resid
+            r_squared = model.rsquared
+            
+            # 检查回归质量
+            if r_squared > 0.95:  # 过高的R²可能表示数据问题
+                logger.debug(f"    ⚠️ {date}: R²异常高({r_squared:.3f})，可能存在数据问题")
+            
+            return residuals, r_squared
+            
+        except Exception as e:
+            # 回退到sklearn实现
+            logger.debug(f"    ⚠️ statsmodels回归失败，尝试sklearn: {e}")
+            try:
+                residuals, r_squared = self._perform_ols_sklearn_fallback(y, x)
+                return residuals, r_squared
+            except Exception as e2:
+                logger.debug(f"    ❌ sklearn回归也失败: {e2}")
+                return None, None
+
+    def _perform_ols_sklearn_fallback(
+            self,
+            y: pd.Series,
+            x: pd.Series
+    ) -> Tuple[Optional[pd.Series], Optional[float]]:
+        """
+        sklearn回归备用方案
+        
+        Args:
+            y: 因变量
+            x: 自变量
+            
+        Returns:
+            (残差序列, R²值): 残差和拟合度
+        """
+        try:
+            # sklearn会自动添加截距项（如果fit_intercept=True）
+            reg = LinearRegression(fit_intercept=True)
+            
+            # reshape数据
+            X = x.values.reshape(-1, 1)
+            y_values = y.values
+            
+            # 拟合模型
+            reg.fit(X, y_values)
+            
+            # 计算预测值和残差
+            y_pred = reg.predict(X)
+            residuals = y_values - y_pred
+            
+            # 计算R²
+            r_squared = reg.score(X, y_values)
+            
+            # 返回pandas Series格式和R²
+            residuals_series = pd.Series(residuals, index=y.index)
+            return residuals_series, r_squared
+            
+        except Exception as e:
+            logger.debug(f"    ❌ sklearn回归失败: {e}")
+            return None, None
+
+    def _standardize_orthogonal_factor(
+            self,
+            orthogonal_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        标准化正交化因子
+        
+        应用截面标准化：每个交易日内，因子值标准化为均值0、标准差1
+        
+        Args:
+            orthogonal_df: 原始正交化因子
+            
+        Returns:
+            标准化后的正交化因子
+        """
+        if orthogonal_df.empty:
+            return orthogonal_df
+        
+        logger.debug("  📐 开始因子标准化")
+        
+        standardized_df = orthogonal_df.copy()
+        
+        # 逐日标准化
+        for date in orthogonal_df.index:
+            date_values = orthogonal_df.loc[date]
+            valid_values = date_values.dropna()
+            
+            if len(valid_values) < 5:  # 至少需要5个有效值
+                continue
+            
+            # Z-Score标准化
+            mean_val = valid_values.mean()
+            std_val = valid_values.std()
+            
+            if std_val > 1e-8:  # 避免除零
+                standardized_values = (valid_values - mean_val) / std_val
+                standardized_df.loc[date, valid_values.index] = standardized_values
+        
+        logger.debug("  ✅ 因子标准化完成")
+        return standardized_df
+
+    def _adjust_ic_stats_by_r_squared(
+            self,
+            original_ic_stats: Dict[str, Dict],
+            avg_r_squared: float,
+            orthogonal_factor_name: str
+    ) -> Dict[str, Dict]:
+        """
+        基于R²调整正交化因子的IC统计 - 核心修正方法
+        
+        核心逻辑：
+        正交化后的因子是残差，其预测能力约等于 (1 - R²) * 原始预测能力
+        这是因为R²表示被基准因子解释的方差比例
+        
+        Args:
+            original_ic_stats: 原始因子的IC统计数据
+            avg_r_squared: 平均R²值（来自逐日回归）
+            orthogonal_factor_name: 正交化因子名称（用于日志）
+            
+        Returns:
+            调整后的IC统计数据
+        """
+        if avg_r_squared <= 0 or avg_r_squared >= 1:
+            logger.warning(f"  ⚠️ {orthogonal_factor_name}: 异常R²值({avg_r_squared:.3f})，使用原始IC")
+            return original_ic_stats
+        
+        # IC调整因子：残差的预测能力 ≈ (1 - R²) * 原始预测能力
+        ic_adjustment_factor = 1 - avg_r_squared
+        
+        logger.debug(f"  📊 {orthogonal_factor_name}: R²={avg_r_squared:.3f}, IC调整系数={ic_adjustment_factor:.3f}")
+        
+        adjusted_ic_stats = {}
+        
+        for period, period_stats in original_ic_stats.items():
+            adjusted_period_stats = {}
+            
+            # 调整主要IC指标
+            for key, value in period_stats.items():
+                if key in ['ic_mean', 'ic_ir']:
+                    # IC均值和IR需要按调整系数缩放
+                    adjusted_value = value * ic_adjustment_factor
+                    adjusted_period_stats[key] = adjusted_value
+                elif key in ['ic_win_rate']:
+                    # 胜率的调整更复杂：向50%回归
+                    original_win_rate = value
+                    # 正交化会降低胜率的极端性
+                    adjusted_win_rate = 0.5 + (original_win_rate - 0.5) * ic_adjustment_factor
+                    adjusted_period_stats[key] = adjusted_win_rate
+                elif key in ['ic_std', 'ic_volatility']:
+                    # 波动率可能会发生变化，但通常减少（因为去除了部分系统性信息）
+                    adjusted_period_stats[key] = value * np.sqrt(ic_adjustment_factor)
+                elif key in ['ic_p_value', 't_stat']:
+                    # 统计显著性会降低（因为信号强度减弱）
+                    if key == 't_stat':
+                        adjusted_period_stats[key] = value * ic_adjustment_factor
+                    else:  # p_value
+                        # p值变大（显著性降低）
+                        adjusted_period_stats[key] = min(1.0, value / ic_adjustment_factor) if ic_adjustment_factor > 0 else 1.0
+                else:
+                    # 其他指标保持不变
+                    adjusted_period_stats[key] = value
+            
+            adjusted_ic_stats[period] = adjusted_period_stats
+        
+        # 记录调整效果
+        original_main_ic = original_ic_stats.get('5d', {}).get('ic_mean', 0)
+        adjusted_main_ic = adjusted_ic_stats.get('5d', {}).get('ic_mean', 0)
+        
+        logger.info(f"  🔄 {orthogonal_factor_name}: IC调整 {original_main_ic:.4f} -> {adjusted_main_ic:.4f} "
+                   f"(调整幅度: {(1-ic_adjustment_factor)*100:.1f}%)")
+        
+        return adjusted_ic_stats
+
+    def synthesize_with_orthogonalization(
+            self,
+            composite_factor_name: str,
+            candidate_factor_names: List[str],
+            snap_config_id: str,
+            force_generate_ic: bool = False
+    ) -> Tuple[pd.DataFrame, Dict]:
+        """
+        带正交化的专业因子合成流程
+        
+        完整流程：
+        1. 专业筛选（红色区域淘汰 + 黄色区域正交化计划）
+        2. 执行正交化改造计划
+        3. 基于处理后的因子进行IC加权合成
+        
+        Args:
+            composite_factor_name: 复合因子名称
+            candidate_factor_names: 候选因子列表
+            snap_config_id: 配置快照ID
+            force_generate_ic: 是否强制重新生成IC数据
+            
+        Returns:
+            (composite_factor_df, synthesis_report)
+        """
+        logger.info(f"\n🚀 启动带正交化的专业因子合成: {composite_factor_name}")
+        logger.info(f"📊 候选因子数量: {len(candidate_factor_names)}")
+        
+        # 1. 初始化专业筛选器
+        if self.factor_selector is None:
+            self.factor_selector = RollingICFactorSelector(snap_config_id, self.selector_config)
+            logger.info("✅ 滚动IC因子筛选器初始化完成")
+        
+        # 2. 执行完整的专业筛选流程（包含正交化计划生成）
+        selected_factors, selection_report = self.factor_selector.run_complete_selection(
+            candidate_factor_names, force_generate_ic
+        )
+        
+        if not selected_factors:
+            raise ValueError("❌ 专业筛选未选出任何因子，无法进行合成")
+        
+        # 3. 获取正交化计划
+        orthogonalization_plan = selection_report.get('orthogonalization_plan', [])
+        logger.info(f"📋 获取到 {len(orthogonalization_plan)} 项正交化计划")
+        
+        # 4. 执行正交化改造
+        config_manager = ConfigSnapshotManager()
+        pool_index, start_date, end_date, config_evaluation = config_manager.get_snapshot_config_content_details(snap_config_id)
+        
+        orthogonal_factors = {}
+        if orthogonalization_plan:
+            orthogonal_factors = self.execute_orthogonalization_plan(
+                orthogonalization_plan, pool_index, snap_config_id
+            )
+        
+        # 5. 构建最终因子列表（原始筛选因子 + 正交化因子）
+        final_factor_list = selected_factors.copy()
+        
+        # 替换被正交化的因子
+        for plan_item in orthogonalization_plan:
+            original_factor = plan_item['original_factor']
+            orthogonal_name = plan_item['orthogonal_name']
+            
+            if original_factor in final_factor_list and orthogonal_name in orthogonal_factors:
+                final_factor_list.remove(original_factor)
+                final_factor_list.append(orthogonal_name)
+                logger.info(f"🔄 因子替换: {original_factor} -> {orthogonal_name}")
+        
+        logger.info(f"🎯 最终因子列表: {len(final_factor_list)} 个因子")
+        
+        # 6. 基于最终因子列表计算IC权重（修正后的逻辑）
+        factor_ic_stats = {}
+        for factor_name in final_factor_list:
+            try:
+                # 检查是否为正交化因子
+                is_orthogonal_factor = False
+                original_factor = factor_name
+                avg_r_squared = 0.0
+                
+                # 查找对应的正交化计划项
+                for plan_item in orthogonalization_plan:
+                    if plan_item['orthogonal_name'] == factor_name:
+                        is_orthogonal_factor = True
+                        original_factor = plan_item['original_factor']
+                        avg_r_squared = plan_item.get('avg_r_squared', 0.0)
+                        break
+                
+                # 加载原始因子的IC统计
+                ic_stats = self._load_factor_ic_stats(
+                    original_factor, pool_index, snap_config_id=snap_config_id
+                )
+                
+                if ic_stats:
+                    if is_orthogonal_factor and avg_r_squared > 0:
+                        # 🎯 核心修正：基于R²调整正交化因子的IC统计
+                        logger.info(f"  🔧 正交化因子IC调整: {factor_name}")
+                        adjusted_ic_stats = self._adjust_ic_stats_by_r_squared(
+                            ic_stats, avg_r_squared, factor_name
+                        )
+                        factor_ic_stats[factor_name] = adjusted_ic_stats
+                    else:
+                        # 原始因子直接使用
+                        factor_ic_stats[factor_name] = ic_stats
+                        logger.debug(f"  📊 原始因子: {factor_name}")
+                    
+            except Exception as e:
+                logger.error(f"  ❌ {factor_name}: IC统计处理异常 - {e}")
+        
+        # 7. 计算最终权重
+        if factor_ic_stats:
+            factor_weights = self.weight_calculator.calculate_ic_based_weights(factor_ic_stats)
+        else:
+            logger.warning("⚠️ 无法获取IC统计，使用等权重合成")
+            equal_weight = 1.0 / len(final_factor_list)
+            factor_weights = {name: equal_weight for name in final_factor_list}
+        
+        # 8. 执行加权合成（支持正交化因子）
+        composite_factor_df = self._execute_weighted_synthesis_with_orthogonal(
+            composite_factor_name, pool_index, factor_weights, orthogonal_factors, snap_config_id
+        )
+        
+        # 9. 生成综合报告
+        synthesis_report = self._generate_orthogonalization_report(
+            composite_factor_name,
+            candidate_factor_names,
+            selected_factors,
+            final_factor_list,
+            factor_weights,
+            orthogonalization_plan,
+            selection_report
+        )
+        
+        logger.info(f"✅ 带正交化的专业因子合成完成: {composite_factor_name}")
+        return composite_factor_df, synthesis_report
+
+    def _execute_weighted_synthesis_with_orthogonal(
+            self,
+            composite_factor_name: str,
+            stock_pool_index_name: str,
+            factor_weights: Dict[str, float],
+            orthogonal_factors: Dict[str, pd.DataFrame],
+            snap_config_id: str
+    ) -> pd.DataFrame:
+        """
+        支持正交化因子的加权合成
+        
+        Args:
+            composite_factor_name: 复合因子名称
+            stock_pool_index_name: 股票池名称
+            factor_weights: 因子权重
+            orthogonal_factors: 正交化因子数据 {name: df}
+            snap_config_id: 配置快照ID
+            
+        Returns:
+            合成后的因子DataFrame
+        """
+        logger.info(f"⚖️ 开始执行支持正交化的加权合成，使用{len(factor_weights)}个因子")
+        
+        processed_factors = []
+        weights_list = []
+        
+        for factor_name, weight in factor_weights.items():
+            logger.info(f"  🔄 处理因子: {factor_name} (权重: {weight:.3f})")
+            
+            # 检查是否为正交化因子
+            if factor_name in orthogonal_factors:
+                logger.debug(f"    📐 使用正交化因子数据: {factor_name}")
+                processed_df = orthogonal_factors[factor_name]
+            else:
+                logger.debug(f"    📊 从本地加载原始因子: {factor_name}")
+                processed_df = self.get_sub_factor_df_from_local(factor_name, stock_pool_index_name, snap_config_id)
+            
+            if processed_df is not None and not processed_df.empty:
+                processed_factors.append(processed_df)
+                weights_list.append(weight)
+            else:
+                logger.warning(f"    ⚠️ 因子数据无效，跳过: {factor_name}")
+        
+        if not processed_factors:
+            raise ValueError("没有任何因子被成功处理")
+        
+        # 加权合成
+        composite_factor_df = self._weighted_combine_factors(processed_factors, weights_list)
+        
+        # 最终标准化
+        composite_factor_df = self.processor._standardize_robust(composite_factor_df)
+        
+        logger.info(f"✅ 支持正交化的加权合成完成: {composite_factor_name}")
+        return composite_factor_df
+
+    def _generate_orthogonalization_report(
+            self,
+            composite_factor_name: str,
+            candidate_factors: List[str],
+            selected_factors: List[str],
+            final_factor_list: List[str],
+            factor_weights: Dict[str, float],
+            orthogonalization_plan: List[Dict],
+            selection_report: Dict
+    ) -> Dict:
+        """
+        生成包含正交化信息的综合报告
+        
+        Args:
+            composite_factor_name: 复合因子名称
+            candidate_factors: 候选因子列表
+            selected_factors: 初步筛选因子列表
+            final_factor_list: 最终因子列表（经正交化处理后）
+            factor_weights: 最终权重
+            orthogonalization_plan: 正交化计划
+            selection_report: 筛选报告
+            
+        Returns:
+            综合报告
+        """
+        # 基础报告
+        base_report = self._generate_comprehensive_report(
+            composite_factor_name, candidate_factors, final_factor_list, factor_weights, selection_report
+        )
+        
+        # 添加正交化信息
+        orthogonalization_info = {
+            'orthogonalization_enabled': True,
+            'orthogonalization_plan_count': len(orthogonalization_plan),
+            'orthogonalization_details': []
+        }
+        
+        for plan_item in orthogonalization_plan:
+            orthogonalization_info['orthogonalization_details'].append({
+                'original_factor': plan_item['original_factor'],
+                'base_factor': plan_item['base_factor'],
+                'orthogonal_name': plan_item['orthogonal_name'],
+                'original_correlation': plan_item.get('correlation', 0),
+                'base_score': plan_item.get('base_score', 0),
+                'target_score': plan_item.get('target_score', 0)
+            })
+        
+        # 合并报告
+        comprehensive_report = {
+            **base_report,
+            'orthogonalization': orthogonalization_info,
+            'factor_transformation_summary': {
+                'initial_selected_count': len(selected_factors),
+                'orthogonalized_count': len(orthogonalization_plan),
+                'final_factor_count': len(final_factor_list),
+                'replacement_mapping': {
+                    plan['original_factor']: plan['orthogonal_name']
+                    for plan in orthogonalization_plan
+                }
+            }
+        }
+        
+        return comprehensive_report

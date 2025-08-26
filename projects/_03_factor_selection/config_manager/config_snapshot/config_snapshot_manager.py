@@ -55,7 +55,10 @@ class ConfigSnapshotManager:
     """配置快照管理器"""
     
     def __init__(self):
-        self.workspace_root = Path(r"/projects/_03_factor_selection/workspace")
+        # 动态定位workspace路径 - 修复硬编码路径问题
+        current_file = Path(__file__)
+        project_root = current_file.parent.parent.parent  # 从config_snapshot向上3级到_03_factor_selection
+        self.workspace_root = project_root / "workspace"
         self.snapshots_dir = self.workspace_root / "config_snapshots"
         self.snapshots_storage = self.snapshots_dir / "snapshots"
         self.index_file = self.snapshots_dir / "snapshot_index.json"
