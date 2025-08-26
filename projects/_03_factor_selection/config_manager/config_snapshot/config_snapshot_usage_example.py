@@ -15,10 +15,8 @@
 """
 
 from pathlib import Path
-from datetime import datetime
-import pandas as pd
 
-from projects._03_factor_selection.factory.config_snapshot_manager import (
+from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import (
     ConfigSnapshotManager, 
     load_config_from_yaml
 )
@@ -33,7 +31,7 @@ def example_basic_usage():
     
     # 1. 初始化管理器
     workspace_root = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace"
-    config_path = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\config.yaml"
+    config_path = r"/projects/_03_factor_selection/factory/config.yaml"
     
     manager = ConfigSnapshotManager(workspace_root)
     
@@ -76,7 +74,7 @@ def example_config_comparison():
     print("=" * 60)
     
     workspace_root = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace"
-    config_path = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\config.yaml"
+    config_path = r"/projects/_03_factor_selection/factory/config.yaml"
     
     manager = ConfigSnapshotManager(workspace_root)
     config = load_config_from_yaml(config_path)
@@ -142,7 +140,7 @@ def example_enhanced_test_runner():
     # 注意：这个示例需要实际的配置文件存在
     try:
         current_dir = Path(__file__).parent
-        config_path = str(current_dir / 'config.yaml')
+        config_path = str(current_dir / 'config_manager.yaml')
         experiments_config_path = str(current_dir / 'experiments.yaml')
         
         # 创建测试运行器

@@ -15,21 +15,20 @@ IC加权因子合成器 - 专业级因子合成引擎
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
-import warnings
 import json
 
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
 from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import (
-    RollingICManager, ICCalculationConfig, ICSnapshot, run_cal_and_save_rolling_ic_by_snapshot_config_id
+    ICCalculationConfig, run_cal_and_save_rolling_ic_by_snapshot_config_id
 )
 from projects._03_factor_selection.factor_manager.selector.rolling_ic_factor_selector import (
     RollingICFactorSelector, RollingICSelectionConfig
 )
-from projects._03_factor_selection.factory.config_snapshot_manager import ConfigSnapshotManager
+from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)

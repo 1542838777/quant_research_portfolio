@@ -1,7 +1,7 @@
 """
 测试残差化规则的脚本
 """
-from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional
+from projects._03_factor_selection.config_manager.function_load.load_config_file import _load_local_config_functional
 from quant_lib import logger
 
 if __name__ == "__main__":

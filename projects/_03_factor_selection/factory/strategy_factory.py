@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 
-from ..config.config_file.load_config_file import _load_local_config_functional
+from ..config_manager.function_load.load_config_file import _load_local_config_functional
 from ..factor_manager.factor_manager import FactorManager
 from ..factor_manager.registry.factor_registry import FactorCategory
 from ..multi_factor_optimizer.multi_factor_optimizer import MultiFactorOptimizer
@@ -43,7 +43,7 @@ class StrategyFactory:
     """
 
     def __init__(self,
-                 config_path: str = "config.yaml",
+                 config_path: str = "config_manager.yaml",
                  workspace_dir: str = "strategy_workspace"):
         """
         初始化策略工厂
@@ -181,7 +181,7 @@ class StrategyFactory:
     #             target_factors_category_dict=target_factors_category_dict,
     #             target_factor_school_type_dict=target_factor_school_type_dict,
     #             stock_pools_dict=self.data_manager.stock_pools_dict,
-    #             config=self.config
+    #             config_manager=self.config_manager
     #         )
     #
     #     # 批量测试

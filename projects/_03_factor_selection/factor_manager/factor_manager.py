@@ -20,7 +20,7 @@ from .factor_calculator.factor_calculator import FactorCalculator
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .storage.single_storage import add_single_factor_test_result
-from ..config.factor_direction_config import FACTOR_DIRECTIONS
+from ..config_manager.factor_direction_config import FACTOR_DIRECTIONS
 from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool, my_align
 from ..utils.data.check_data import check_data_quality_detail
 
@@ -627,7 +627,7 @@ class FactorManager:
     #     # 找出所有目标target 因子。
     #     # 通过config的标识 找出需要学术计算的因子
     #     # 自生的门派，重新align Require的因子，参与计算，返回学术_df
-    #     target_factors_for_evaluation = self.data_manager.config['target_factors_for_evaluation']['fields']
+    #     target_factors_for_evaluation = self.data_manager.config_manager['target_factors_for_evaluation']['fields']
     #
     #     for target_factor_name in target_factors_for_evaluation:
     #         logger.info(f"get_backtest_ready_factor_entity加载{target_factor_name}")
@@ -757,7 +757,7 @@ class FactorManager:
     #     # 拿到对应pool_name
     #     pool_name = self.get_stock_pool_name_by_factor_name(factor_name)
     #
-    #     index_filter_config = self.data_manager.config['stock_pool_profiles'][pool_name]['index_filter']
+    #     index_filter_config = self.data_manager.config_manager['stock_pool_profiles'][pool_name]['index_filter']
     #     if not index_filter_config['enable']:
     #         return INDEX_CODES['ALL_A']
     #     return index_filter_config['index_code']
@@ -904,8 +904,8 @@ class FactorManager:
     #     # 2. 只调用一次 calculate_rolling_beta，计算所有股票的Beta
     #     logger.info(f"开始为总计 {len(master_stock_list)} 只股票计算统一的Beta...")
     #     return calculate_rolling_beta(
-    #         self.data_manager.config['backtest']['start_date'],
-    #         self.data_manager.config['backtest']['end_date'],
+    #         self.data_manager.config_manager['backtest']['start_date'],
+    #         self.data_manager.config_manager['backtest']['end_date'],
     #         master_stock_list
     #     )
     # 鉴于部分因子，必须传递参数！ 这里强加判断！ ，没有传递参数，我们尽可能补充上

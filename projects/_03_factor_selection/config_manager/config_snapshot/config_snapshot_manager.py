@@ -55,7 +55,7 @@ class ConfigSnapshotManager:
     """配置快照管理器"""
     
     def __init__(self):
-        self.workspace_root = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace")
+        self.workspace_root = Path(r"/projects/_03_factor_selection/workspace")
         self.snapshots_dir = self.workspace_root / "config_snapshots"
         self.snapshots_storage = self.snapshots_dir / "snapshots"
         self.index_file = self.snapshots_dir / "snapshot_index.json"
@@ -454,7 +454,7 @@ def load_config_from_yaml(config_path: str) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     # 示例用法
-    config_path = r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\config.yaml"
+    config_path = r"/projects/_03_factor_selection/factory/config.yaml"
     
     # 创建配置管理器
     manager = ConfigSnapshotManager()

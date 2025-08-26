@@ -664,7 +664,7 @@ def fama_macbeth_regression(
     return:Series 表示纯因子带来的收益，纯收益
     """
     # # 初始化logger
-    # from quant_lib.config.logger_config import setup_logger
+    # from quant_lib.config_manager.logger_config import setup_logger
     # logger = setup_logger(__name__)
     logger.info(f"开始Fama-MacBeth回归分析 (前向收益期: {forward_returns_period}天)")
 

@@ -6,7 +6,7 @@ from typing import List
 import pandas as pd
 
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
-from projects._03_factor_selection.factory.config_snapshot_manager import ConfigSnapshotManager
+from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
 from projects._03_factor_selection.utils.factor_processor import FactorProcessor
 
 

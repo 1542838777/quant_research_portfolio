@@ -23,7 +23,7 @@ import pandas as pd
 from pandas import Series, DataFrame
 from scipy import stats
 
-from projects._03_factor_selection.config.config_file.load_config_file import is_debug
+from projects._03_factor_selection.config_manager.function_load.load_config_file import is_debug
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.factor_manager import FactorResultsManager
 from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
@@ -200,7 +200,7 @@ class FactorAnalyzer:
         """
         # 必要检查
         if not factor_manager:
-            raise RuntimeError("config 没有传递过来！")
+            raise RuntimeError("config_manager 没有传递过来！")
         self.factor_manager = factor_manager
         data_manager = factor_manager.data_manager
         if self.factor_manager.data_manager is None :

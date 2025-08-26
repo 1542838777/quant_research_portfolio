@@ -13,7 +13,7 @@ DATA_DIR = ROOT_DIR / 'data'
 MODEL_DIR = ROOT_DIR / 'models'
 RESULT_DIR = ROOT_DIR / 'results'
 LOG_DIR = ROOT_DIR / 'logs'
-CONFIG_DIR = ROOT_DIR / 'config'
+CONFIG_DIR = ROOT_DIR / 'config_manager'
 
 # 确保目录存在
 os.makedirs(DATA_DIR, exist_ok=True)

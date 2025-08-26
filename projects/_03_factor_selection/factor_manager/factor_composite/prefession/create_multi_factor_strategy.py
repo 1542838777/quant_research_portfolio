@@ -114,7 +114,7 @@ class PotentialFactorIdentifier:
 class MultiFactorStrategyBuilder:
     """多因子策略构建器"""
     
-    def __init__(self, config_path: str = "factory/config.yaml"):
+    def __init__(self, config_path: str = "factory/config_manager.yaml"):
         self.factory = StrategyFactory(config_path)
         self.optimizer = MultiFactorOptimizer(correlation_threshold=0.6)  # 稍微宽松的相关性阈值
         self.factor_identifier = PotentialFactorIdentifier()

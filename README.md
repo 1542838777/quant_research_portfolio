@@ -71,7 +71,7 @@ pip install -e .
 
 ```bash
 cd projects/01_multi_factor_model
-python run_backtest.py --config config.yaml
+python run_backtest.py --config_manager config_manager.yaml
 ```
 
 ### 自定义因子

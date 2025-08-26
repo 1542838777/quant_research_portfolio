@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import pandas as pd
 import yaml
 
-from projects._03_factor_selection.config.config_file.local_config_file_definition import \
+from projects._03_factor_selection.config_manager.function_load.local_config_file_definition import \
     _massive_test_ZZ800_profile, pool_for_massive_test_MICROSTRUCTURE_profile, generate_dynamic_config, \
     CSI300_most_basic_profile, CSI300_none_FFF_most_basic_profile, CSI300_more_filter_profile, \
     CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \

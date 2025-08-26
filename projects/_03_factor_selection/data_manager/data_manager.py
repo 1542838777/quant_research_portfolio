@@ -15,10 +15,10 @@ import numpy as np
 import pandas as pd
 
 from data.local_data_load import load_suspend_d_df
-from projects._03_factor_selection.config.base_config import experiments_yaml_path, config_yaml_path
-from projects._03_factor_selection.config.config_file.debug_temp_fast_config import IS_DEBUG_TEMP
-from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional, _load_file
-from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, \
+from projects._03_factor_selection.config_manager.base_config import experiments_yaml_path, config_yaml_path
+from projects._03_factor_selection.config_manager.function_load.debug_temp_fast_config import IS_DEBUG_TEMP
+from projects._03_factor_selection.config_manager.function_load.load_config_file import _load_local_config_functional, _load_file
+from projects._03_factor_selection.config_manager.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, \
     FILL_STRATEGY_FFILL_UNLIMITED, \
     FILL_STRATEGY_CONDITIONAL_ZERO, FILL_STRATEGY_FFILL_LIMIT_5, FILL_STRATEGY_NONE, FILL_STRATEGY_FFILL_LIMIT_65
 from projects._03_factor_selection.utils.IndustryMap import PointInTimeIndustryMap
@@ -1095,12 +1095,12 @@ def create_data_manager(config_path: str) -> DataManager:
 
 # if __name__ == '__main__':
 #     # dataManager_temp = DataManager(
-#     #     "../factory/config.yaml",
+#     #     "../factory/config_manager.yaml",
 #     #     need_data_deal=False
 #     # )
 #     #
 #     # calculate_rolling_beta(
-#     #     dataManager_temp.config['backtest']['start_date'],
-#     #     dataManager_temp.config['backtest']['end_date'],
+#     #     dataManager_temp.config_manager['backtest']['start_date'],
+#     #     dataManager_temp.config_manager['backtest']['end_date'],
 #     #     dataManager_temp.get_pool_of_factor_name_of_stock_codes('beta')
 #     # )

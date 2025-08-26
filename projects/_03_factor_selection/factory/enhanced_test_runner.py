@@ -18,23 +18,20 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Callable
 
-import numpy as np
 import pandas as pd
 
-from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional
+from projects._03_factor_selection.config_manager.function_load.load_config_file import _load_local_config_functional
 # 原有的导入
 from projects._03_factor_selection.data_manager.data_manager import DataManager
 from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 
 # 新增：配置快照管理器
-from projects._03_factor_selection.factory.config_snapshot_manager import (
-    ConfigSnapshotManager, 
-    load_config_from_yaml
+from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import (
+    ConfigSnapshotManager
 )
 
 from quant_lib.config.logger_config import setup_logger, log_success
-from quant_lib.utils.test import check_step
 
 # 配置日志
 logger = setup_logger(__name__)
@@ -52,7 +49,7 @@ class EnhancedTestRunner:
             experiments_config_path: 实验配置文件路径
         """
         current_dir = Path(__file__).parent
-        config_path = str(current_dir / 'config.yaml')
+        config_path = str(current_dir / 'config_manager.yaml')
         experiments_config_path = str(current_dir / 'experiments.yaml')
         self.config_path = Path(config_path)
         self.experiments_config_path = Path(experiments_config_path)

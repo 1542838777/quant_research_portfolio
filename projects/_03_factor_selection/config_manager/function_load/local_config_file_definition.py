@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 import copy
 from dataclasses import dataclass, field, asdict
 
-from projects._03_factor_selection.config.base_config import INDEX_CODES
+from projects._03_factor_selection.config_manager.base_config import INDEX_CODES
 
 
 # 使用 @dataclass 装饰器，Python会自动为我们生成__init__, __repr__等方法

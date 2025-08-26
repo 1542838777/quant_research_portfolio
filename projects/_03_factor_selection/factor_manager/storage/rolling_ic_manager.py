@@ -14,17 +14,15 @@
 """
 
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import json
-import logging
 
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
-from projects._03_factor_selection.factory.config_snapshot_manager import ConfigSnapshotManager
+from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -235,7 +233,7 @@ class RollingICManager:
                 window_end=window_end.strftime('%Y-%m-%d'),
                 ic_stats=ic_stats,
                 metadata={
-                    'config': {
+                    'config_manager': {
                         'lookback_months': self.config.lookback_months,
                         'min_require_observations': self.config.min_require_observations
                     },

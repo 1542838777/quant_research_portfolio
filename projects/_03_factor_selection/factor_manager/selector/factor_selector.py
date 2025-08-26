@@ -4,7 +4,7 @@ from typing import Union, Dict, Any, List
 
 import pandas as pd
 
-from projects._03_factor_selection.config.base_config import INDEX_CODES
+from projects._03_factor_selection.config_manager.base_config import INDEX_CODES
 from projects._03_factor_selection.utils.factor_scoring_v33_final import calculate_factor_score_v33
 from quant_lib import logger
 

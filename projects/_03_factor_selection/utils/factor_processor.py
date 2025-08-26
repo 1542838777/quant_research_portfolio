@@ -22,7 +22,7 @@ import warnings
 import sys
 from pathlib import Path
 
-from projects._03_factor_selection.config.base_config import FACTOR_STYLE_RISK_MODEL
+from projects._03_factor_selection.config_manager.base_config import FACTOR_STYLE_RISK_MODEL
 from projects._03_factor_selection.factor_manager.classifier.factor_classifier import FactorClassifier
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from quant_lib.config.constant_config import permanent__day

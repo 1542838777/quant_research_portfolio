@@ -26,7 +26,7 @@ import numpy as np
 import pickle
 import os
 
-from projects._03_factor_selection.config.config_file.load_config_file import _load_file
+from projects._03_factor_selection.config_manager.function_load.load_config_file import _load_file
 from quant_lib.config.logger_config import setup_logger
 
 # 为每个进程设置日志
