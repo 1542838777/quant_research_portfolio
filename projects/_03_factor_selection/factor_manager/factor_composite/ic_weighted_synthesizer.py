@@ -410,7 +410,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
 
         logger.info(f"✅ IC加权因子合成完成: {composite_factor_name}")
         return composite_factor_df, synthesis_report
-    
+    #开始筛选 最终版
     def synthesize_with_professional_selection(
             self,
             composite_factor_name: str,

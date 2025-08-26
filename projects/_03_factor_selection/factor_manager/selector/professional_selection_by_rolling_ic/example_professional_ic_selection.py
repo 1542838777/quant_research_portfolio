@@ -67,7 +67,7 @@ def demo_professional_factor_selection(snap_config_id):
 
     # 2. 从CSV文件加载所有已测试的因子（实际项目中的候选池）
     csv_file = Path(
-        r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factor_manager\selector\v3未经过残差化版本.csv")
+        r"/projects/_03_factor_selection/factor_manager/selector/v3未经过残差化版本.csv")
 
     if csv_file.exists():
         # factors_df = pd.read_csv(csv_file)
@@ -123,7 +123,7 @@ def demo_professional_factor_selection(snap_config_id):
     return selected_factors, selection_report
 
 
-def demo_ic_weighted_synthesis(snap_config_id):
+def ic_weighted_synthesis(snap_config_id):
     """演示IC加权因子合成功能"""
 
     logger.info("\n" + "=" * 80)
@@ -221,12 +221,13 @@ def main():
     snap_config_id = "20250826_131138_d03f3d9e"  # 配置快照ID
     snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID 全部
 
-    demo_ic_weighted_synthesis(snap_config_id)
+    ic_weighted_synthesis(snap_config_id)
 
 
 if __name__ == "__main__":
-    # csv_file = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factor_manager\selector\v3未经过残差化版本.csv")
-    # df = pd.read_csv(csv_file)
-    # r = df['factor_name'].unique().tolist()
+    snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID 全部
+
+    ic_weighted_synthesis(snap_config_id)
+
 
     main()
