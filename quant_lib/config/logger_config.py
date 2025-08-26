@@ -72,7 +72,7 @@ def setup_logger(
 
     return logger
 
-logger = setup_logger(__name__, console_level='INFO')
+logger = setup_logger(__name__, console_level='DEBUG', file_level='DEBUG')
 def log_flow_start(msg): logger.info(f"{RUNNING} {msg}")
 def log_success(msg): logger.info(f"{SUCCESS} {msg}")
 def log_warning(msg): logger.info(f"{WARNING} {msg}")

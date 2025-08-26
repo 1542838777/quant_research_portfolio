@@ -135,7 +135,7 @@ fast_eva_SETTING = {
 }
 fast_eva_SETTING = {
     "quantiles": 5, # 兼容旧命名
-    "forward_periods": [21],
+    "forward_periods": [5],
     "returns_calculator": ['c2c'],
     "style_factor_list": [
     ],

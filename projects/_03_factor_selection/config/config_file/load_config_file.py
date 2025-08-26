@@ -28,6 +28,7 @@ period_pre_three_year = ('20190710', '20220710')
 period_two_year = ('20230601', '20250710')
 period_one_year = ('20230601', '20240710')
 period_half_year = ('20250101', '20250710')
+temp_half_year = ('20200102', '20200810')
 longest_periods = ('20190328', '20250710')
 
 massive_test_ZZ800_train_mode = {
@@ -162,7 +163,7 @@ trans_pram = {
     'pools': {
         **fast_ZZ800_profile
     },
-    'period': period_half_year,
+    'period': temp_half_year,
     'evaluation': fast_eva_SETTING,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
 }

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from data.local_data_load import load_suspend_d_df
+from projects._03_factor_selection.config.base_config import experiments_yaml_path, config_yaml_path
 from projects._03_factor_selection.config.config_file.debug_temp_fast_config import IS_DEBUG_TEMP
 from projects._03_factor_selection.config.config_file.load_config_file import _load_local_config_functional, _load_file
 from projects._03_factor_selection.config.factor_info_config import FACTOR_FILL_CONFIG_FOR_STRATEGY, \
@@ -111,7 +112,7 @@ class DataManager:
     4. 数据对齐和预处理
     """
 
-    def __init__(self, config_path: str, experiments_config_path: str, need_data_deal: bool = True):
+    def __init__(self, config_path: str=config_yaml_path, experiments_config_path: str=experiments_yaml_path, need_data_deal: bool = True):
         """
         初始化数据管理器
         

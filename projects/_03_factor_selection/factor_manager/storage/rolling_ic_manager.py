@@ -35,13 +35,13 @@ class ICCalculationConfig:
     """IC计算配置"""
     lookback_months: int = 12  # 回看窗口(月) 目前写死-注意调整 0.1
     forward_periods: List[str] = None  # 前向收益周期
-    min_observations: int = 120  # 最小观测数量  目前写死-注意调整 0.1
+    min_require_observations: int = 120  # 最小观测数量  目前写死-注意调整 0.1
     calculation_frequency: str = 'M'  # 计算频率 ('M'=月末, 'Q'=季末)
 
-    def __init__(self,lookback_months=12, forward_periods: list=None , min_observations: int = 120, calculation_frequency: str = 'M',calcu_type='c2c', version='20190328_20231231'):
+    def __init__(self,lookback_months=12, forward_periods: list=None , min_require_observations: int = 120, calculation_frequency: str = 'M',calcu_type='c2c', version='20190328_20231231'):
         self.lookback_months = lookback_months
         self.forward_periods = forward_periods
-        self.min_observations = min_observations
+        self.min_require_observations = min_require_observations
         self.calculation_frequency = calculation_frequency
 
         self.calcu_type=calcu_type
@@ -72,11 +72,11 @@ class RollingICManager:
         # 时点IC索引
         self._ic_index = {}
         self._load_ic_index()
-    #ok
+    #ok 肉眼逐行debug 数据完美
     def calculate_and_store_rolling_ic(
             self,
             factor_names: List[str],
-            stock_pool: str,
+            stock_pool_index: str,
             start_date: str,
             end_date: str,
             resultLoadManager:ResultLoadManager,  # 数据源
@@ -87,7 +87,7 @@ class RollingICManager:
         
         Args:
             factor_names: 因子名称列表
-            stock_pool: 股票池名称
+            stock_pool_index: 股票池名称
             start_date: 开始计算时点
             end_date: 结束计算时点
             factor_data_source: 因子数据源
@@ -98,7 +98,7 @@ class RollingICManager:
             Dict[factor_name, List[ICSnapshot]]: 所有因子的IC快照序列
         """
         logger.info(f"🔄 开始滚动IC计算: {start_date} -> {end_date}")
-        logger.info(f"📊 因子数量: {len(factor_names)}, 股票池: {stock_pool}")
+        logger.info(f"📊 因子数量: {len(factor_names)}, 股票池: {stock_pool_index}")
 
         # 1. 生成计算时点序列
         calculation_dates = self._generate_calculation_dates(start_date, end_date)
@@ -114,20 +114,20 @@ class RollingICManager:
                 try:
                     # 检查是否已存在计算结果
                     if not force_recalculate and self._snapshot_exists(
-                            factor_name, stock_pool, calc_date
+                            factor_name, stock_pool_index, calc_date
                     ):
-                        snapshot = self._load_snapshot(factor_name, stock_pool, calc_date)
+                        snapshot = self._load_snapshot(factor_name, stock_pool_index, calc_date)
                         logger.debug(f"  📥 {factor_name}: 使用已有快照")
                     else:
                         # 计算新的IC快照
                         snapshot = self._calculate_ic_snapshot(
-                            factor_name, stock_pool, calc_date,
+                            factor_name, stock_pool_index, calc_date,
                             resultLoadManager
                         )
 
                         if snapshot:
                             self._save_snapshot(snapshot)
-                            logger.debug(f"  ✅ {factor_name}:{calc_date} IC快照计算完成")
+                            # logger.debug(f"  ✅ {factor_name}:{calc_date} IC快照计算完成")
                         else:#很正常啊，比如不满足观测点个数的时候
                             continue
 
@@ -178,7 +178,7 @@ class RollingICManager:
             self,
             factor_name: str,
             stock_pool_index: str,
-            calculation_date: str,
+            calculation_date: str,#月度快照 1231 0131 0229 0331.。
             resultLoadManager:ResultLoadManager
     ) -> Optional[ICSnapshot]:
         """计算单个时点的IC快照"""
@@ -237,7 +237,7 @@ class RollingICManager:
                 metadata={
                     'config': {
                         'lookback_months': self.config.lookback_months,
-                        'min_observations': self.config.min_observations
+                        'min_require_observations': self.config.min_require_observations
                     },
                     'data_points': len(factor_data),
                     'created_timestamp': datetime.now().isoformat()
@@ -256,11 +256,15 @@ class RollingICManager:
             # 对齐因子和收益数据
             aligned_factor, aligned_return = self._align_data(factor_data, return_data)
 
-            if len(aligned_factor) < self.config.min_observations:
+            if len(aligned_factor) < self.config.min_require_observations:
                 return None
 
             # 计算IC序列
-            ic_series = aligned_factor.corrwith(aligned_return, axis=1)
+            ic_series = aligned_factor.corrwith(
+                aligned_return,
+                axis=1,
+                method='spearman'
+            ).rename("IC")
             ic_series = ic_series.dropna()
 
             if len(ic_series) == 0:
@@ -301,7 +305,7 @@ class RollingICManager:
         aligned_return = return_data.loc[common_dates, common_stocks]
 
         return aligned_factor, aligned_return
-
+    #返回每个月最后一天!
     def _generate_calculation_dates(self, start_date: str, end_date: str) -> List[str]:
         """生成计算时点序列"""
         dates = []
@@ -460,23 +464,22 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
     config = ICCalculationConfig(
         lookback_months=12,
         forward_periods=config_evaluation['forward_periods'],
-        min_observations=120,
+        min_require_observations=0,
         calculation_frequency='M'
     )
     if 'c2c' not in config_evaluation['returns_calculator']:
-        raise ValueError("必须包含c2c ")
-    calcu_return_type=config_evaluation['returns_calculator'][0]
-    manager = RollingICManager(calcu_return_type, config,version)
+        raise ValueError("之前的测试 计算收益率不是按照c2c来的，现在无法滚动 ")
+    manager = RollingICManager('c2c', config,version)
 
-    resultLoadManager = ResultLoadManager(calcu_return_type=calcu_return_type, version=version,
-                                          core_eveluation_type='ic', is_raw_factor=False)
+    resultLoadManager = ResultLoadManager(calcu_return_type='c2c', version=version,
+                                          is_raw_factor=False)
 
     stock_pool_index = pool_index
 
     snapshots = manager.calculate_and_store_rolling_ic(
         factor_names, stock_pool_index, s, e,
-        resultLoadManager
+        resultLoadManager, True
     )
     print(f"计算完成，共生成 {sum(len(snaps) for snaps in snapshots.values())} 个IC快照")
 if __name__ == '__main__':
-    run_cal_and_save_rolling_ic_by_snapshot_config_id('20250825_091622_98ed2d09',factor_names = ['log_circ_mv'])
+    run_cal_and_save_rolling_ic_by_snapshot_config_id('20250826_131138_d03f3d9e',factor_names = ['turnover_rate_monthly_mean','amihud_liquidity','volatility_40d'])

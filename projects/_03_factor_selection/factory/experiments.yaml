@@ -128,6 +128,14 @@
 
 
 #待新增：
-## 资金流向类 money_flow
-#- factor_name: 'large_trade_ratio_10d'
-#  stock_pool_name: 'ZZ800'
+# 资金流向类 money_flow todo
+
+
+- factor_name: 'volatility_40d'
+  stock_pool_name: 'ZZ800'
+
+- factor_name: 'amihud_liquidity'
+  stock_pool_name: 'ZZ800'
+
+- factor_name: 'turnover_rate_monthly_mean'
+  stock_pool_name: 'ZZ800'

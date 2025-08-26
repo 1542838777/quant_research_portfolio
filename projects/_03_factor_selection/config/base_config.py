@@ -32,3 +32,6 @@ FACTOR_STYLE_RISK_MODEL = {
 #     # 默认配置，适用于未明确分类的因子
 #     'default': ['market_cap', 'industry']
 # }
+
+config_yaml_path=r'D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\config.yaml'
+experiments_yaml_path=r'D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\experiments.yaml'
