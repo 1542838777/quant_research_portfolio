@@ -22,14 +22,13 @@ from pathlib import Path
 import json
 import statsmodels.api as sm
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler
 
 from projects._03_factor_selection.data_manager.data_manager import DataManager
 from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
-from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import (
+from projects._03_factor_selection.factor_manager.ic_manager.rolling_ic_manager import (
     ICCalculationConfig, run_cal_and_save_rolling_ic_by_snapshot_config_id
 )
 from projects._03_factor_selection.factor_manager.selector.rolling_ic_factor_selector import (

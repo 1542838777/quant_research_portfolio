@@ -76,7 +76,7 @@ class RollingICManager:
     """滚动IC管理器 - 无前视偏差的IC计算与存储"""
 
     def __init__(self,calcu_return_type, config: Optional[ICCalculationConfig] = None,version=None):
-        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
+        self.main_work_path = Path(r"/projects/_03_factor_selection/workspace/result")
         self.config = config or ICCalculationConfig()
         self.calcu_return_type=calcu_return_type
         self.version = version
@@ -860,4 +860,6 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
     )
     print(f"计算完成，共生成 {sum(len(snaps) for snaps in snapshots.values())} 个IC快照")
 if __name__ == '__main__':
-    run_cal_and_save_rolling_ic_by_snapshot_config_id('20250826_131138_d03f3d9e',factor_names = ['turnover_rate_monthly_mean','amihud_liquidity','volatility_40d'])
+    all_ = '20250825_091622_98ed2d08'
+    # simple_ = '20250825_091622_98ed2d08'
+    run_cal_and_save_rolling_ic_by_snapshot_config_id(all_,factor_names = ['amihud_liquidity','volatility_40d'])

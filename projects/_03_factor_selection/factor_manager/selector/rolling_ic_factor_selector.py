@@ -19,11 +19,9 @@ from typing import Dict, List, Tuple, Optional, Any
 import warnings
 from dataclasses import dataclass
 
-from projects._03_factor_selection.config_manager.function_load.debug_temp_fast_config import IS_DEBUG_TEMP
-
 warnings.filterwarnings('ignore')
 
-from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import run_cal_and_save_rolling_ic_by_snapshot_config_id
+from projects._03_factor_selection.factor_manager.ic_manager.rolling_ic_manager import run_cal_and_save_rolling_ic_by_snapshot_config_id
 from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
 from quant_lib.config.logger_config import setup_logger
 
