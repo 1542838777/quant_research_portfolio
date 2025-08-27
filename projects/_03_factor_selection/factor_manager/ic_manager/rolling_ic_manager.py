@@ -76,7 +76,8 @@ class RollingICManager:
     """滚动IC管理器 - 无前视偏差的IC计算与存储"""
 
     def __init__(self,calcu_return_type, config: Optional[ICCalculationConfig] = None,version=None):
-        self.main_work_path = Path(r"/projects/_03_factor_selection/workspace/result")
+        self.main_work_path = Path(
+            r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
         self.config = config or ICCalculationConfig()
         self.calcu_return_type=calcu_return_type
         self.version = version
@@ -301,9 +302,9 @@ class RollingICManager:
             ).rename("IC")
             ic_series = ic_series.dropna()
 
-            if len(ic_series) == 0:
-                raise ValueError("corrwith之后IC序列为空")
-
+            if len(ic_series) == 0:#corrwith之后IC序列为空 很正常！ 当观测点要求很少，比如测试数据从0125开始，测0131 期间只有6天，如果period大于6，就会报错
+                logger.info(f"因子 {factor_name} 无有效IC统计--正常：因为没有足够的观测点！")
+                return None
             # IC统计指标 - 使用EWMA动态计算 (可配置span，默认126约等于半年)
             ewma_span = getattr(self.config, 'ewma_span', 126)
             ic_mean = ic_series.ewm(span=ewma_span).mean().iloc[-1]  # 取最新的EWMA值
@@ -842,7 +843,7 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
     config = ICCalculationConfig(
         lookback_months=12,
         forward_periods=config_evaluation['forward_periods'],
-        min_require_observations=0,
+        min_require_observations=120,
         calculation_frequency='M'
     )
     if 'c2c' not in config_evaluation['returns_calculator']:
@@ -862,4 +863,4 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
 if __name__ == '__main__':
     all_ = '20250825_091622_98ed2d08'
     # simple_ = '20250825_091622_98ed2d08'
-    run_cal_and_save_rolling_ic_by_snapshot_config_id(all_,factor_names = ['amihud_liquidity','volatility_40d'])
+    run_cal_and_save_rolling_ic_by_snapshot_config_id(all_,factor_names = ['amihud_liquidity'])
