@@ -1,6 +1,9 @@
 import pandas as pd
 import numpy as np
 
+from data.local_data_load import get_trading_dates
+
+
 #ok
 #假如ann==交易日最后一天，ann Map：那么返回的nan
 def map_ann_dates_to_tradable_dates(ann_dates: pd.Series,
@@ -89,3 +92,34 @@ if __name__ == '__main__':
         print(f"   {ann.strftime('%m-%d %a')} -> {trade.strftime('%m-%d %a')}")
     
     print("\n所有测试通过！工具可用于生产环境")
+
+#减去period天
+def subtract_period_days(trading_dates: pd.Index, period: int) -> pd.Timestamp:
+    """
+    从给定的交易日历中减去指定天数。
+
+    Args:
+        trading_dates (pd.Index): 交易日历。
+        period (int): 要减去的天数。
+
+    Returns:
+        pd.Timestamp: 减去指定天数后的日期。
+    """
+    trading_dates = pd.DatetimeIndex(trading_dates).sort_values()
+    return trading_dates[-period]
+
+def get_trading_dates_by_last_day(last_day: str):
+    return get_trading_dates(None, last_day)
+
+#ok 单测
+def get_end_day_pre_n_day(last_day: str, n: int):
+    #因为-1 取的就是最后一天 ，提前0天
+    #我们传入n=1，为了拿到提前一天的值，那就是我们该传-2
+    param=n+1
+    return get_trading_dates_by_last_day(last_day=last_day)[-param]
+if __name__ == '__main__':
+    print("测试减去天数工具")
+    print("=" * 50)
+    get_end_day_pre_n_day('20230112', 1)
+    get_end_day_pre_n_day('20230112', 1)
+    get_end_day_pre_n_day('20230112', 1)

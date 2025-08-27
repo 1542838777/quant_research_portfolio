@@ -24,6 +24,11 @@ from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager imp
 from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
 from quant_lib.config.logger_config import setup_logger
 
+# 层次聚类相关导入
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
+from scipy.spatial.distance import squareform
+import matplotlib.pyplot as plt
+
 logger = setup_logger(__name__)
 
 @dataclass 
@@ -52,10 +57,38 @@ class RollingICSelectionConfig:
     medium_corr_threshold: float = 0.3 # 中低相关分界（黄色预警：正交化战场）
     enable_orthogonalization: bool = True  # 是否启用中相关区间正交化
     
+    # 层次聚类配置
+    clustering_method: str = 'graph'   # 聚类方法: 'graph'(图算法) 或 'hierarchical'(层次聚类)
+    hierarchical_distance_threshold: float = 0.3  # 层次聚类距离阈值
+    hierarchical_linkage_method: str = 'ward'  # 连接方法: 'ward', 'complete', 'average'
+    max_clusters: int = None  # 最大簇数量限制 (None表示使用距离阈值)
+    
     # 实盘交易成本控制（换手率一等公民）
     max_turnover_rate: float = 0.15    # 最大换手率阈值（月度）
     turnover_weight: float = 0.25      # 换手率在综合评分中的权重
     enable_turnover_penalty: bool = True  # 是否启用换手率惩罚
+
+    # 1. 基础乘数相关配置
+    reward_turnover_rate_daily: float = 0.0025
+    max_turnover_rate_daily: float = 0.007
+    penalty_slope_daily: float = 45.0
+    heavy_penalty_slope_daily: float = 100.0
+    base_turnover_multiplier_floor: float = 0.1  # 【新增】基础乘数的最低值，防止变为负数
+
+    # 2. 波动率惩罚相关配置
+    turnover_vol_threshold_ratio: float = 0.5
+    turnover_vol_penalty_factor: float = 0.2
+
+    # 3. 趋势惩罚相关配置
+    turnover_trend_sensitivity: float = 50.0  # 【新增】趋势惩罚敏感度, 取代了旧的*100
+
+    # 4. 最终乘数范围控制
+    final_multiplier_min: float = 0.1  # 【新增】最终乘数下限
+    final_multiplier_max: float = 1.2  # 【新增】最终乘数上限
+    # 用于硬性淘汰的最终防线 (Final Gatekeeper Thresholds)
+    max_turnover_mean_daily: float = 0.01    # 硬门槛：日均换手率不得超过1% (约等于月度21%)
+    max_turnover_trend_daily: float = 0.00002 # 硬门槛：换手率每日恶化趋势不得超过0.002%
+    max_turnover_vol_daily: float = 0.015     # 硬门槛：换手率波动率不得超过1.5%
 
 
 @dataclass
@@ -66,7 +99,8 @@ class FactorRollingICStats:
     avg_ic_with_sign: float #带符号
     avg_ir_ir_with_sign: float
     avg_ic_abs: float              # 平均IC绝对值
-    avg_ir_abs: float              # 平均IR绝对值 
+    avg_ir_abs: float              # 平均IR绝对值
+    nw_t_stat_series_mean:float
     avg_stability: float           # 平均稳定性
     avg_ic_volatility: float       # 平均IC波动率
     multi_period_score: float      # 多周期综合评分
@@ -74,7 +108,10 @@ class FactorRollingICStats:
     time_range: Tuple[str, str]    # 时间范围
     
     # 实盘交易成本控制
-    avg_turnover_rate: float = 0.0    # 平均月度换手率
+    # avg_daily_rank_change: float = 0.0    # 平均月度换手率
+    daily_rank_change_mean:float
+    daily_turnover_trend:float
+    daily_turnover_volatility:float
     turnover_adjusted_score: float = 0.0  # 换手率调整后评分
     
 
@@ -178,25 +215,27 @@ class RollingICFactorSelector:
             try:
                 with open(ic_file, 'r', encoding='utf-8') as f:
                     snapshot = json.load(f)
-                
+
                 calc_date = snapshot['calculation_date']
                 dates_range.append(calc_date)
                 ic_stats_snap = snapshot.get('ic_stats', {})
-                
+
                 for period, stats in ic_stats_snap.items():
                     if period not in periods_data:
                         periods_data[period] = []
-                    
                     periods_data[period].append({
                         'date': calc_date,
-                        'ic_mean': stats.get('ic_mean', 0),
-                        'ic_ir': stats.get('ic_ir', 0),
-                        'ic_win_rate': stats.get('ic_win_rate', 0.5),
+                        'ic_mean': stats.get('ic_mean', 0),#底层是ewma来的
+                        'ic_ir': stats.get('ic_ir', 0),#底层是ewma来的
+                        'ic_win_rate': stats.get('ic_win_rate', 0.5),#底层是ewma来的
+                        'avg_daily_rank_change_stats': stats.get('avg_daily_rank_change_stats'),
                         'ic_std': stats.get('ic_std', 0),
                         'ic_t_stat': stats.get('ic_t_stat', 0),
-                        'ic_p_value': stats.get('ic_p_value', 1.0)
+                        'ic_nw_t_stat': stats.get('ic_nw_t_stat', 0),
+                        'ic_nw_p_value': stats.get('ic_nw_p_value', 1.0)#底层是Newey-West T-stat
                     })
-                    
+
+
             except Exception as e:
                 raise ValueError(f"读取IC快照文件 {ic_file} 失败: {e}")
 
@@ -236,13 +275,15 @@ class RollingICFactorSelector:
             ic_irs = [d['ic_ir'] for d in time_series]
             ic_win_rates = [d['ic_win_rate'] for d in time_series]
             ic_stds = [d['ic_std'] for d in time_series]
-            
+            nw_t_stat_series = [d['ic_nw_t_stat'] for d in time_series]
+
             # 计算统计指标 求（1月31快照ic数据...+n月快照数据）/n 平均
             avg_ic_period = np.mean(ic_means)
             avg_ir_period = np.mean(ic_irs)
             avg_win_rate_period = np.mean(ic_win_rates)
             ic_volatility_period = np.std(ic_means)
-            
+            nw_t_stat_series_mean = float(np.mean(nw_t_stat_series))
+
             # IC方向一致性（稳定性）
             if len(ic_means) > 1:
                 # 核心思想：稳定性，是指“滚动的IC符号”与这段时期的“平均IC符号”是否一致
@@ -267,6 +308,7 @@ class RollingICFactorSelector:
                 'ic_volatility_period': ic_volatility_period,
                 'ic_stability': stability,#方向一致性
                 'sample_count': len(time_series),
+                'nw_t_stat_series_mean':nw_t_stat_series_mean,
                 'time_series': time_series
             }
             
@@ -292,15 +334,35 @@ class RollingICFactorSelector:
         avg_ic_abs = abs(avg_ic_with_sign)
         avg_ir_abs = abs(avg_ic_ir_with_sign)
 
-        # 计算换手率（实盘交易成本一等公民）
-        avg_turnover_rate = self._estimate_factor_turnover(factor_name, aggregated_periods)
-        
+        # 选择一个参考周期 (通常选择最短的，数据最完整) 截断少
+        #      我们对periods_data的键（也就是周期）进行数字排序来找到最短的那个
+        reference_period = sorted(periods_data.keys())[0]
+        # 4.2. 从参考周期中提取完整的快照时间序列 (60个快照的列表)
+        reference_time_series = [snap['avg_daily_rank_change_stats'] for snap in periods_data[reference_period]]
+
+        # 4.3. 提取三个核心指标各自的时间序列
+        #      使用 .get() 来安全地获取值，以防某个快照数据缺失
+        avg_daily_rank_change_series  = [d.get('avg_daily_rank_change', 0) for d in reference_time_series]
+        daily_turnover_volatility_series = [d.get('daily_turnover_volatility', 0) for d in reference_time_series]
+        daily_turnover_trend_series = [d.get('daily_turnover_trend', 0) for d in reference_time_series]
+        # 4.4. 计算整个五年期间的总平均统计值
+        final_avg_change = float(np.mean(avg_daily_rank_change_series))
+        final_avg_vol = float(np.mean(daily_turnover_volatility_series))  # 对波动率求均值，衡量平均不确定性
+        final_avg_trend = float(np.mean(daily_turnover_trend_series))  # 对趋势求均值，衡量长期衰减倾向
+
+        # 4.5. 组装成最终的统计字典，用于评分函数
+        final_turnover_stats = {
+            'avg_daily_rank_change': final_avg_change,
+            'daily_turnover_volatility': final_avg_vol,
+            'daily_turnover_trend': final_avg_trend
+        }
+
         # 计算多周期综合评分
         multi_period_score = self._calculate_multi_period_score(aggregated_periods)
         
         # 计算换手率调整后评分（实盘导向）
         turnover_adjusted_score = self._calculate_turnover_adjusted_score(
-            multi_period_score, avg_turnover_rate
+            multi_period_score, final_turnover_stats
         )
         
         factor_stats = FactorRollingICStats(
@@ -310,37 +372,41 @@ class RollingICFactorSelector:
             avg_ir_ir_with_sign=avg_ic_ir_with_sign,
             avg_ic_abs= avg_ic_abs,
             avg_ir_abs=avg_ir_abs,
+            nw_t_stat_series_mean=nw_t_stat_series_mean,
             avg_stability=np.mean(all_stabilities) if all_stabilities else 0.0,
             avg_ic_volatility=np.mean(all_ic_stds) if all_ic_stds else 0.0,
             multi_period_score=multi_period_score,
             snapshot_count=len(dates_range),
             time_range=(min(dates_range), max(dates_range)) if dates_range else ('', ''),
-            avg_turnover_rate=avg_turnover_rate,
+            # 将三个核心换手率指标填入返回结构
+            daily_rank_change_mean=final_turnover_stats['avg_daily_rank_change'],
+            daily_turnover_trend=final_turnover_stats['daily_turnover_trend'],
+            daily_turnover_volatility=final_turnover_stats['daily_turnover_volatility'],
             turnover_adjusted_score=turnover_adjusted_score
         )
         # 构建结果
 
         return factor_stats
-    
+
     def _calculate_multi_period_score(self, periods_data: Dict) -> float:
         """
         计算多周期IC综合评分（带指数衰减权重）
-        
+
         Args:
             periods_data: 多周期数据 {period: stats}
-            
+
         Returns:
             float: 综合评分
         """
         if not periods_data:
             return 0.0
-        
+
         # 按周期排序（短期到长期）
         try:
             periods = sorted(periods_data.keys(), key=lambda x: int(x.replace('d', '').replace('D', '')))
         except:
             periods = sorted(periods_data.keys())
-        
+
         # 计算每个周期的得分
         period_scores = []
 
@@ -385,20 +451,20 @@ class RollingICFactorSelector:
             # 应用惩罚并确保分数在0-100之间 (乘以100方便阅读)
             total_score = (weighted_score - volatility_penalty) * 100
             period_scores.append(max(0, total_score))
-        
+
         if not period_scores:
             return 0.0
-        
+
         # 应用指数衰减权重（短期权重更高）
         decay_rate = self.config.decay_rate
         weights = np.array([decay_rate ** i for i in range(len(period_scores))])
         weights /= weights.sum()  # 权重归一化
-        
+
         # 计算加权平均分数
         final_score = np.average(period_scores, weights=weights)
-        
+
         return final_score
-    
+
     def _estimate_factor_turnover(self, factor_name: str, periods_data: Dict) -> float:
         """
         估算因子换手率（实盘交易成本核心指标）
@@ -459,61 +525,91 @@ class RollingICFactorSelector:
         except Exception as e:
             logger.debug(f"换手率估算失败 {factor_name}: {e}")
             return 0.12  # 默认换手率12%
-    
-    def _calculate_turnover_adjusted_score(self, base_score: float, turnover_rate: float) -> float:
+    #单侧通过
+    def _calculate_turnover_adjusted_score(self, base_score: float, turnover_stats: Dict) -> float:
         """
-        计算换手率调整后评分（数学连续版本 - 实盘导向核心优化）
-        
-        🎯 核心改进：确保所有分段点的数学连续性，避免评分跳变
-        
-        📊 连续分段函数设计：
-        - 区间1 [0, 0.05]: 奖励区，线性增长至1.1倍
-        - 区间2 (0.05, max_rate]: 线性衰减区，连续过渡  
-        - 区间3 (max_rate, ∞): 重惩区，连续衰减
-        
-        连续性保证：f(x-) = f(x+) 在所有分段点
-        
+        计算基于多维度换手率指标的调整后评分 (V3 - 最终生产版)
+
+        此版本经过严格审查和加固，解决了中间值保护、趋势惩罚敏感度、
+        分数符号保留和数值稳定性等问题，符合实盘生产要求。
+
         Args:
-            base_score: 基础IC评分
-            turnover_rate: 月度换手率
-            
+            base_score: 基础IC评分 (可能为负)
+            turnover_stats: 来自 _calculate_dynamic_turnover_rate 的完整统计字典
+
         Returns:
-            float: 换手率调整后评分
+            float: 换手率调整后评分，保留原始base_score的符号
         """
         if not self.config.enable_turnover_penalty:
             return base_score
-        
-        max_rate = self.config.max_turnover_rate  # 通常为 0.15
-        
-        # === 区间1：低换手率奖励区 [0, 0.05] ===
-        if turnover_rate <= 0.05:
-            # 线性奖励：从1.0增长到1.1（10%奖励）
-            turnover_multiplier = 1.0 + (turnover_rate / 0.05) * 0.1
-            
-        # === 区间2：线性惩罚区 (0.05, max_rate] ===  
-        elif turnover_rate <= max_rate:
-            # 线性衰减：从1.1开始以斜率-2.0下降
-            # 确保在边界点连续
-            turnover_multiplier = 1.1 - (turnover_rate - 0.05) * 2.0
-            
-        # === 区间3：重惩区 (max_rate, ∞) ===
+
+        # 使用一个极小值来保证数值稳定性
+        epsilon = 1e-8
+
+        # --- 1. 基础乘数 (基于换手率均值) ---
+        avg_daily_rank_change = turnover_stats.get('avg_daily_rank_change', 0.01)
+
+        reward_rate_daily = self.config.reward_turnover_rate_daily
+        max_rate_daily = self.config.max_turnover_rate_daily
+        penalty_slope = self.config.penalty_slope_daily
+        heavy_penalty_slope = self.config.heavy_penalty_slope_daily
+
+        if avg_daily_rank_change <= reward_rate_daily:
+            base_turnover_multiplier = 1.0 + (avg_daily_rank_change / (reward_rate_daily + epsilon)) * 0.1
+        elif avg_daily_rank_change <= max_rate_daily:
+            base_turnover_multiplier = 1.1 - (avg_daily_rank_change - reward_rate_daily) * penalty_slope
         else:
-            # 关键改进：从边界值连续衰减，避免跳变
-            boundary_multiplier = 1.1 - (max_rate - 0.05) * 2.0  # 边界连续值
-            excess_turnover = turnover_rate - max_rate
-            
-            # 连续衰减：从边界值开始，以5倍斜率继续下降
-            turnover_multiplier = boundary_multiplier - excess_turnover * 5.0
-        
-        # === 应用换手率权重并确保合理范围 ===
+            boundary_multiplier = 1.1 - (max_rate_daily - reward_rate_daily) * penalty_slope
+            excess_turnover = avg_daily_rank_change - max_rate_daily
+            base_turnover_multiplier = boundary_multiplier - excess_turnover * heavy_penalty_slope
+
+        # 【V3 核心改进】对基础乘数本身进行数值保护，防止其变为负或过小
+        base_turnover_multiplier = max(base_turnover_multiplier, self.config.base_turnover_multiplier_floor)
+
+        # --- 2. 波动率惩罚乘数 ---
+        volatility = turnover_stats.get('daily_turnover_volatility', 0)
+        volatility_threshold_ratio = self.config.turnover_vol_threshold_ratio
+        volatility_penalty_factor = self.config.turnover_vol_penalty_factor
+
+        volatility_penalty_multiplier = 1.0
+
+        ratio = volatility / (avg_daily_rank_change + epsilon)
+        if ratio > volatility_threshold_ratio:
+            excess_ratio = ratio - volatility_threshold_ratio
+            penalty = excess_ratio * volatility_penalty_factor
+            volatility_penalty_multiplier = max(0.8, 1.0 - penalty)  # 惩罚下限0.8保持不变
+
+        # --- 3. 趋势惩罚乘数 ---
+        trend = turnover_stats.get('daily_turnover_trend', 0)
+        trend_penalty_multiplier = 1.0
+
+        if trend > 0:
+            relative_trend = trend / (avg_daily_rank_change + epsilon)
+            sensitivity = self.config.turnover_trend_sensitivity
+
+            # 【V3 核心改进】移除了 *100 的硬编码，使用更灵活的敏感度参数
+            trend_penalty_multiplier = np.exp(-relative_trend * sensitivity)
+            trend_penalty_multiplier = max(0.7, trend_penalty_multiplier)  # 惩罚下限0.7保持不变
+
+        # === 4. 最终计算 ===
+        total_turnover_multiplier = base_turnover_multiplier * volatility_penalty_multiplier * trend_penalty_multiplier
+
         weight = self.config.turnover_weight
-        final_multiplier = (1 - weight) + weight * turnover_multiplier
-        final_multiplier = np.clip(final_multiplier, 0.1, 1.2)
-        
+        final_multiplier = (1 - weight) + weight * total_turnover_multiplier
+
+        # 使用可配置的上下限进行最终裁剪
+        final_multiplier = np.clip(
+            final_multiplier,
+            self.config.final_multiplier_min,
+            self.config.final_multiplier_max
+        )
+
         adjusted_score = base_score * final_multiplier
-        
-        return max(0.0, adjusted_score)
-    
+
+        # 【V3 核心改进】移除 max(0.0, ...)，保留分数的原始符号
+        logger.info(f"final_multiplier:{final_multiplier} total_turnover_multiplier:{total_turnover_multiplier}")
+        return adjusted_score
+
     def screen_factors_by_rolling_ic(self, factor_names: List[str], force_generate: bool = False) -> Dict[str, FactorRollingICStats]:
         """
         基于滚动IC筛选因子
@@ -540,14 +636,14 @@ class RollingICFactorSelector:
                     raise ValueError(f"因子 {factor_name}: 无法获取滚动IC统计")
 
                 # 应用筛选条件
-                passes_screening = self._evaluate_factor_quality(factor_stats)#debug here
+                passes_screening = self._evaluate_factor_quality(factor_stats)#debug here todo
                 
                 if passes_screening:
                     qualified_factors[factor_name] = factor_stats
                     direction = "+" if  np.sign(factor_stats.avg_ic_with_sign) > 0 else "-"
                     logger.info(f"  {direction} {factor_name}: 通过筛选")
                     logger.info(f"    IC={factor_stats.avg_ic_abs:.3f}, IR={factor_stats.avg_ir_abs:.2f}")
-                    logger.info(f"    稳定性={factor_stats.avg_stability:.2f}, 换手率={factor_stats.avg_turnover_rate:.1%}")
+                    logger.info(f"    稳定性={factor_stats.avg_stability:.2f}, 换手率={factor_stats.avg_daily_rank_change:.1%}")
                     logger.info(f"    基础评分={factor_stats.multi_period_score:.1f}, 调整评分={factor_stats.turnover_adjusted_score:.1f}")
                 else:
                     logger.info(f"  - {factor_name}: 未通过筛选")
@@ -573,11 +669,19 @@ class RollingICFactorSelector:
             factor_stats.multi_period_score >= self.config.min_category_score,
             factor_stats.snapshot_count >= self.config.min_snapshots
         ]
-        
+
         # 换手率门槛检查（实盘交易成本控制）
         turnover_condition = (
-            not self.config.enable_turnover_penalty or 
-            factor_stats.avg_turnover_rate <= self.config.max_turnover_rate
+                not self.config.enable_turnover_penalty  or (
+                # 硬门槛1: 平均换手率不能过高 ("简历关")
+                factor_stats.daily_rank_change_mean <= self.config.max_turnover_mean_daily and
+
+                # 硬门槛2: 换手率恶化趋势不能为正 ("面试关 - 重大风险项")
+                factor_stats.daily_turnover_trend <= self.config.max_turnover_trend_daily and
+
+                # 硬门槛3: 换手率波动率不能过高 ("背景调查关")
+                factor_stats.daily_turnover_volatility <= self.config.max_turnover_vol_daily
+        )
         )
         
         all_conditions = basic_conditions + [turnover_condition]
@@ -598,11 +702,21 @@ class RollingICFactorSelector:
             if factor_stats.snapshot_count < self.config.min_snapshots:
                 failed_checks.append(f"快照不足({factor_stats.snapshot_count}<{self.config.min_snapshots})")
             if (self.config.enable_turnover_penalty and 
-                factor_stats.avg_turnover_rate > self.config.max_turnover_rate):
-                failed_checks.append(f"换手率过高({factor_stats.avg_turnover_rate:.1%}>{self.config.max_turnover_rate:.0%})")
-            
+                factor_stats.daily_rank_change_mean > self.config.max_turnover_mean_daily):
+                failed_checks.append(f"日换手率过高({factor_stats.daily_rank_change_mean:.1%}>{self.config.max_turnover_mean_daily:.0%})")
+
+            if (self.config.enable_turnover_penalty and
+                    factor_stats.daily_turnover_trend > self.config.max_turnover_trend_daily):
+                failed_checks.append(
+                    f"换手率每日恶化趋势不得超过2%({factor_stats.daily_turnover_trend:.1%}>{self.config.max_turnover_trend_daily:.0%})")
+
+            if (self.config.enable_turnover_penalty and
+                    factor_stats.daily_turnover_volatility > self.config.max_turnover_vol_daily):
+                failed_checks.append(
+                    f"换手率波动率不能过高({factor_stats.daily_turnover_volatility:.1%}>{self.config.max_turnover_vol_daily:.0%})")
+
             logger.debug(f"因子 {factor_stats.factor_name} 未通过筛选: {'; '.join(failed_checks)}")
-        
+
         return all(all_conditions)
     
     def select_category_champions(self, qualified_factors: Dict[str, FactorRollingICStats]) -> Dict[str, List[str]]:
@@ -650,7 +764,7 @@ class RollingICFactorSelector:
                     stats = qualified_factors[name]
                     direction = "+" if  np.sign(stats.avg_ic_with_sign) > 0 else "-"
                     score_used = stats.turnover_adjusted_score if self.config.enable_turnover_penalty else stats.multi_period_score
-                    logger.info(f"  {direction} {name}: 调整评分={score_used:.1f} (换手率={stats.avg_turnover_rate:.1%})")
+                    logger.info(f"  {direction} {name}: 调整评分={score_used:.1f} (换手率={stats.avg_daily_rank_change:.1%})")
         
         return category_champions
     
@@ -684,11 +798,17 @@ class RollingICFactorSelector:
             logger.warning("⚠️ 无法计算相关性矩阵，跳过相关性控制")
             return candidate_factors, {}
         
-        # === 阶段1：红色区域集群消杀 ===
-        logger.info("🚨 阶段1：红色区域集群消杀...")
-        red_zone_survivors, red_zone_decisions = self._process_red_zone_clusters(
-            candidate_factors, correlation_matrix, qualified_factors
-        )
+        # === 阶段1：根据配置选择聚类方法 ===
+        if self.config.clustering_method == 'hierarchical':
+            logger.info("🔬 阶段1：层次聚类数据驱动分析...")
+            red_zone_survivors, red_zone_decisions = self._process_clusters_hierarchical(
+                candidate_factors, correlation_matrix, qualified_factors
+            )
+        else:#todo 对比看看 新方法结果一致不
+            logger.info("🚨 阶段1：红色区域集群消杀...")
+            red_zone_survivors, red_zone_decisions = self._process_red_zone_clusters(
+                candidate_factors, correlation_matrix, qualified_factors
+            )
         
         logger.info(f"  📈 集群消杀结果: {len(candidate_factors)} → {len(red_zone_survivors)}")
         
@@ -1181,6 +1301,278 @@ class RollingICFactorSelector:
         logger.info(f"   最终幸存者: {len(survivors)} 个")
         
         return survivors, decisions
+    
+    def _process_clusters_hierarchical(
+        self,
+        candidate_factors: List[str],
+        correlation_matrix: pd.DataFrame,
+        qualified_factors: Dict[str, FactorRollingICStats]
+    ) -> Tuple[List[str], List[Dict]]:
+        """
+        阶段1：使用层次聚类进行数据驱动的集群划分和代表选举
+        
+        🎯 核心优势:
+        1. 全局视角：同时考虑所有因子间的相关性结构
+        2. 数据驱动：无需人工设定阈值，自动发现最优簇结构
+        3. 层次信息：保留因子间的层次相似关系
+        4. 稳健性：Ward连接方法最小化簇内方差，结果更稳定
+        
+        Args:
+            candidate_factors: 候选因子列表
+            correlation_matrix: 相关性矩阵
+            qualified_factors: 因子评分统计
+            
+        Returns:
+            (survivors, decisions): 幸存者列表和决策记录
+        """
+        if len(candidate_factors) < 2:
+            logger.info("  ⚠️ 候选因子不足2个，跳过层次聚类")
+            return candidate_factors, []
+
+        try:
+            # Step 1: 将相关性矩阵转化为距离矩阵
+            # 距离 = 1 - |相关系数|，这样强相关（corr=1）的因子距离为0
+            abs_corr_matrix = abs(correlation_matrix)
+            distance_matrix = 1 - abs_corr_matrix
+            
+            # 确保距离矩阵对角线为0（自己与自己的距离）
+            np.fill_diagonal(distance_matrix.values, 0)
+            
+            # 转换为scipy层次聚类所需的压缩距离向量
+            condensed_distance = squareform(distance_matrix.values, force='tovector')
+            
+            # Step 2: 执行层次聚类
+            linkage_method = self.config.hierarchical_linkage_method
+            logger.info(f"  🔬 执行层次聚类 (method={linkage_method})...")
+            
+            linkage_matrix = linkage(condensed_distance, method=linkage_method)
+            
+            # Step 3: 根据配置决定簇划分策略
+            if self.config.max_clusters is not None:
+                # 策略A: 固定簇数量
+                cluster_labels = fcluster(linkage_matrix, self.config.max_clusters, criterion='maxclust')
+                logger.info(f"  📊 固定簇数量策略: {self.config.max_clusters} 个簇")
+            else:
+                # 策略B: 距离阈值自适应
+                distance_threshold = self.config.hierarchical_distance_threshold
+                cluster_labels = fcluster(linkage_matrix, distance_threshold, criterion='distance')
+                logger.info(f"  📊 距离阈值策略: threshold={distance_threshold}")
+            
+            # Step 4: 构建簇信息
+            clusters = {}
+            for i, factor in enumerate(candidate_factors):
+                cluster_id = cluster_labels[i]
+                if cluster_id not in clusters:
+                    clusters[cluster_id] = []
+                clusters[cluster_id].append(factor)
+            
+            n_clusters = len(clusters)
+            logger.info(f"  🎯 发现 {n_clusters} 个层次簇")
+            
+            # Step 5: 每个簇选择最佳代表因子
+            survivors = []
+            decisions = []
+            
+            for cluster_id, cluster_factors in clusters.items():
+                cluster_size = len(cluster_factors)
+                
+                if cluster_size == 1:
+                    # 单因子簇：直接保留
+                    survivor = cluster_factors[0]
+                    survivors.append(survivor)
+                    logger.info(f"  🏆 簇{cluster_id}: 单因子 {survivor} 直接保留")
+                    
+                else:
+                    # 多因子簇：选择最佳代表
+                    champion = self._elect_best_factor_in_cluster(cluster_factors, qualified_factors)
+                    losers = [f for f in cluster_factors if f != champion]
+                    survivors.append(champion)
+                    
+                    # 计算簇内平均相关性（用于记录）
+                    cluster_correlations = []
+                    for i in range(len(cluster_factors)):
+                        for j in range(i+1, len(cluster_factors)):
+                            factor1, factor2 = cluster_factors[i], cluster_factors[j]
+                            corr = abs_corr_matrix.loc[factor1, factor2]
+                            cluster_correlations.append(corr)
+                    
+                    avg_intra_cluster_corr = np.mean(cluster_correlations) if cluster_correlations else 0.0
+                    
+                    logger.info(f"  🏆 簇{cluster_id}: {cluster_size}个因子 → 选择 {champion}")
+                    logger.info(f"      淘汰: {losers}")
+                    logger.info(f"      簇内平均相关性: {avg_intra_cluster_corr:.3f}")
+                    
+                    # 记录决策
+                    for loser in losers:
+                        loser_corr = abs_corr_matrix.loc[champion, loser]
+                        decisions.append({
+                            'stage': 'hierarchical_clustering',
+                            'cluster_id': cluster_id,
+                            'cluster_size': cluster_size,
+                            'champion': champion,
+                            'loser': loser,
+                            'correlation': loser_corr,
+                            'avg_intra_cluster_corr': avg_intra_cluster_corr,
+                            'decision': '层次聚类-簇内竞选',
+                            'reason': f'层次聚类簇内竞争(簇{cluster_id},平均|corr|={avg_intra_cluster_corr:.3f})',
+                            'clustering_method': linkage_method,
+                            'distance_threshold': self.config.hierarchical_distance_threshold
+                        })
+            
+            # Step 6: 生成聚类洞察报告
+            self._generate_clustering_insights(
+                linkage_matrix, cluster_labels, candidate_factors, survivors, correlation_matrix
+            )
+            
+            logger.info(f"🔬 层次聚类完成:")
+            logger.info(f"   输入因子: {len(candidate_factors)}")
+            logger.info(f"   发现簇数: {n_clusters}")
+            logger.info(f"   选出代表: {len(survivors)}")
+            logger.info(f"   淘汰因子: {len(candidate_factors) - len(survivors)}")
+            
+            return survivors, decisions
+            
+        except Exception as e:
+            logger.error(f"❌ 层次聚类失败: {e}")
+            logger.info("   回退到图算法方法...")
+            # 回退到原始图算法方法
+            return self._process_red_zone_clusters(candidate_factors, correlation_matrix, qualified_factors)
+    
+    def _elect_best_factor_in_cluster(
+        self, 
+        cluster_factors: List[str], 
+        qualified_factors: Dict[str, FactorRollingICStats]
+    ) -> str:
+        """
+        在簇内选举最佳代表因子
+        
+        综合评分标准:
+        1. 多周期IC评分 (60%权重)
+        2. Newey-West显著性 (25%权重) 
+        3. 因子稳定性 (15%权重)
+        """
+        if len(cluster_factors) == 1:
+            return cluster_factors[0]
+        
+        # 计算每个因子的综合竞选分数
+        candidates_scores = []
+        
+        for factor in cluster_factors:
+            if factor in qualified_factors:
+                stats = qualified_factors[factor]
+                
+                # 1. IC评分 (归一化到0-1)
+                ic_score = min(stats.multi_period_score / 100.0, 1.0)
+                
+                # 2. 显著性评分 (基于Newey-West t统计量)
+                nw_significance_score = min(abs(stats.nw_t_stat_series_mean) / 3.0, 1.0)
+                
+                # 3. 稳定性评分
+                stability_score = stats.avg_stability
+                
+                # 综合评分
+                comprehensive_score = (
+                    ic_score * 0.60 + 
+                    nw_significance_score * 0.25 + 
+                    stability_score * 0.15
+                )
+                
+                candidates_scores.append((factor, comprehensive_score, {
+                    'ic_score': ic_score,
+                    'nw_significance': nw_significance_score, 
+                    'stability': stability_score
+                }))
+            else:
+                # 没有统计数据的因子给予最低分
+                candidates_scores.append((factor, 0.0, {}))
+        
+        # 按综合分数排序，选择最高分
+        candidates_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        champion = candidates_scores[0][0]
+        champion_score = candidates_scores[0][1]
+        
+        logger.debug(f"      簇内竞选结果: {champion} (综合分数: {champion_score:.3f})")
+        
+        return champion
+    
+    def _generate_clustering_insights(
+        self, 
+        linkage_matrix: np.ndarray,
+        cluster_labels: np.ndarray, 
+        factor_names: List[str],
+        survivors: List[str],
+        correlation_matrix: pd.DataFrame
+    ) -> None:
+        """
+        生成层次聚类洞察报告 (可选可视化)
+        """
+        try:
+            # 1. 簇间距离分析
+            n_clusters = len(set(cluster_labels))
+            
+            # 2. 因子保留率分析
+            retention_rate = len(survivors) / len(factor_names) if factor_names else 0
+            
+            # 3. 平均簇内相关性
+            clusters = {}
+            for i, factor in enumerate(factor_names):
+                cluster_id = cluster_labels[i]
+                if cluster_id not in clusters:
+                    clusters[cluster_id] = []
+                clusters[cluster_id].append(factor)
+            
+            cluster_internal_correlations = []
+            for cluster_factors in clusters.values():
+                if len(cluster_factors) > 1:
+                    cluster_corrs = []
+                    for i in range(len(cluster_factors)):
+                        for j in range(i+1, len(cluster_factors)):
+                            corr = abs(correlation_matrix.loc[cluster_factors[i], cluster_factors[j]])
+                            cluster_corrs.append(corr)
+                    if cluster_corrs:
+                        cluster_internal_correlations.append(np.mean(cluster_corrs))
+            
+            avg_intra_cluster_corr = np.mean(cluster_internal_correlations) if cluster_internal_correlations else 0
+            
+            logger.info(f"  📈 聚类洞察:")
+            logger.info(f"     因子保留率: {retention_rate:.1%}")
+            logger.info(f"     平均簇内相关性: {avg_intra_cluster_corr:.3f}")
+            logger.info(f"     多因子簇数量: {len(cluster_internal_correlations)}")
+            
+            # 可选：保存树状图 (在研究环境中很有用)
+            # self._save_dendrogram(linkage_matrix, factor_names)
+            
+        except Exception as e:
+            logger.debug(f"聚类洞察生成失败: {e}")
+    
+    def _save_dendrogram(self, linkage_matrix: np.ndarray, factor_names: List[str]) -> None:
+        """保存层次聚类树状图 (可选功能)"""
+        try:
+            plt.figure(figsize=(15, 8))
+            dendrogram(
+                linkage_matrix,
+                labels=factor_names,
+                orientation='top',
+                distance_sort='descending',
+                show_leaf_counts=True
+            )
+            plt.title('Factor Hierarchical Clustering Dendrogram')
+            plt.xlabel('Factors')
+            plt.ylabel('Distance')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            
+            # 保存到工作目录
+            output_path = self.main_work_path / f"dendrogram_{self.snap_config_id}.png"
+            plt.savefig(output_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            logger.info(f"  📊 树状图已保存: {output_path}")
+            
+        except Exception as e:
+            logger.debug(f"树状图保存失败: {e}")
+            plt.close()
 
     def _process_yellow_zone_orthogonalization(
             self, 

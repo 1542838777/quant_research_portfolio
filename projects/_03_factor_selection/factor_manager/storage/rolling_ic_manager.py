@@ -12,8 +12,15 @@
 - 支持实盘级别的严格时间控制
 - 高效的增量计算和存储
 """
+from typing import Tuple
+import math
+import logging
+from scipy import stats
+import statsmodels.api as sm
+from scipy import stats
 
 import pandas as pd
+import numpy as np
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from dataclasses import dataclass
@@ -23,6 +30,8 @@ import json
 
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
 from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
+from projects._03_factor_selection.utils.date.trade_date_utils import get_end_day_pre_n_day, \
+    get_trading_dates_by_last_day
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -35,12 +44,17 @@ class ICCalculationConfig:
     forward_periods: List[str] = None  # 前向收益周期
     min_require_observations: int = 120  # 最小观测数量  目前写死-注意调整 0.1
     calculation_frequency: str = 'M'  # 计算频率 ('M'=月末, 'Q'=季末)
+    significance_threshold: float = 1.96  # 显著性阈值 (95%置信度)
+    ewma_span: int = 126  # EWMA窗口 (约半年)
+    max_monthly_turnover: float = 0.40  # 最大月度换手率上限
+    turnover_mode: str = 'calculate'  # 换手率计算模式: 'estimate'(经验估算) 或 'calculate'(动态计算)
 
-    def __init__(self,lookback_months=12, forward_periods: list=None , min_require_observations: int = 120, calculation_frequency: str = 'M',calcu_type='c2c', version='20190328_20231231'):
+    def __init__(self,lookback_months=12, forward_periods: list=None , min_require_observations: int = 120, calculation_frequency: str = 'M',calcu_type='c2c', version='20190328_20231231', turnover_mode='estimate'):
         self.lookback_months = lookback_months
         self.forward_periods = forward_periods
         self.min_require_observations = min_require_observations
         self.calculation_frequency = calculation_frequency
+        self.turnover_mode = turnover_mode
 
         self.calcu_type=calcu_type
         self.version=version
@@ -184,7 +198,7 @@ class RollingICManager:
             # 1. 确定回看窗口（严格避免前视偏差）
             calc_date = pd.Timestamp(calculation_date)
             window_end = calc_date
-            window_start = calc_date - relativedelta(months=self.config.lookback_months)
+            window_start = calc_date - relativedelta(months=self.config.lookback_months) #回看12个月
 
             # 2. 获取窗口内的因子数据
             factor_data = resultLoadManager.get_factor_data(
@@ -214,8 +228,23 @@ class RollingICManager:
                 if return_data is None or return_data.empty:
                     raise ValueError('收益率数据不可能为空！，严重错误！')
 
+                # 根据预测周期，确定因子数据的有效截止日期
+                # 站在 calc_date，要评价一个预测期为 period 的因子，
+                # 最晚的因子日期 T 必须满足 T + period <= calc_date。
+                # c. 对原始的、完整的因子数据进行【截断】，得到本次计算所需的安全子集
+                # 1. 精确计算出因子数据在此周期下的有效截止日期
+                effective_end_date = get_end_day_pre_n_day(calculation_date,period)
+                # 2. 使用布尔索引，基于【日期】进行过滤
+                factor_data = factor_data[factor_data.index <= effective_end_date]
+
+
                 # 计算IC
-                period_ic_stats = self._calculate_period_ic(factor_data, return_data)
+                period_ic_stats = self._calculate_period_ic(
+                    factor_data, return_data, 
+                    factor_name=factor_name,
+                    stock_pool_index=stock_pool_index,
+                    resultLoadManager=resultLoadManager
+                )
 
                 if period_ic_stats:
                     ic_stats[period] = period_ic_stats
@@ -248,7 +277,14 @@ class RollingICManager:
             logger.error(f"计算IC快照失败 {factor_name}@{calculation_date}: {e}")
             return None
 
-    def _calculate_period_ic(self, factor_data: pd.DataFrame, return_data: pd.DataFrame) -> Optional[Dict]:
+    def _calculate_period_ic(
+        self, 
+        factor_data: pd.DataFrame, 
+        return_data: pd.DataFrame,
+        factor_name: str = None,
+        stock_pool_index: str = None,
+        resultLoadManager = None
+    ) -> Optional[Dict]:
         """计算特定周期的IC统计"""
         try:
             # 对齐因子和收益数据
@@ -268,30 +304,374 @@ class RollingICManager:
             if len(ic_series) == 0:
                 raise ValueError("corrwith之后IC序列为空")
 
-            # IC统计指标
-            ic_mean = ic_series.mean()
-            ic_std = ic_series.std()
-            ic_ir = ic_mean / ic_std if ic_std > 0 else 0
-            ic_win_rate = (ic_series > 0).mean()
+            # IC统计指标 - 使用EWMA动态计算 (可配置span，默认126约等于半年)
+            ewma_span = getattr(self.config, 'ewma_span', 126)
+            ic_mean = ic_series.ewm(span=ewma_span).mean().iloc[-1]  # 取最新的EWMA值
+            ic_std_ewma = ic_series.ewm(span=ewma_span).std().iloc[-1]  # EWMA标准差，更平滑
+            ic_std_rolling = ic_series.std()  # 保留全样本标准差供参考
+            ic_ir = ic_mean / ic_std_ewma if ic_std_ewma > 0 else 0  # 使用EWMA标准差计算IR
+            # 确定长期方向，增加阈值保护
+            threshold_mean = 0.001
+            long_term_ic_mean = ic_series.mean()
+            if abs(long_term_ic_mean) < threshold_mean:
+                # 方向不明显，直接按正向处理或略过
+                factor_direction = 1
+            else:
+                factor_direction = np.sign(long_term_ic_mean)
 
-            # t检验
+            # 胜负序列（保留方向性）
+            win_loss_series = ((ic_series * factor_direction) > 0).astype(int)
+
+            # EWMA 胜率
+            ic_win_rate_ewma = win_loss_series.ewm(span=ewma_span).mean().iloc[-1]
+            # t检验 (传统)
             from scipy import stats
             t_stat, p_value = stats.ttest_1samp(ic_series, 0)
+            
+            # 动态Newey-West T-stat (稳健版异方差调整) 不需要ewma处理 （因为他本质是全量统计
+            ic_nw_t_stat, ic_nw_p_value = self._calculate_newey_west_tstat(ic_series) #ok
+            
+            #动态计算 (基于实际排名变化)
+            avg_daily_rank_change_turnover_stats  = self._calculate_dynamic_turnover_rate(
+                factor_name,aligned_factor, stock_pool_index, ic_series.index, resultLoadManager
+            )
+            # 计算显著性标记和质量评估
+            significance_threshold = getattr(self.config, 'significance_threshold', 1.96)
+            max_turnover = getattr(self.config, 'max_monthly_turnover', 0.40)
+            
+            is_significant_nw = abs(ic_nw_t_stat) > significance_threshold
+            is_significant_traditional = abs(t_stat) > significance_threshold
+
+            # 综合质量评级
+            quality_score = self._calculate_quality_score(
+                ic_mean, ic_ir, ic_win_rate_ewma, ic_nw_t_stat, avg_daily_rank_change_turnover_stats.get('avg_daily_rank_change', 0)
+            )
 
             return {
                 'ic_mean': float(ic_mean),
-                'ic_std': float(ic_std),
-                'ic_ir': float(ic_ir),
-                'ic_win_rate': float(ic_win_rate),
-                'ic_t_stat': float(t_stat),
+                'ic_std_ewma': float(ic_std_ewma),  # 新增EWMA标准差
+                'ic_std_rolling': float(ic_std_rolling),  # 保留全样本标准差
+                'ic_ir': float(ic_ir),  # 基于EWMA标准差的IR
+                'ic_win_rate': float(ic_win_rate_ewma) ,
+                'ic_t_stat': float(t_stat),  # 传统t统计量
                 'ic_p_value': float(p_value),
+                'ic_nw_t_stat': float(ic_nw_t_stat),  # Newey-West调整T统计量
+                'ic_nw_p_value': float(ic_nw_p_value),  # 对应p值
                 'ic_count': len(ic_series),
                 'ic_max': float(ic_series.max()),
-                'ic_min': float(ic_series.min())
+                'ic_min': float(ic_series.min()),
+                # 新增质量指标
+                'is_significant_nw': bool(is_significant_nw),  # Newey-West显著性
+                'is_significant_traditional': bool(is_significant_traditional),  # 传统显著性
+                'avg_daily_rank_change_stats': avg_daily_rank_change_turnover_stats,  # 换手率约束
+                # 'quality_score': float(quality_score),  # 综合质量评分
+                **avg_daily_rank_change_turnover_stats  # 动态换手率统计
             }
 
         except Exception as e:
             raise  ValueError(f"计算周期IC失败: {e}")
+    #a give
+
+    def _calculate_newey_west_tstat(self,ic_series: pd.Series) -> Tuple[float, float]:
+        """
+        计算 Newey-West 调整的 t-stat（针对 IC 均值的 HAC 标准误）
+
+        Args:
+            ic_series: pd.Series，IC 时间序列（可包含 NaN）
+
+        Returns:
+            (nw_t_stat, nw_p_value)：Newey-West t-stat 以及双侧 p-value
+        """
+        # 先去 NA 并计算样本数
+        ic_nonan = ic_series.dropna()
+        n = ic_nonan.size
+
+        # 样本过小时直接返回不可显著
+        if n < 10:
+            return 0.0, 1.0
+
+        try:
+            ic_values = ic_nonan.values.astype(float)
+            ic_mean = ic_values.mean()
+            residuals = ic_values - ic_mean
+
+            # Newey-West 推荐的 lag 选择（常用经验式）
+            # lag = floor(4 * (n/100)^(2/9)), 并确保 <= n-1
+            max_lag = int(math.floor(4 * (n / 100.0) ** (2.0 / 9.0)))
+            max_lag = max(1, min(max_lag, n - 1))
+
+            # 计算 long-run variance (HAC)
+            # gamma_0 = sum(residuals^2) / n
+            gamma0 = np.sum(residuals ** 2) / n
+            long_run_variance = gamma0
+
+            for lag in range(1, max_lag + 1):
+                # 自协方差 gamma_lag = sum_{t=lag}^{n-1} e_t e_{t-lag} / n
+                gamma_lag = np.sum(residuals[:-lag] * residuals[lag:]) / n
+                # Bartlett 权重
+                weight = 1.0 - lag / (max_lag + 1.0)
+                long_run_variance += 2.0 * weight * gamma_lag
+
+            # 数值保护：不允许负数（可能由数值误差导致）
+            long_run_variance = max(long_run_variance, 0.0)
+
+            # 标准误（均值的方差估计）
+            nw_se = math.sqrt(long_run_variance / n) if long_run_variance > 0 else 0.0
+
+            if nw_se <= 0.0:
+                return 0.0, 1.0
+
+            nw_t_stat = float(ic_mean / nw_se)
+
+            # p-value（双侧），这里用 t 分布 df = n-1（近似）
+            nw_p_value = float(2.0 * (1.0 - stats.t.cdf(abs(nw_t_stat), df=n - 1)))
+
+            return nw_t_stat, nw_p_value
+
+        except Exception:
+            # 作为兜底：回退到常规 t 统计量（样本均值 / (std/sqrt(n))）
+            raise ValueError("无法计算Newey-West t-stat")
+            # try:
+            #     ic_vals = ic_nonan.values.astype(float)
+            #     n2 = ic_vals.size
+            #     if n2 < 2:
+            #         return 0.0, 1.0
+            #     ic_mean = ic_vals.mean()
+            #     ic_std = ic_vals.std(ddof=1)  # 样本标准差
+            #     if ic_std <= 0.0:
+            #         return 0.0, 1.0
+            #     t_stat = float(ic_mean / (ic_std / math.sqrt(n2)))
+            #     p_value = float(2.0 * (1.0 - stats.t.cdf(abs(t_stat), df=n2 - 1)))
+            #     return t_stat, p_value
+            # except Exception:
+            #     return 0.0, 1.0
+
+    def _calculate_quality_score(
+        self, 
+        ic_mean: float, 
+        ic_ir: float, 
+        ic_win_rate: float, 
+        nw_t_stat: float, 
+        avg_daily_rank_change: float
+    ) -> float:
+        """
+        计算因子综合质量评分 (0-1范围)
+        
+        考虑因素:
+        1. IC绝对值 (40%权重)
+        2. IR指标 (25%权重) 
+        3. 显著性 (20%权重)
+        4. 胜率 (10%权重)
+        5. 换手率惩罚 (5%权重)
+        """
+        try:
+            # 1. IC强度评分 (0-1)
+            ic_score = min(abs(ic_mean) / 0.05, 1.0) * 0.4
+            
+            # 2. IR指标评分 (0-1) 
+            ir_score = min(abs(ic_ir) / 2.0, 1.0) * 0.25
+            
+            # 3. 显著性评分 (0-1)
+            significance_score = min(abs(nw_t_stat) / 3.0, 1.0) * 0.2
+            
+            # 4. 胜率评分 (0-1)
+            win_rate_score = max(0, (ic_win_rate - 0.5) * 2) * 0.1
+            
+            # 5. 换手率惩罚 (0-1)
+            turnover_penalty = max(0, 1 - avg_daily_rank_change / 0.5) * 0.05
+            
+            total_score = ic_score + ir_score + significance_score + win_rate_score + turnover_penalty
+            return min(total_score, 1.0)
+            
+        except:
+            return 0.0
+    
+    def _calculate_dynamic_turnover_rate(
+        self, 
+        factor_name: str,
+        factor_data: pd.DataFrame,
+        stock_pool_index: str,
+        date_index: pd.DatetimeIndex,
+        resultLoadManager = None
+    ) -> Dict[str, float]:
+        """
+        计算动态换手率统计 (方案2: 基于实际因子排名变化)
+        
+        Args:
+            factor_name: 因子名称
+            stock_pool_index: 股票池索引
+            date_index: IC计算日期索引
+            resultLoadManager: 数据加载管理器
+            衡量了在整个股票池中，股票的“座次”平均发生了多大的变化。
+        Returns:
+            Dict: 换手率相关统计指标
+        """
+        try:
+            if resultLoadManager is None or len(date_index) < 2:
+                return self._get_empty_turnover_stats()
+
+            if factor_data is None or factor_data.empty:
+                logger.debug(f"因子 {factor_name} 数据不足，无法计算动态换手率")
+                return self._get_empty_turnover_stats()
+            
+            # 2. 计算每个日期的因子排名百分位 (使用分位数排名，更稳定)
+            monthly_rankings = {}
+            monthly_dates = sorted(date_index)
+            
+            for calc_date in monthly_dates:
+                calc_timestamp = pd.Timestamp(calc_date)
+                
+                # 获取该月末前后几天的数据来增强稳定性
+                #防止在进行1231计算月度快照计算，发现1230 1229 都没有数据！（可能是假期
+                window_start = calc_timestamp - pd.Timedelta(days=5)
+                window_end = calc_timestamp + pd.Timedelta(days=1)
+                
+                # 在因子数据中找到最接近的交易日
+                available_dates = factor_data.index
+                valid_dates = available_dates[
+                    (available_dates >= window_start) & (available_dates <= window_end)
+                ]
+                
+                if len(valid_dates) == 0:
+                    continue
+                
+                # 使用最接近目标日期的数据
+                target_date = valid_dates[np.argmin(np.abs((valid_dates - calc_timestamp).days))]
+                daily_factor = factor_data.loc[target_date].dropna()
+                
+                if len(daily_factor) < 10:  # 至少需要10只股票
+                    continue
+                
+                # 计算分位数排名 (0-1之间)
+                rankings = daily_factor.rank(pct=True, method='average')
+                monthly_rankings[calc_date] = rankings
+            
+            if len(monthly_rankings) < 2:
+                logger.debug(f"因子 {factor_name} 有效排名数据不足，无法计算换手率")
+                return self._get_empty_turnover_stats()
+            
+            # 3. 计算相邻期间的排名变化 (换手率计算)
+            turnover_rates = []
+            ranking_dates = sorted(monthly_rankings.keys())
+            
+            for i in range(1, len(ranking_dates)):
+                prev_date = ranking_dates[i-1]
+                curr_date = ranking_dates[i]
+                
+                prev_rankings = monthly_rankings[prev_date]
+                curr_rankings = monthly_rankings[curr_date]
+                
+                # 找到两期共同的股票
+                common_stocks = prev_rankings.index.intersection(curr_rankings.index)
+                
+                if len(common_stocks) < 10:
+                    continue
+                
+                prev_common = prev_rankings.loc[common_stocks]
+                curr_common = curr_rankings.loc[common_stocks]
+                
+                # 计算排名变化的绝对值平均 (这是换手率的核心指标)
+                ranking_changes = np.abs(curr_common - prev_common)
+                mean_absolute_rank_change = ranking_changes.mean()
+                
+                turnover_rates.append(mean_absolute_rank_change)
+            
+            if len(turnover_rates) == 0:
+                return self._get_empty_turnover_stats()
+            
+            # 4. 统计换手率时间序列
+            turnover_array = np.array(turnover_rates)
+            
+            avg_daily_rank_change = np.mean(turnover_array)
+            daily_turnover_volatility = float(np.std(turnover_array))
+            
+            # 计算换手率趋势 (线性回归斜率)
+            if len(turnover_rates) >= 3:
+                x = np.arange(len(turnover_rates))
+                z = np.polyfit(x, turnover_array, 1)
+                daily_turnover_trend = z[0]    #斜率
+            else:
+                daily_turnover_trend = 0.0
+            
+            return {
+                'avg_daily_rank_change': float(avg_daily_rank_change),
+                'daily_turnover_volatility': float(daily_turnover_volatility),
+                'daily_turnover_trend': float(daily_turnover_trend),
+                'sample_periods': len(turnover_rates),
+                'calculation_method': 'rank_change_dynamic'
+            }
+            
+        except Exception as e:
+            raise ValueError(f"动态换手率计算失败 {factor_name}: {e}")
+
+    #可删除
+    def _estimate_factor_turnover(self, factor_name: str) -> Dict[str, float]:
+        """
+        估算因子换手率 (方案1: 基于经验和因子类型)
+        
+        Args:
+            factor_name: 因子名称
+            
+        Returns:
+            Dict: 换手率相关统计指标
+        """
+        try:
+            # 根据因子类型估算换手率（基于经验和研究）
+            turnover_estimates = {
+                # 高频类因子（技术面）
+                'reversal_1d': 0.30, 'reversal_5d': 0.25, 'reversal_10d': 0.20, 'reversal_21d': 0.18,
+                'momentum_20d': 0.18, 'rsi': 0.22, 'cci': 0.24, 'rsi_经过残差化': 0.22, 'cci_经过残差化': 0.24,
+                'macd': 0.20, 'bollinger_position': 0.28, 'rsi_divergence': 0.26, 'pead': 0.23,
+                
+                # 中频类因子（价量结合）
+                'momentum_60d': 0.15, 'momentum_120d': 0.12, 'momentum_12_1': 0.10, 'momentum_6_1': 0.13, 'momentum_3_1': 0.16,
+                'momentum_pct_60d': 0.15, 'sharpe_momentum_60d': 0.14, 'sw_l1_momentum_21d': 0.17,
+                'volatility_40d': 0.16, 'volatility_90d': 0.14, 'volatility_120d': 0.12,
+                'volatility_40d_经过残差化': 0.16, 'volatility_90d_经过残差化': 0.14, 'volatility_120d_经过残差化': 0.12,
+                'atr_20d': 0.18,
+                'amihud_liquidity': 0.14, 'turnover_rate_90d_mean': 0.16, 'turnover_rate_monthly_mean': 0.15,
+                'turnover_rate_90d_mean-经过残差化': 0.16, 'turnover_rate_monthly_mean_经过残差化': 0.15,
+                'ln_turnover_value_90d': 0.17, 'ln_turnover_value_90d_经过残差化': 0.17,
+                'turnover_t1_div_t20d_avg': 0.19, 'bid_ask_spread': 0.21,
+                
+                # 低频类因子（基本面）
+                'ep_ratio': 0.08, 'bm_ratio': 0.07, 'sp_ratio': 0.08, 'cfp_ratio': 0.09, 'pb_ratio': 0.08,
+                'pe_ttm': 0.08, 'ps_ratio': 0.08, 'value_composite': 0.07,
+                'roe_ttm': 0.06, 'gross_margin_ttm': 0.05, 'earnings_stability': 0.04, 'roa_ttm': 0.06,
+                'total_revenue_growth_yoy': 0.07, 'net_profit_growth_yoy': 0.08, 'eps_growth': 0.08,
+                'operating_revenue_growth': 0.07, 'gross_profit_margin': 0.05, 'operating_margin': 0.05,
+                'net_margin': 0.05, 'ebit_margin': 0.05,
+                
+                # 规模因子（极低频）
+                'log_circ_mv': 0.03, 'log_total_mv': 0.03, 'market_cap_weight': 0.02,
+                
+                # 质量因子（低频）
+                'debt_to_assets': 0.05, 'current_ratio': 0.04, 'asset_turnover': 0.06,
+                'quality_momentum': 0.09, 'operating_accruals': 0.07, 'inventory_turnover': 0.06,
+                'receivables_turnover': 0.06, 'working_capital_turnover': 0.07
+            }
+            
+            # 基础换手率估算
+            base_turnover = turnover_estimates.get(factor_name, 0.12)  # 默认12%
+            
+            return {
+                'avg_daily_rank_change': float(base_turnover),
+                'daily_turnover_volatility': float(base_turnover * 0.3),  # 波动率约为均值的30%
+                'daily_turnover_trend': 0.0,  # 经验估算无法提供趋势信息
+                'calculation_method': 'factor_type_estimate'
+            }
+            
+        except Exception as e:
+            logger.debug(f"换手率估算失败 {factor_name}: {e}")
+            return self._get_empty_turnover_stats()
+    
+    def _get_empty_turnover_stats(self) -> Dict[str, float]:
+        """返回空的换手率统计"""
+        return {
+            'avg_daily_rank_change': 0.0,
+            'daily_turnover_volatility': 0.0,
+            'daily_turnover_trend': 0.0,
+        }
 
     def _align_data(self, factor_data: pd.DataFrame, return_data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """对齐因子和收益数据"""
@@ -318,7 +698,7 @@ class RollingICManager:
                 month_end = current + pd.offsets.MonthEnd(0)
                 if month_end <= end:
                     dates.append(month_end.strftime('%Y-%m-%d'))
-                current = current + pd.offsets.MonthEnd(1)
+                current = month_end + pd.offsets.MonthEnd(1)
         elif self.config.calculation_frequency == 'Q':
             # 季末
             while current <= end:

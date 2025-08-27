@@ -23,7 +23,10 @@ import statsmodels.api as sm
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 
+from projects._03_factor_selection.data_manager.data_manager import DataManager
+from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
+from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
 from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import (
     ICCalculationConfig, run_cal_and_save_rolling_ic_by_snapshot_config_id
@@ -32,6 +35,7 @@ from projects._03_factor_selection.factor_manager.selector.rolling_ic_factor_sel
     RollingICFactorSelector, RollingICSelectionConfig
 )
 from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
+from projects._03_factor_selection.utils.factor_processor import FactorProcessor
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -1302,11 +1306,20 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             orthogonal_factor_name: str
     ) -> Dict[str, Dict]:
         """
-        基于R²调整正交化因子的IC统计 - 核心修正方法
+        基于R²调整正交化因子的IC统计 - 统一理论框架版本
         
-        核心逻辑：
-        正交化后的因子是残差，其预测能力约等于 (1 - R²) * 原始预测能力
-        这是因为R²表示被基准因子解释的方差比例
+        核心理论：标准差/相关性分解 (Std Dev / Correlation Decomposition)
+        
+        理论依据：
+        1. IC本质上是相关系数，与标准差同阶（一次方）
+        2. 残差的标准差 ≈ 原始标准差 * sqrt(1 - R²)
+        3. 因此相关性类指标（IC）应使用 sqrt(1 - R²) 调整
+        4. 统一调整系数确保所有指标的理论一致性
+        
+        调整公式：
+        - IC类指标: adjusted = original * sqrt(1 - R²)
+        - 胜率调整: 0.5 + (original_rate - 0.5) * sqrt(1 - R²)
+        - p值调整: min(1.0, p_value / sqrt(1 - R²))
         
         Args:
             original_ic_stats: 原始因子的IC统计数据
@@ -1320,53 +1333,63 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             logger.warning(f"  ⚠️ {orthogonal_factor_name}: 异常R²值({avg_r_squared:.3f})，使用原始IC")
             return original_ic_stats
         
-        # IC调整因子：残差的预测能力 ≈ (1 - R²) * 原始预测能力
-        ic_adjustment_factor = 1 - avg_r_squared
+        # 统一调整系数：基于标准差/相关性分解理论
+        # IC本质上是相关系数，与标准差同阶，应使用 sqrt(1 - R²) 调整
+        # 理论依据：残差标准差 ≈ 原始标准差 * sqrt(1 - R²)
+        adjustment_factor = np.sqrt(1 - avg_r_squared)
         
-        logger.debug(f"  📊 {orthogonal_factor_name}: R²={avg_r_squared:.3f}, IC调整系数={ic_adjustment_factor:.3f}")
+        logger.debug(f"  📊 {orthogonal_factor_name}: R²={avg_r_squared:.3f}, 统一调整系数={adjustment_factor:.3f}")
         
         adjusted_ic_stats = {}
         
         for period, period_stats in original_ic_stats.items():
             adjusted_period_stats = {}
             
-            # 调整主要IC指标
+            # 统一调整所有IC指标（基于sqrt(1-R²)理论）
             for key, value in period_stats.items():
                 if key in ['ic_mean', 'ic_ir']:
-                    # IC均值和IR需要按调整系数缩放
-                    adjusted_value = value * ic_adjustment_factor
+                    # IC均值和IR：相关性类指标，使用统一调整系数
+                    adjusted_value = value * adjustment_factor
                     adjusted_period_stats[key] = adjusted_value
                 elif key in ['ic_win_rate']:
-                    # 胜率的调整更复杂：向50%回归
+                    # 胜率调整：向50%回归（保持原有优秀逻辑，使用统一调整系数）
                     original_win_rate = value
-                    # 正交化会降低胜率的极端性
-                    adjusted_win_rate = 0.5 + (original_win_rate - 0.5) * ic_adjustment_factor
+                    adjusted_win_rate = 0.5 + (original_win_rate - 0.5) * adjustment_factor
                     adjusted_period_stats[key] = adjusted_win_rate
                 elif key in ['ic_std', 'ic_volatility']:
-                    # 波动率可能会发生变化，但通常减少（因为去除了部分系统性信息）
-                    adjusted_period_stats[key] = value * np.sqrt(ic_adjustment_factor)
-                elif key in ['ic_p_value', 't_stat']:
-                    # 统计显著性会降低（因为信号强度减弱）
-                    if key == 't_stat':
-                        adjusted_period_stats[key] = value * ic_adjustment_factor
+                    # 标准差/波动率：已经是标准差量级，直接使用统一调整系数
+                    adjusted_period_stats[key] = value * adjustment_factor
+                elif key in ['ic_p_value', 'ic_t_stat', 't_stat', 'ic_nw_t_stat', 'nw_t_stat']:
+                    # T统计量：信号强度类指标，使用统一调整系数
+                    if key in ['ic_t_stat', 't_stat', 'ic_nw_t_stat', 'nw_t_stat']:
+                        adjusted_period_stats[key] = value * adjustment_factor
                     else:  # p_value
-                        # p值变大（显著性降低）
-                        adjusted_period_stats[key] = min(1.0, value / ic_adjustment_factor) if ic_adjustment_factor > 0 else 1.0
-                else:
-                    # 其他指标保持不变
+                        # p值反向调整（显著性降低），使用理论一致的调整
+                        adjusted_period_stats[key] = min(1.0, value / adjustment_factor) if adjustment_factor > 0 else 1.0
+                elif key in ['ic_count', 'ic_max', 'ic_min']:
+                    # 统计性指标保持不变
                     adjusted_period_stats[key] = value
+                else:
+                    # 其他新增指标（如quality_score等）使用统一调整
+                    if isinstance(value, (int, float)) and not np.isnan(value):
+                        adjusted_period_stats[key] = value * adjustment_factor
+                    else:
+                        adjusted_period_stats[key] = value
             
             adjusted_ic_stats[period] = adjusted_period_stats
         
-        # 记录调整效果
+        # 记录调整效果（使用统一调整系数）
         original_main_ic = original_ic_stats.get('5d', {}).get('ic_mean', 0)
         adjusted_main_ic = adjusted_ic_stats.get('5d', {}).get('ic_mean', 0)
         
-        logger.info(f"  🔄 {orthogonal_factor_name}: IC调整 {original_main_ic:.4f} -> {adjusted_main_ic:.4f} "
-                   f"(调整幅度: {(1-ic_adjustment_factor)*100:.1f}%)")
+        # 计算调整幅度：1 - sqrt(1 - R²) 
+        adjustment_magnitude = (1 - adjustment_factor) * 100
+        
+        logger.info(f"  🔄 {orthogonal_factor_name}: IC调整 {original_main_ic:.4f} -> {adjusted_main_ic:.4f}")
+        logger.info(f"      理论依据: sqrt(1-R²)={adjustment_factor:.3f}, 调整幅度: {adjustment_magnitude:.1f}%")
         
         return adjusted_ic_stats
-
+    #todo 看这里
     def synthesize_with_orthogonalization(
             self,
             composite_factor_name: str,
@@ -1478,9 +1501,9 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         if factor_ic_stats:
             factor_weights = self.weight_calculator.calculate_ic_based_weights(factor_ic_stats)
         else:
-            logger.warning("⚠️ 无法获取IC统计，使用等权重合成")
-            equal_weight = 1.0 / len(final_factor_list)
-            factor_weights = {name: equal_weight for name in final_factor_list}
+            raise ValueError("⚠️ 无法获取IC统计，使用等权重合成")
+            # equal_weight = 1.0 / len(final_factor_list)
+            # factor_weights = {name: equal_weight for name in final_factor_list}
         
         # 8. 执行加权合成（支持正交化因子）
         composite_factor_df = self._execute_weighted_synthesis_with_orthogonal(
@@ -1619,3 +1642,12 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         }
         
         return comprehensive_report
+
+if __name__ == '__main__':
+    data_manager = DataManager()
+    factor_manager= FactorManager(data_manager)
+    factor_analyzer = FactorAnalyzer(factor_manager)
+    factor_processor = FactorProcessor(factor_manager.data_manager.config)
+    (ICWeightedSynthesizer(factor_manager, factor_analyzer, factor_processor).synthesize_with_orthogonalization
+     (composite_factor_name='composite_factor_name',candidate_factor_names=['volatility_40d','log_circ_mv']
+      ,snap_config_id= '20250826_131138_d03f3d9e',force_generate_ic=False))
