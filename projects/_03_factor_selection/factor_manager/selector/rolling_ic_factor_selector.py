@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 import warnings
 from dataclasses import dataclass
+
+from projects._03_factor_selection.config_manager.function_load.debug_temp_fast_config import IS_DEBUG_TEMP
+
 warnings.filterwarnings('ignore')
 
 from projects._03_factor_selection.factor_manager.storage.rolling_ic_manager import run_cal_and_save_rolling_ic_by_snapshot_config_id
@@ -349,6 +352,9 @@ class RollingICFactorSelector:
         final_avg_change = float(np.mean(avg_daily_rank_change_series))
         final_avg_vol = float(np.mean(daily_turnover_volatility_series))  # 对波动率求均值，衡量平均不确定性
         final_avg_trend = float(np.mean(daily_turnover_trend_series))  # 对趋势求均值，衡量长期衰减倾向
+        # if(IS_DEBUG_TEMP and (factor_name in ['turnover_rate_monthly_mean','volatility_40d'])):
+        #     final_avg_change = 0.01
+        #     final_avg_vol = 0.01
 
         # 4.5. 组装成最终的统计字典，用于评分函数
         final_turnover_stats = {
@@ -643,7 +649,7 @@ class RollingICFactorSelector:
                     direction = "+" if  np.sign(factor_stats.avg_ic_with_sign) > 0 else "-"
                     logger.info(f"  {direction} {factor_name}: 通过筛选")
                     logger.info(f"    IC={factor_stats.avg_ic_abs:.3f}, IR={factor_stats.avg_ir_abs:.2f}")
-                    logger.info(f"    稳定性={factor_stats.avg_stability:.2f}, 换手率={factor_stats.avg_daily_rank_change:.1%}")
+                    logger.info(f"    稳定性={factor_stats.avg_stability:.2f}, 日换手率={factor_stats.daily_rank_change_mean:.1%}")
                     logger.info(f"    基础评分={factor_stats.multi_period_score:.1f}, 调整评分={factor_stats.turnover_adjusted_score:.1f}")
                 else:
                     logger.info(f"  - {factor_name}: 未通过筛选")
@@ -713,7 +719,7 @@ class RollingICFactorSelector:
             if (self.config.enable_turnover_penalty and
                     factor_stats.daily_turnover_volatility > self.config.max_turnover_vol_daily):
                 failed_checks.append(
-                    f"换手率波动率不能过高({factor_stats.daily_turnover_volatility:.1%}>{self.config.max_turnover_vol_daily:.0%})")
+                    f"换手率波动率不能过高({factor_stats.daily_turnover_volatility:.3%}>{self.config.max_turnover_vol_daily:.1%})")
 
             logger.debug(f"因子 {factor_stats.factor_name} 未通过筛选: {'; '.join(failed_checks)}")
 
@@ -764,7 +770,7 @@ class RollingICFactorSelector:
                     stats = qualified_factors[name]
                     direction = "+" if  np.sign(stats.avg_ic_with_sign) > 0 else "-"
                     score_used = stats.turnover_adjusted_score if self.config.enable_turnover_penalty else stats.multi_period_score
-                    logger.info(f"  {direction} {name}: 调整评分={score_used:.1f} (换手率={stats.avg_daily_rank_change:.1%})")
+                    logger.info(f"  {direction} {name}: 调整评分={score_used:.1f} (日换手率={stats.daily_rank_change_mean:.1%})")
         
         return category_champions
     
@@ -1686,4 +1692,4 @@ class RollingICFactorSelector:
         logger.info(f"   正交化计划: {len(orthogonalization_plan)} 个")
         logger.info(f"   决策记录: {len(decisions)} 条")
         
-        return final_factors, orthogonalization_plan, decisions #todo debug here
+        return final_factors, orthogonalization_plan, decisions

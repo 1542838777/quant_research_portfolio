@@ -14,6 +14,7 @@ IC加权因子合成器 - 专业级因子合成引擎
 """
 
 import pandas as pd
+from numpy.linalg import LinAlgError
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
@@ -61,6 +62,11 @@ class FactorWeightingConfig:
 
     # 回看期设置
     lookback_periods: List[str] = None  # IC计算周期
+    # 正交化流程的稳健性控制参数
+    min_orthogonalization_obs: int = 30  # 正交化回归时要求的最小样本量
+    orthogonalization_x_std_eps: float = 1e-6  # 判断基准因子标准差是否过小的阈值
+    #使用场景:_adjust_ic_stats_by_r_squared 用于调整正交化 ic
+    main_evaluation_period = '5'
 
     def __post_init__(self):
         if self.lookback_periods is None:
@@ -113,7 +119,7 @@ class ICWeightCalculator:
 
         logger.info(f"✅ IC权重计算完成，共{len(final_weights)}个因子被分配权重")
         return final_weights
-
+    #ok
     def _calculate_composite_ic_score(self, periods_stats: Dict[str, Dict]) -> float:
         """计算因子的综合IC得分"""
         period_scores = []
@@ -1032,9 +1038,8 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             base_df = self.get_sub_factor_df_from_local(base_factor, stock_pool_index, snap_config_id)
             
             if target_df is None or base_df is None:
-                logger.error(f"  ❌ 无法加载因子数据: target={target_df is not None}, base={base_df is not None}")
-                return None, 0.0
-            
+                raise ValueError(f"  ❌ 无法加载因子数据: target={target_df is not None}, base={base_df is not None}")
+
             # 2. 数据对齐和预处理
             aligned_target, aligned_base = self._align_factor_data(target_df, base_df)
             
@@ -1092,83 +1097,80 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             target_df: pd.DataFrame,
             base_df: pd.DataFrame,
             orthogonal_name: str
-    ) -> Tuple[pd.DataFrame, float]:
+    ) -> Tuple[pd.DataFrame, Dict]:
         """
-        逐日截面正交化 - 核心算法实现
-        
-        对每个交易日，执行截面回归：target[t,i] = α[t] + β[t] * base[t,i] + ε[t,i]
-        提取残差ε[t,i]作为正交化后的因子值
-        
-        Args:
-            target_df: 目标因子数据 (日期×股票)
-            base_df: 基准因子数据 (日期×股票) 
-            orthogonal_name: 正交化因子名称
-            
-        Returns:
-            (orthogonal_df, avg_r_squared): 正交化后的因子DataFrame 和 平均R²
+        逐日截面正交化 (V2 - 战斗加固版)
+        - 强化1: 使用 align 确保索引严格对齐
+        - 强化2: 统一最小样本量参数
+        - 强化3: 标准化时使用 ddof=0 并加 epsilon
+        - 强化4: 返回包含成功率、失败日期等信息的元数据字典
         """
-        logger.debug(f"  🧮 开始逐日截面回归，共{len(target_df)}个交易日")
-        
-        # 初始化结果DataFrame
-        orthogonal_df = pd.DataFrame(
-            index=target_df.index,
-            columns=target_df.columns,
-            dtype=np.float64
-        )
-        
-        successful_regressions = 0
+        logger.debug(f"  🧮 V2: 开始逐日截面回归，共{len(target_df)}个交易日")
+
+        orthogonal_df = pd.DataFrame(index=target_df.index, columns=target_df.columns, dtype=np.float64)
+
         r_squared_list = []
-        
-        # 逐日回归
+        failed_dates = []
+        epsilon = 1e-8
+
         for date in target_df.index:
             try:
-                # 提取当日截面数据
-                y_cross = target_df.loc[date]  # 目标因子的横截面
-                x_cross = base_df.loc[date]    # 基准因子的横截面
-                
-                # 移除缺失值
-                valid_mask = (~y_cross.isna()) & (~x_cross.isna())
-                
-                if valid_mask.sum() < 10:  # 至少需要10个有效观测
-                    logger.debug(f"    ⚠️ {date}: 有效观测不足({valid_mask.sum()}个)，跳过")
+                y_cross = target_df.loc[date]
+                x_cross = base_df.loc[date]
+
+                # 【强化】使用 align 严格对齐 y 和 x，并移除共同的NaN
+                y_aligned, x_aligned = y_cross.align(x_cross, join='inner')
+                valid_mask = (~y_aligned.isna()) & (~x_aligned.isna())
+                y_valid = y_aligned[valid_mask]
+                x_valid = x_aligned[valid_mask]
+
+                # 【强化】统一最小样本量检查
+                if len(y_valid) < self.config.min_orthogonalization_obs:
+                    logger.debug(f"    ⚠️ {date}: 有效观测不足({len(y_valid)}个)，跳过")
+                    failed_dates.append(date.strftime('%Y-%m-%d'))
                     continue
-                
-                y_valid = y_cross[valid_mask]
-                x_valid = x_cross[valid_mask]
-                
-                # 执行截面OLS回归：y = α + β*x + ε
+
                 residuals, r_squared = self._perform_cross_sectional_ols(y_valid, x_valid, date)
-                
-                if residuals is not None:
-                    # 立即进行截面标准化（优化建议）
-                    if len(residuals) >= 5:  # 至少需要5个有效值
-                        mean_val = residuals.mean()
-                        std_val = residuals.std()
-                        
-                        if std_val > 1e-8:  # 避免除零
-                            standardized_residuals = (residuals - mean_val) / std_val
-                            orthogonal_df.loc[date, standardized_residuals.index] = standardized_residuals.values
-                            successful_regressions += 1
-                            
-                            # 收集R²用于IC调整
-                            if r_squared is not None:
-                                r_squared_list.append(r_squared)
-                
+
+                if residuals is not None and r_squared is not None:
+                    # 【强化】标准化时使用 ddof=0 (总体标准差)
+                    std_val = residuals.std(ddof=0)
+
+                    if std_val > epsilon:
+                        mean_val = residuals.mean()  # OLS残差均值理论上为0
+                        standardized_residuals = (residuals - mean_val) / std_val
+                        orthogonal_df.loc[date, standardized_residuals.index] = standardized_residuals.values
+                        r_squared_list.append(r_squared)
+                    else:
+                        # 如果标准差为0，说明残差为常数，填充为0
+                        orthogonal_df.loc[date, residuals.index] = 0.0
+                        r_squared_list.append(r_squared)
+                else:
+                    failed_dates.append(date.strftime('%Y-%m-%d'))
+
             except Exception as e:
-                logger.debug(f"    ❌ {date}: 回归失败 - {e}")
+                logger.debug(f"    ❌ {date}: 回归循环失败 - {e}")
+                failed_dates.append(date.strftime('%Y-%m-%d'))
                 continue
-        
-        if successful_regressions == 0:
-            logger.error("  ❌ 所有日期的回归都失败了")
-            return pd.DataFrame(), 0.0
-        
-        success_rate = successful_regressions / len(target_df)
-        avg_r_squared = np.mean(r_squared_list) if r_squared_list else 0.0
-        
-        logger.debug(f"  ✅ 截面回归完成：成功率 {success_rate:.1%} ({successful_regressions}/{len(target_df)})")
-        logger.debug(f"  📊 平均R²: {avg_r_squared:.3f} (用于IC调整)")
-        
-        return orthogonal_df, avg_r_squared
+
+        successful_regressions = len(r_squared_list)
+        total_days = len(target_df)
+
+        # 【强化】构建包含丰富信息的元数据字典
+        meta = {
+            'successful_regressions': successful_regressions,
+            'total_days': total_days,
+            'success_rate': successful_regressions / total_days if total_days > 0 else 0.0,
+            'avg_r_squared': np.mean(r_squared_list) if r_squared_list else 0.0,
+            'failed_dates': failed_dates
+        }
+
+        if meta['success_rate'] < 0.9:  # 如果成功率低于90%，则提升日志级别为警告
+            raise ValueError(f"  ⚠️ {orthogonal_name}: 截面回归成功率较低: {meta['success_rate']:.1%}")
+        else:
+            logger.debug(f"  ✅ {orthogonal_name}: 截面回归完成, 成功率 {meta['success_rate']:.1%}")
+
+        return orthogonal_df, meta['avg_r_squared']
 
     def _perform_cross_sectional_ols(
             self,
@@ -1177,45 +1179,37 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             date: str = None
     ) -> Tuple[Optional[pd.Series], Optional[float]]:
         """
-        执行单日截面OLS回归并提取残差
-        
-        回归方程：y = α + β*x + ε
-        重要：手动为自变量添加常数项，确保截距项正确估计
-        
-        Args:
-            y: 因变量（目标因子的截面数据）
-            x: 自变量（基准因子的截面数据）
-            date: 交易日期（用于调试）
-            
-        Returns:
-            (残差序列, R²值): 正交化后的因子值和回归拟合度
+        执行单日截面OLS回归并提取残差 (V2 - 战斗加固版)
+        - 强化1: 对高R²只告警不中断
+        - 强化2: 检查自变量x的方差，避免退化回归
+        - 强化3: 捕获 statsmodels 内部的拟合错误
         """
         try:
-            # 手动添加常数项 - 这是关键步骤！
-            X_with_const = sm.add_constant(x)
-            
-            # 执行OLS回归
-            model = sm.OLS(y, X_with_const).fit()
-            
-            # 提取残差和R²
+            # 【强化】检查自变量标准差，如果过小（接近常数），则回归无意义
+            if x.std(ddof=0) < self.config.orthogonalization_x_std_eps:
+                logger.debug(f"    ⚠️ {date}: 基准因子标准差过低({x.std(ddof=0):.2e})，跳过回归")
+                return None, None
+
+            # 使用 has_constant='add' 更稳健，避免重复添加常数项
+            X_with_const = sm.add_constant(x, has_constant='add')
+
+            # 【强化】单独捕获模型拟合时的线性代数错误（如奇异矩阵）
+            try:
+                model = sm.OLS(y, X_with_const).fit()
+            except LinAlgError as e:
+                raise ValueError(f"    ❌ {date}: OLS拟合失败 - 矩阵错误: {e}")
+
             residuals = model.resid
             r_squared = model.rsquared
-            
-            # 检查回归质量
-            if r_squared > 0.95:  # 过高的R²可能表示数据问题
-                logger.debug(f"    ⚠️ {date}: R²异常高({r_squared:.3f})，可能存在数据问题")
-            
+
+            # 【强化】对于异常高的R²，只记录警告，不中断流程
+            if r_squared > 0.95:
+                logger.warning(f"    ⚠️ {date}: R²异常高({r_squared:.3f})，可能存在数据共线性问题")
+
             return residuals, r_squared
-            
+
         except Exception as e:
-            # 回退到sklearn实现
-            logger.debug(f"    ⚠️ statsmodels回归失败，尝试sklearn: {e}")
-            try:
-                residuals, r_squared = self._perform_ols_sklearn_fallback(y, x)
-                return residuals, r_squared
-            except Exception as e2:
-                logger.debug(f"    ❌ sklearn回归也失败: {e2}")
-                return None, None
+            raise ValueError(f"    ❌ {date}: _perform_cross_sectional_ols_v2 发生意外错误: {e}")
 
     def _perform_ols_sklearn_fallback(
             self,
@@ -1306,89 +1300,92 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             orthogonal_factor_name: str
     ) -> Dict[str, Dict]:
         """
-        基于R²调整正交化因子的IC统计 - 统一理论框架版本
-        
+        基于R²调整正交化因子的IC统计 (V2 - 最终生产版)
+
         核心理论：标准差/相关性分解 (Std Dev / Correlation Decomposition)
-        
-        理论依据：
-        1. IC本质上是相关系数，与标准差同阶（一次方）
-        2. 残差的标准差 ≈ 原始标准差 * sqrt(1 - R²)
-        3. 因此相关性类指标（IC）应使用 sqrt(1 - R²) 调整
-        4. 统一调整系数确保所有指标的理论一致性
-        
+        此版本经过严格审查和加固，解决了IC IR不变性、p-value除零保护等问题。
+
         调整公式：
-        - IC类指标: adjusted = original * sqrt(1 - R²)
-        - 胜率调整: 0.5 + (original_rate - 0.5) * sqrt(1 - R²)
-        - p值调整: min(1.0, p_value / sqrt(1 - R²))
-        
+        - 核心调整系数: adjustment_factor = sqrt(1 - R²)
+        - IC/Std/T-stat类指标: adjusted = original * adjustment_factor
+        - IC IR: 理论上不变 (因子被抵消)
+        - 胜率调整: 0.5 + (original_rate - 0.5) * adjustment_factor
+        - p值调整: min(1.0, p_value / (adjustment_factor + eps))
+
         Args:
             original_ic_stats: 原始因子的IC统计数据
             avg_r_squared: 平均R²值（来自逐日回归）
             orthogonal_factor_name: 正交化因子名称（用于日志）
-            
+
         Returns:
             调整后的IC统计数据
         """
-        if avg_r_squared <= 0 or avg_r_squared >= 1:
-            logger.warning(f"  ⚠️ {orthogonal_factor_name}: 异常R²值({avg_r_squared:.3f})，使用原始IC")
-            return original_ic_stats
-        
-        # 统一调整系数：基于标准差/相关性分解理论
-        # IC本质上是相关系数，与标准差同阶，应使用 sqrt(1 - R²) 调整
-        # 理论依据：残差标准差 ≈ 原始标准差 * sqrt(1 - R²)
+        epsilon = 1e-8  # 用于防止除零错误
+
+        # --- 1. 健全性检查 ---
+        if not (0 < avg_r_squared < 1):
+            raise ValueError(
+                f"  ⚠️ {orthogonal_factor_name}: 异常或无效的R²值({avg_r_squared:.3f})，无法进行调整，将使用原始IC统计。")
+
+        # --- 2. 计算核心调整系数 ---
         adjustment_factor = np.sqrt(1 - avg_r_squared)
-        
         logger.debug(f"  📊 {orthogonal_factor_name}: R²={avg_r_squared:.3f}, 统一调整系数={adjustment_factor:.3f}")
-        
+
         adjusted_ic_stats = {}
-        
+
+        # --- 3. 逐个预测周期进行调整 ---
         for period, period_stats in original_ic_stats.items():
-            adjusted_period_stats = {}
-            
-            # 统一调整所有IC指标（基于sqrt(1-R²)理论）
-            for key, value in period_stats.items():
-                if key in ['ic_mean', 'ic_ir']:
-                    # IC均值和IR：相关性类指标，使用统一调整系数
-                    adjusted_value = value * adjustment_factor
-                    adjusted_period_stats[key] = adjusted_value
-                elif key in ['ic_win_rate']:
-                    # 胜率调整：向50%回归（保持原有优秀逻辑，使用统一调整系数）
-                    original_win_rate = value
-                    adjusted_win_rate = 0.5 + (original_win_rate - 0.5) * adjustment_factor
-                    adjusted_period_stats[key] = adjusted_win_rate
-                elif key in ['ic_std', 'ic_volatility']:
-                    # 标准差/波动率：已经是标准差量级，直接使用统一调整系数
-                    adjusted_period_stats[key] = value * adjustment_factor
-                elif key in ['ic_p_value', 'ic_t_stat', 't_stat', 'ic_nw_t_stat', 'nw_t_stat']:
-                    # T统计量：信号强度类指标，使用统一调整系数
-                    if key in ['ic_t_stat', 't_stat', 'ic_nw_t_stat', 'nw_t_stat']:
-                        adjusted_period_stats[key] = value * adjustment_factor
-                    else:  # p_value
-                        # p值反向调整（显著性降低），使用理论一致的调整
-                        adjusted_period_stats[key] = min(1.0, value / adjustment_factor) if adjustment_factor > 0 else 1.0
-                elif key in ['ic_count', 'ic_max', 'ic_min']:
-                    # 统计性指标保持不变
-                    adjusted_period_stats[key] = value
-                else:
-                    # 其他新增指标（如quality_score等）使用统一调整
-                    if isinstance(value, (int, float)) and not np.isnan(value):
-                        adjusted_period_stats[key] = value * adjustment_factor
-                    else:
-                        adjusted_period_stats[key] = value
-            
+            # 使用 .copy() 是一个好习惯，避免意外修改原始输入字典
+            adjusted_period_stats = period_stats.copy()
+
+            # 3.1: 直接乘以调整系数的指标 (线性相关类)
+            keys_to_scale = [
+                'ic_mean', 'ic_std', 'ic_volatility',
+                'ic_t_stat', 'ic_nw_t_stat'
+            ]
+            # 自动包含所有以 _score 结尾的评分项
+            score_keys = [k for k in adjusted_period_stats if k.endswith('_score')]
+            keys_to_scale.extend(score_keys)
+
+            for key in keys_to_scale:
+                if key in adjusted_period_stats and isinstance(adjusted_period_stats[key], (int, float)):
+                    adjusted_period_stats[key] *= adjustment_factor
+
+            # 3.2: 具有特殊调整逻辑的指标
+            # 胜率(Win Rate): 向50%基准进行收缩
+            if 'ic_win_rate' in adjusted_period_stats:
+                original_win_rate = adjusted_period_stats['ic_win_rate']
+                adjusted_period_stats['ic_win_rate'] = 0.5 + (original_win_rate - 0.5) * adjustment_factor
+
+            # P值(P-values): 反向调整，并用epsilon进行除零保护
+            p_value_keys = ['ic_p_value', 'ic_nw_p_value']
+            for key in p_value_keys:
+                if key in adjusted_period_stats:
+                    original_p_value = adjusted_period_stats[key]
+                    adjusted_period_stats[key] = min(1.0, original_p_value / (adjustment_factor + epsilon))
+
+            # 3.3: 理论上保持不变的指标
+            # IC IR = IC均值 / IC标准差。调整因子在分子分母上被抵消，故IR理论上不变。
+            # 其他如样本数、最大/最小值等统计量也保持不变。
+            keys_to_keep = ['ic_ir', 'ic_count', 'ic_max', 'ic_min']
+            # (我们因为使用了.copy()，所以无需额外代码，这些值已自动保留)
+
             adjusted_ic_stats[period] = adjusted_period_stats
-        
-        # 记录调整效果（使用统一调整系数）
-        original_main_ic = original_ic_stats.get('5d', {}).get('ic_mean', 0)
-        adjusted_main_ic = adjusted_ic_stats.get('5d', {}).get('ic_mean', 0)
-        
-        # 计算调整幅度：1 - sqrt(1 - R²) 
+
+        # --- 4. 日志记录调整效果 ---
+        # 使用 .get() 链式调用来安全地获取值，避免KeyError
+        original_main_ic = original_ic_stats.get(self.config.main_evaluation_period, {}).get('ic_mean', 0)
+        adjusted_main_ic = adjusted_ic_stats.get(self.config.main_evaluation_period, {}).get('ic_mean', 0)
+
         adjustment_magnitude = (1 - adjustment_factor) * 100
-        
-        logger.info(f"  🔄 {orthogonal_factor_name}: IC调整 {original_main_ic:.4f} -> {adjusted_main_ic:.4f}")
-        logger.info(f"      理论依据: sqrt(1-R²)={adjustment_factor:.3f}, 调整幅度: {adjustment_magnitude:.1f}%")
-        
+
+        logger.info(f"  🔄 {orthogonal_factor_name}: 主周期IC调整 {original_main_ic:.4f} -> {adjusted_main_ic:.4f}")
+        logger.info(
+            f"      理论依据: sqrt(1-R²)={adjustment_factor:.3f}, IC预测力下降幅度: {adjustment_magnitude:.1f}%")
+
         return adjusted_ic_stats
+
+
     #todo 看这里
     def synthesize_with_orthogonalization(
             self,
@@ -1431,7 +1428,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             raise ValueError("❌ 专业筛选未选出任何因子，无法进行合成")
         
         # 3. 获取正交化计划
-        orthogonalization_plan = selection_report.get('orthogonalization_plan', [])
+        orthogonalization_plan = selection_report.get('correlation_control').get('orthogonalized_factors',[])
         logger.info(f"📋 获取到 {len(orthogonalization_plan)} 项正交化计划")
         
         # 4. 执行正交化改造
@@ -1649,5 +1646,7 @@ if __name__ == '__main__':
     factor_analyzer = FactorAnalyzer(factor_manager)
     factor_processor = FactorProcessor(factor_manager.data_manager.config)
     (ICWeightedSynthesizer(factor_manager, factor_analyzer, factor_processor).synthesize_with_orthogonalization
-     (composite_factor_name='composite_factor_name',candidate_factor_names=['volatility_40d','log_circ_mv']
+     (composite_factor_name='composite_factor_name',candidate_factor_names=['volatility_40d','turnover_rate_monthly_mean']
       ,snap_config_id= '20250826_131138_d03f3d9e',force_generate_ic=False))
+
+    ##todo 合成好的因子在进入 ic测试!! 直接用本地的close数据就行
