@@ -36,7 +36,7 @@ n_metrics_pass_rate_key = 'n_metrics_pass_rate'
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from quant_lib.evaluation import (
+from quant_lib.evaluation.evaluation import (
     calculate_ic,
     calculate_quantile_returns, fama_macbeth, calculate_turnover,
     calculate_forward_returns_c2c, quantile_stats_result,

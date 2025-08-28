@@ -12,7 +12,7 @@ from projects._03_factor_selection.data_manager.data_manager import DataManager
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager  
 from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from projects._03_factor_selection.utils.factor_processor import FactorProcessor
-from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
+from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesize_with_orthogonalization import (
     ICWeightedSynthesizer, 
     FactorWeightingConfig
 )

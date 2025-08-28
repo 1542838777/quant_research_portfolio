@@ -316,7 +316,7 @@ class RollingICManager:
                 factor_direction = np.sign(long_term_ic_mean)
 
             # 胜负序列（保留方向性）
-            win_loss_series = ((ic_series * factor_direction) > 0).astype(int)
+            win_loss_series = ((ic_series * factor_direction) > 0).astype(int)#同号
 
             # EWMA 胜率
             ic_win_rate_ewma = win_loss_series.ewm(span=ewma_span).mean().iloc[-1]
@@ -328,7 +328,7 @@ class RollingICManager:
             ic_nw_t_stat, ic_nw_p_value = self._calculate_newey_west_tstat(ic_series) #ok
             
             #动态计算 (基于实际排名变化)
-            avg_daily_rank_change_turnover_stats  = self._calculate_dynamic_turnover_rate(
+            avg_daily_rank_change_turnover_stats  = self._calculate_daily_rank_change(
                 factor_name,aligned_factor, stock_pool_index, ic_series.index, resultLoadManager
             )
             # 计算显著性标记和质量评估
@@ -482,7 +482,7 @@ class RollingICManager:
         except:
             return 0.0
     
-    def _calculate_dynamic_turnover_rate(
+    def _calculate_daily_rank_change(
         self, 
         factor_name: str,
         factor_data: pd.DataFrame,
@@ -491,7 +491,7 @@ class RollingICManager:
         resultLoadManager = None
     ) -> Dict[str, float]:
         """
-        计算动态换手率统计 (方案2: 基于实际因子排名变化)
+       基于实际因子排名变化)
         
         Args:
             factor_name: 因子名称

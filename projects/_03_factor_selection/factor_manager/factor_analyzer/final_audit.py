@@ -1,10 +1,6 @@
 # final_audit.py
-from functools import partial
 import numpy as np
 import pandas as pd
-from pathlib import Path
-
-from quant_lib.evaluation import calculate_forward_returns_c2c
 
 
 def final_audit(factor_data_path):

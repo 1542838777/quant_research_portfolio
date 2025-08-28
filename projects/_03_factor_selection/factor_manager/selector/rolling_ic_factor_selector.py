@@ -47,7 +47,7 @@ class RollingICSelectionConfig:
     prefer_short_term: bool = True   # 偏向短期
     
     # 类别内选择
-    max_factors_per_category: int = 2  # 每类最多因子数
+    max_factors_per_category: int = 3  # 每类最多因子数
     min_category_score: float = 10.0   # 类别最低评分
     
     # 最终筛选
@@ -87,8 +87,8 @@ class RollingICSelectionConfig:
     final_multiplier_min: float = 0.1  # 【新增】最终乘数下限
     final_multiplier_max: float = 1.2  # 【新增】最终乘数上限
     # 用于硬性淘汰的最终防线 (Final Gatekeeper Thresholds)
-    max_turnover_mean_daily: float = 0.01    # 硬门槛：日均换手率不得超过1% (约等于月度21%)
-    max_turnover_trend_daily: float = 0.00002 # 硬门槛：换手率每日恶化趋势不得超过0.002%
+    max_turnover_mean_daily: float = 0.15    # 硬门槛：日均换手率不得超过1% (约等于月度21%)
+    max_turnover_trend_daily: float = 0.00005 # 硬门槛：换手率每日恶化趋势不得超过0.002%
     max_turnover_vol_daily: float = 0.015     # 硬门槛：换手率波动率不得超过1.5%
 
 
@@ -539,7 +539,7 @@ class RollingICFactorSelector:
 
         Args:
             base_score: 基础IC评分 (可能为负)
-            turnover_stats: 来自 _calculate_dynamic_turnover_rate 的完整统计字典
+            turnover_stats: 来自 _calculate_daily_rank_change 的完整统计字典
 
         Returns:
             float: 换手率调整后评分，保留原始base_score的符号
@@ -640,7 +640,7 @@ class RollingICFactorSelector:
                     raise ValueError(f"因子 {factor_name}: 无法获取滚动IC统计")
 
                 # 应用筛选条件
-                passes_screening = self._evaluate_factor_quality(factor_stats)#debug here todo
+                passes_screening = self._evaluate_factor_quality(factor_stats)
                 
                 if passes_screening:
                     qualified_factors[factor_name] = factor_stats

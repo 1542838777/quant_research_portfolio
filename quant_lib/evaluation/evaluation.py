@@ -451,7 +451,7 @@ def calculate_quantile_returns(
                                  每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
     """
     #### todo 移除打点代码
-    factor_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_momentum_12_1.csv')
+    factor_df.to_csv('/tests/workspace/mem_momentum_12_1.csv')
     return_df= returns_calculator(period=1)
     return_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv')
     ###

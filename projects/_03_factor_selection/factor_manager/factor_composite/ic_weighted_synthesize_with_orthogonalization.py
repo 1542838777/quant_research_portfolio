@@ -23,6 +23,7 @@ import json
 import statsmodels.api as sm
 from sklearn.linear_model import LinearRegression
 
+from projects._03_factor_selection.config_manager.factor_direction_config import get_new_factor_direction
 from projects._03_factor_selection.data_manager.data_manager import DataManager
 from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
 from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
@@ -106,7 +107,8 @@ class ICWeightCalculator:
         # 1. 计算综合IC得分
         factor_scores = {}
         for factor_name, periods_stats in factor_ic_stats.items():
-            score = self._calculate_composite_ic_score(periods_stats)
+            normalize_stats = self._normalize_factor_stats_direction(periods_stats,factor_name)
+            score = self._calculate_composite_ic_score(normalize_stats)
             factor_scores[factor_name] = score
             logger.debug(f"  {factor_name}: 综合IC得分 = {score:.4f}")
 
@@ -118,6 +120,43 @@ class ICWeightCalculator:
 
         logger.info(f"✅ IC权重计算完成，共{len(final_weights)}个因子被分配权重")
         return final_weights
+
+    def _normalize_factor_stats_direction(self,
+                                          raw_stats: Dict,
+                                          factor_name: str) -> Dict:
+        """
+        根据预定义的因子方向，规范化IC统计数据。
+        确保所有指标都处理成“正向”：值越大越好。
+        """
+
+        direction = get_new_factor_direction(factor_name)
+
+        # 如果是正向因子，无需任何操作
+        if direction == 1:
+            return raw_stats
+        logger.debug(f"检测到因子 {factor_name} 为负向因子(direction={direction})，开始进行方向规范化...")
+
+        normalized_stats = {}
+        for period, period_stats in raw_stats.items():
+            # 复制以避免修改原始数据
+            stats = period_stats.copy()
+
+            # --- 核心扭转逻辑 ---
+            # 1. 均值类指标：直接乘以方向 (-1)
+            if 'ic_mean' in stats:
+                stats['ic_mean'] *= direction
+            if 'ic_ir' in stats:
+                # IR的符号由IC均值决定，也直接扭转
+                stats['ic_ir'] *= direction
+            if 'ic_t_stat' in stats:
+                stats['ic_t_stat'] *= direction
+
+            # 3. 绝对值/方差类指标：保持不变
+            #    ic_std, ic_p_value, ic_count, ic_mean_std, ic_ir_std 等都是衡量波动或统计量的，无需改变。
+
+            normalized_stats[period] = stats
+
+        return normalized_stats
     #ok
     def _calculate_composite_ic_score(self, periods_stats: Dict[str, Dict]) -> float:
         """计算因子的综合IC得分"""
@@ -129,7 +168,7 @@ class ICWeightCalculator:
 
             # 提取关键指标
             ic_mean = abs(stats.get('ic_mean', 0))  # 使用绝对值
-            ic_ir = stats.get('ic_ir', 0) #不适用绝对值 todo？？？？
+            ic_ir = abs(stats.get('ic_ir', 0))
             ic_win_rate = stats.get('ic_win_rate', 0.5)
             ic_t_stat = abs(stats.get('ic_t_stat', 0))
 
@@ -778,7 +817,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         processed_factors = []
         weights_list = []
 
-        for factor_name, weight in factor_weights.items():#todo 这里
+        for factor_name, weight in factor_weights.items():
             logger.info(f"  🔄 处理因子: {factor_name} (权重: {weight:.3f})")
 
             # 处理单个因子
@@ -1558,6 +1597,15 @@ class ICWeightedSynthesizer(FactorSynthesizer):
                 processed_df = self.get_sub_factor_df_from_local(factor_name, stock_pool_index_name, snap_config_id)
             
             if processed_df is not None and not processed_df.empty:
+                # --- 核心逻辑：因子方向统一 ---
+                # 从IC统计数据中获取该因子的IC均值
+                direction= get_new_factor_direction(factor_name)
+                if direction < 0:
+                    logger.info(f"    ⬇️  检测到负向因子 {factor_name}，进行方向翻转 * -1")
+                    processed_df *= -1
+                else:
+                    logger.debug(f"    ⬆️  正向因子{factor_name}，无需处理")
+                # --- 方向统一结束 ---
                 processed_factors.append(processed_df)
                 weights_list.append(weight)
             else:
@@ -1645,7 +1693,7 @@ if __name__ == '__main__':
     factor_analyzer = FactorAnalyzer(factor_manager)
     factor_processor = FactorProcessor(factor_manager.data_manager.config)
     (ICWeightedSynthesizer(factor_manager, factor_analyzer, factor_processor).synthesize_with_orthogonalization
-     (composite_factor_name='composite_factor_name',candidate_factor_names=['volatility_40d','turnover_rate_monthly_mean']
-      ,snap_config_id= '20250826_131138_d03f3d9e',force_generate_ic=False))
+     (composite_factor_name='composite_factor_name',candidate_factor_names=['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio']
+      ,snap_config_id= '20250825_091622_98ed2d08',force_generate_ic=False))
 
     ##todo 合成好的因子在进入 ic测试!! 直接用本地的close数据就行

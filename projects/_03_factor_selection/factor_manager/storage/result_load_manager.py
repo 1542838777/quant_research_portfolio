@@ -3,7 +3,7 @@ from pathlib import Path
 
 import  pandas as pd
 
-from quant_lib.evaluation import calculate_forward_returns_c2c
+from quant_lib.evaluation.evaluation import calculate_forward_returns_c2c
 
 
 #ic_series_processed_60d.parquet

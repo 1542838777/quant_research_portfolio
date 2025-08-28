@@ -74,7 +74,7 @@ def run_fama_macbeth_regression(
 ### 基本用法
 
 ```python
-from quant_lib.evaluation import run_fama_macbeth_regression
+from quant_lib.evaluation.evaluation import run_fama_macbeth_regression
 from quant_lib.data_loader import load_stock_data
 
 # 1. 加载数据
@@ -101,7 +101,7 @@ print(f"是否显著: {results['is_significant']}")
 ```python
 # 完整的因子分析包括：IC分析 + 分层回测 + Fama-MacBeth回归
 
-from quant_lib.evaluation import (
+from quant_lib.evaluation.evaluation import (
     calculate_ic,
     calculate_quantile_returns,
     run_fama_macbeth_regression

@@ -14,7 +14,7 @@ import sys
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
+from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesize_with_orthogonalization import (
     ICWeightedSynthesizer, FactorWeightingConfig
 )
 from projects._03_factor_selection.factor_manager.selector.rolling_ic_factor_selector import (

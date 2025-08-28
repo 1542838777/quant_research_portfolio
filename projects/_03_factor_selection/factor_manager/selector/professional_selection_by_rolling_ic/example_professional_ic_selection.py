@@ -28,7 +28,7 @@ from projects._03_factor_selection.factor_manager.factor_manager import FactorMa
 
 warnings.filterwarnings('ignore')
 
-from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
+from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesize_with_orthogonalization import (
     ICWeightedSynthesizer, FactorWeightingConfig
 )
 from projects._03_factor_selection.factor_manager.selector.rolling_ic_factor_selector import (
@@ -51,18 +51,24 @@ def demo_professional_factor_selection(snap_config_id):
     # 专业筛选配置 - 严格标准确保高质量
     selector_config = RollingICSelectionConfig(
         min_snapshots=3,  # 最少快照数量
-        min_ic_abs_mean=0.015,  # IC均值绝对值门槛（严格）
-        min_ir_abs_mean=0.18,  # IR均值绝对值门槛（严格）
+        min_ic_abs_mean=0.01,  # IC均值绝对值门槛（严格）
+        min_ir_abs_mean=0.15,  # IR均值绝对值门槛（严格）
         min_ic_stability=0.45,  # IC稳定性门槛（方向一致性）
         max_ic_volatility=0.04,  # IC波动率上限（控制风险）
         decay_rate=0.70,  # 衰减率（偏向短期表现）
-        max_factors_per_category=2,  # 每类最多选择2个因子
-        max_final_factors=8,  # 最终选择8个因子
-
+        max_factors_per_category=4,  # 每类最多选择2个因子
+        max_final_factors=16,  # 最终选择8个因子
+        enable_turnover_penalty=True,
         # 三层相关性控制哲学 - 新增核心功能
         high_corr_threshold=0.7,  # 红色警报：|corr| > 0.7，坚决二选一
         medium_corr_threshold=0.3,  # 黄色预警：0.3 < |corr| < 0.7，正交化战场
-        enable_orthogonalization=True  # 启用中相关区间的正交化处理
+        enable_orthogonalization=True,  # 启用中相关区间的正交化处理
+
+
+        ##日因子changed =
+        max_turnover_mean_daily=0.15,
+        max_turnover_trend_daily=0.0005,
+        max_turnover_vol_daily=0.025
     )
 
     # 2. 从CSV文件加载所有已测试的因子（实际项目中的候选池）

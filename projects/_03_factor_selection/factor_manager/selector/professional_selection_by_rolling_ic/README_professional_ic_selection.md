@@ -69,7 +69,7 @@ print(f"筛选结果: {selected_factors}")
 ### 2. 集成筛选+合成
 
 ```python
-from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesizer import (
+from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesize_with_orthogonalization import (
     ICWeightedSynthesizer, FactorWeightingConfig
 )
 
