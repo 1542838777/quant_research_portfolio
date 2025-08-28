@@ -1,4 +1,3 @@
-import vectorbt as vbt
 from pandas import Series
 from scipy.stats._mstats_basic import winsorize
 
@@ -13,10 +12,7 @@ from quant_lib.utils.dataFrame_utils import align_dataframes
 """
 
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Union, Tuple, Any, Callable
-import matplotlib.pyplot as plt
-import seaborn as sns
+from typing import Dict, List, Optional, Tuple, Any, Callable
 from scipy import stats
 from scipy.stats import ttest_1samp, spearmanr
 
@@ -896,7 +892,7 @@ def fama_macbeth(
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Tuple, List
+from typing import Dict, List
 
 # 假设 logger 已经配置好
 import logging
