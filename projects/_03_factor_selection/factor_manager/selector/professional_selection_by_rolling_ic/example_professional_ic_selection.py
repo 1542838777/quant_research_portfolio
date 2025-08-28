@@ -39,12 +39,10 @@ from quant_lib.config.logger_config import setup_logger
 logger = setup_logger(__name__)
 
 
-def demo_professional_factor_selection(snap_config_id):
+def demo_professional_factor_selection(snap_config_id,factor_names=None):
     """演示专业滚动IC因子筛选功能"""
 
     logger.info("🚀 专业滚动IC因子筛选系统演示开始")
-    logger.info("=" * 80)
-
     # 1. 配置参数
     # snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID
 
@@ -54,7 +52,7 @@ def demo_professional_factor_selection(snap_config_id):
         min_ic_abs_mean=0.01,  # IC均值绝对值门槛（严格）
         min_ir_abs_mean=0.15,  # IR均值绝对值门槛（严格）
         min_ic_stability=0.45,  # IC稳定性门槛（方向一致性）
-        max_ic_volatility=0.04,  # IC波动率上限（控制风险）
+        max_ic_volatility=0.06,  # IC波动率上限（控制风险）
         decay_rate=0.70,  # 衰减率（偏向短期表现）
         max_factors_per_category=4,  # 每类最多选择2个因子
         max_final_factors=16,  # 最终选择8个因子
@@ -71,25 +69,18 @@ def demo_professional_factor_selection(snap_config_id):
         max_turnover_vol_daily=0.025
     )
 
-    # 2. 从CSV文件加载所有已测试的因子（实际项目中的候选池）
-    csv_file = Path(
-        r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factor_manager\selector\v3未经过残差化版本.csv")
 
-    if csv_file.exists():
+    if  factor_names is None:
+        # 2. 从CSV文件加载所有已测试的因子（实际项目中的候选池）
+        csv_file = Path(
+            r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factor_manager\selector\v3未经过残差化版本.csv")
+
         factors_df = pd.read_csv(csv_file)
         # 选择评分较高的因子作为候选（模拟实际筛选前的预选）
         candidate_factors = factors_df[factors_df['Final_Score'] >= 0]['factor_name'].tolist()
         logger.info(f"📊 从CSV加载候选因子: {len(candidate_factors)} 个")
-        # candidate_factors = ['turnover_rate_monthly_mean', 'amihud_liquidity', 'volatility_40d']
     else:
-        # 备用候选因子列表（如果CSV不存在）
-        candidate_factors = [
-            'earnings_stability', 'amihud_liquidity', 'volatility_40d',
-            'turnover_rate_monthly_mean', 'value_composite', 'ep_ratio',
-            'rsi', 'total_revenue_growth_yoy', 'momentum_20d', 'bm_ratio',
-            'reversal_5d', 'reversal_21d', 'sw_l1_momentum_21d'
-        ]
-        logger.info(f"📊 使用默认候选因子: {len(candidate_factors)} 个")
+        candidate_factors =  factor_names
 
     # 3. 创建专业筛选器实例
     logger.info("\n🔧 初始化专业滚动IC筛选器...")
@@ -232,8 +223,9 @@ def main():
 
 if __name__ == "__main__":
     snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID 全部
+    snap_config_id = "20250828_181420_f6baf27c"  # 配置快照ID 全部
 
-    demo_professional_factor_selection(snap_config_id)
+    demo_professional_factor_selection(snap_config_id,['lqs_orthogonal_v1'])
 
 
     # main()

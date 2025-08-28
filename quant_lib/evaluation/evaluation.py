@@ -230,9 +230,9 @@ def calculate_ic(
         - ic_series (pd.Series): IC时间序列，索引为满足条件的有效日期。
         - stats_dict (Dict): 包含IC均值、ICIR、t值、p值等核心统计指标的字典。
     """
-    local_df=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\000906\log_circ_mv\c2c\20250101_20250710\processed_factor.parquet")
-    close_hfq=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\000906\close_hfq\20250101_20250710\close_hfq.parquet")
-    close_hfq_local=calculate_forward_returns_c2c(period=forward_periods[0],close_df=close_hfq)
+    # local_df=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\000906\log_circ_mv\c2c\20250101_20250710\processed_factor.parquet")
+    # close_hfq=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\000906\close_hfq\20250101_20250710\close_hfq.parquet")
+    # close_hfq_local=calculate_forward_returns_c2c(period=forward_periods[0],close_df=close_hfq)
     logger.info(f"\t向量化计算 {method.capitalize()} 类型IC (生产级版本)...")
     stats_periods_dict = {}
     ic_series_periods_dict = {}
@@ -450,11 +450,12 @@ def calculate_quantile_returns(
                                  值是对应的分位数收益DataFrame。
                                  每个DataFrame的index是日期，columns是Q1, Q2... TopMinusBottom。
     """
-    #### todo 移除打点代码
-    factor_df.to_csv('/tests/workspace/mem_momentum_12_1.csv')
-    return_df= returns_calculator(period=1)
-    return_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv')
-    ###
+    logger.info("  > core test 正在计算因子分组表现...")
+    # ####
+    # factor_df.to_csv('/tests/workspace/mem_momentum_12_1.csv')
+    # return_df= returns_calculator(period=1)
+    # return_df.to_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\mem_forward_return_o2c.csv')
+    # ###
     # factor_df = pd.read_csv('D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\tests\\workspace\\local_volatility.csv', index_col=[0], parse_dates=True)
 
     results = {}

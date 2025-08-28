@@ -1,1 +1,1 @@
-IS_DEBUG_TEMP = True
+IS_DEBUG_TEMP = False

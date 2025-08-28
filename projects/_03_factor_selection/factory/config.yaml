@@ -626,6 +626,14 @@ factor_definition:
     cal_require_base_fields: [ 'log_circ_mv','volatility_40d' ]
     cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
 
+  # 合成 rolling
+  - name: 'lqs_orthogonal_v1'
+    style_category: 'turnover-compostite'
+    description: 'v1测试查看合成之后的表现'
+    action: 'composite_by_rolling_ic'
+    time_alignment: None # 合成因子，也不会用到这个字段，所以随便写
+    cal_require_base_fields: ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio']
+    cal_require_base_fields_from_daily: False # 依赖于其他衍生因子
 
 
 #todo  、 大单、...

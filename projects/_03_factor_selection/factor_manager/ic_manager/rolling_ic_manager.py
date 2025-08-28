@@ -864,23 +864,23 @@ if __name__ == '__main__':
     factor_names = df['factor_name'].unique().tolist()
     
     logger.info(f"📊 开始批量计算 {len(factor_names[6:])} 个因子的滚动IC")
-    
-    # 并发执行 - 单因子模式，适合内存充足的情况
-    successful_results, failed_factors = run_concurrent_factors(
-        factor_names=factor_names[6:],
-        snapshot_config_id=snapshot_config_id,
-        max_workers=3,  # 根据机器配置调整
-        execution_mode="chunked"  # 或 "chunked" 用于分组执行
-    )
-    
-    logger.info(f"🎉 批量计算完成!")
-    logger.info(f"✅ 成功: {len(successful_results)} 个因子")
-    logger.info(f"❌ 失败: {len(failed_factors)} 个因子")
-    
-    if failed_factors:
-        logger.warning("失败的因子:")
-        for factor, error in failed_factors:
-            logger.warning(f"  - {factor}: {error}")
+    factor_names = ['lqs_orthogonal_v1']
+    # # 并发执行 - 单因子模式，适合内存充足的情况
+    # successful_results, failed_factors = run_concurrent_factors(
+    #     factor_names=factor_names,
+    #     snapshot_config_id=snapshot_config_id,
+    #     max_workers=3,  # 根据机器配置调整
+    #     execution_mode="chunked"  # 或 "chunked" 用于分组执行
+    # )
+    #
+    # logger.info(f"🎉 批量计算完成!")
+    # logger.info(f"✅ 成功: {len(successful_results)} 个因子")
+    # logger.info(f"❌ 失败: {len(failed_factors)} 个因子")
+    #
+    # if failed_factors:
+    #     logger.warning("失败的因子:")
+    #     for factor, error in failed_factors:
+    #         logger.warning(f"  - {factor}: {error}")
     
     # 单个测试用法(保留原有方式)
-    # run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, ['amihud_liquidity'])
+    run_cal_and_save_rolling_ic_by_snapshot_config_id('20250828_181420_f6baf27c', ['lqs_orthogonal_v1'])

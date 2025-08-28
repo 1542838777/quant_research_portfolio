@@ -137,7 +137,7 @@ class FactorSynthesizer:
         sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name)
         composite_df = self.synthesize_composite_factor(factor_name, stock_pool_index_name, sub_factor_names)
         return composite_df
-
+#被替代
     def do_composite_wights_by_rolling_ic(self, factor_name, stock_pool_index, weighting_config=None, snap_config_id: str = None):
         """
         Args:
@@ -176,8 +176,17 @@ class FactorSynthesizer:
 
         return composite_df
     def do_composite_route(self, factor_name, stock_pool_index, use_ic_weighting=True, weighting_config=None, snap_config_id=None):
-        if use_ic_weighting:
-            composite_df = self.do_composite_wights_by_rolling_ic(factor_name, stock_pool_index, weighting_config,snap_config_id)
+        if use_ic_weighting:#升级为带正交化功能
+            # 获取子因子列表
+            sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name)
+
+            from projects._03_factor_selection.factor_manager.factor_composite.ic_weighted_synthesize_with_orthogonalization import \
+                ICWeightedSynthesizer
+            composite_df,_=(ICWeightedSynthesizer(self.factor_manager.data_manager, self.factor_analyzer, self.processor).synthesize_with_orthogonalization
+             (composite_factor_name=factor_name,
+              candidate_factor_names=sub_factor_names
+              , snap_config_id=snap_config_id, force_generate_ic=False))
+            # composite_df = self.do_composite_wights_by_rolling_ic(factor_name, stock_pool_index, weighting_config,snap_config_id)
         else:
             composite_df = self.do_composite_eq_wights(factor_name, stock_pool_index)
         return composite_df

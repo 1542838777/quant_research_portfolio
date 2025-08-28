@@ -25,8 +25,6 @@ from sklearn.linear_model import LinearRegression
 
 from projects._03_factor_selection.config_manager.factor_direction_config import get_new_factor_direction
 from projects._03_factor_selection.data_manager.data_manager import DataManager
-from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
-from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 from projects._03_factor_selection.factor_manager.factor_manager import FactorManager
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
 from projects._03_factor_selection.factor_manager.ic_manager.rolling_ic_manager import (
@@ -365,7 +363,7 @@ class FactorQualityFilter:
         score = ic_mean * 0.5 + ic_ir * 0.3 + max(0, win_rate - 0.5) * 0.2
         return min(score, 1.0)
 
-
+from projects._03_factor_selection.factor_manager.factor_composite.factor_synthesizer import FactorSynthesizer
 class ICWeightedSynthesizer(FactorSynthesizer):
     """IC加权因子合成器 - 继承并扩展现有功能"""
 
@@ -460,96 +458,6 @@ class ICWeightedSynthesizer(FactorSynthesizer):
 
 
         logger.info(f"✅ IC加权因子合成完成: {composite_factor_name}")
-        return composite_factor_df, synthesis_report
-    #开始筛选 最终版
-    def synthesize_with_professional_selection(
-            self,
-            composite_factor_name: str,
-            candidate_factor_names: List[str],
-            snap_config_id: str,
-            force_generate_ic: bool = False
-    ) -> Tuple[pd.DataFrame, Dict]:
-        """
-        使用专业滚动IC筛选器进行因子合成
-        
-        Args:
-            composite_factor_name: 复合因子名称
-            candidate_factor_names: 候选因子列表
-            snap_config_id: 配置快照ID
-            force_generate_ic: 是否强制重新生成IC数据
-            
-        Returns:
-            (composite_factor_df, synthesis_report)
-        """
-        logger.info(f"\n🚀 启动专业IC筛选因子合成: {composite_factor_name}")
-        logger.info(f"📊 候选因子数量: {len(candidate_factor_names)}")
-        
-        # 1. 初始化专业筛选器
-        if self.factor_selector is None:
-            self.factor_selector = RollingICFactorSelector(snap_config_id, self.selector_config)
-            logger.info("✅ 滚动IC因子筛选器初始化完成")
-        
-        # 2. 执行完整的专业筛选流程
-        selected_factors, selection_report = self.factor_selector.run_complete_selection(
-            candidate_factor_names, force_generate_ic
-        )
-        
-        if not selected_factors:
-            raise ValueError("❌ 专业筛选未选出任何因子，无法进行合成")
-        
-        logger.info(f"🎯 专业筛选结果: {len(selected_factors)} 个优质因子")
-        for i, factor in enumerate(selected_factors, 1):
-            logger.info(f"  {i}. {factor}")
-        
-        # 3. 获取股票池信息
-        config_manager = ConfigSnapshotManager()
-        pool_index, start_date, end_date, config_evaluation = config_manager.get_snapshot_config_content_details(snap_config_id)
-        
-        # 4. 基于筛选结果计算IC权重
-        factor_ic_stats = {}
-        for factor_name in selected_factors:
-            try:
-                ic_stats = self._load_factor_ic_stats(
-                    factor_name, pool_index, snap_config_id=snap_config_id
-                )
-                if ic_stats:
-                    factor_ic_stats[factor_name] = ic_stats
-                    logger.debug(f"  ✅ {factor_name}: 加载IC统计成功")
-                else:
-                    logger.warning(f"  ⚠️ {factor_name}: IC统计加载失败，使用等权重")
-            except Exception as e:
-                logger.error(f"  ❌ {factor_name}: IC统计加载异常 - {e}")
-        
-        # 5. 计算最终权重
-        if factor_ic_stats:
-            factor_weights = self.weight_calculator.calculate_ic_based_weights(factor_ic_stats)
-        else:
-            logger.warning("⚠️ 无法获取IC统计，使用等权重合成")
-            equal_weight = 1.0 / len(selected_factors)
-            factor_weights = {name: equal_weight for name in selected_factors}
-        
-        # 6. 执行加权合成
-        composite_factor_df = self._execute_weighted_synthesis(
-            composite_factor_name,
-            pool_index,
-            factor_weights,
-            snap_config_id
-        )
-        
-        # 7. 生成综合报告（包含筛选和合成信息）
-        synthesis_report = self._generate_comprehensive_report(
-            composite_factor_name,
-            candidate_factor_names,
-            selected_factors,
-            factor_weights,
-            selection_report
-        )
-        
-        logger.info(f"✅ 专业IC筛选因子合成完成: {composite_factor_name}")
-        logger.info(f"📊 最终合成权重分布:")
-        for factor, weight in sorted(factor_weights.items(), key=lambda x: x[1], reverse=True):
-            logger.info(f"  {factor}: {weight:.1%}")
-            
         return composite_factor_df, synthesis_report
 
     def calculate_rolling_weights(
@@ -1690,6 +1598,8 @@ class ICWeightedSynthesizer(FactorSynthesizer):
 if __name__ == '__main__':
     data_manager = DataManager()
     factor_manager= FactorManager(data_manager)
+    from projects._03_factor_selection.factor_manager.factor_analyzer.factor_analyzer import FactorAnalyzer
+
     factor_analyzer = FactorAnalyzer(factor_manager)
     factor_processor = FactorProcessor(factor_manager.data_manager.config)
     (ICWeightedSynthesizer(factor_manager, factor_analyzer, factor_processor).synthesize_with_orthogonalization
