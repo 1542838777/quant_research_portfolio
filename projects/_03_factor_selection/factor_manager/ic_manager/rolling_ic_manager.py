@@ -12,11 +12,7 @@
 - 支持实盘级别的严格时间控制
 - 高效的增量计算和存储
 """
-from typing import Tuple
 import math
-import logging
-from scipy import stats
-import statsmodels.api as sm
 from scipy import stats
 
 import pandas as pd
@@ -30,8 +26,7 @@ import json
 
 from projects._03_factor_selection.factor_manager.storage.result_load_manager import ResultLoadManager
 from projects._03_factor_selection.config_manager.config_snapshot.config_snapshot_manager import ConfigSnapshotManager
-from projects._03_factor_selection.utils.date.trade_date_utils import get_end_day_pre_n_day, \
-    get_trading_dates_by_last_day
+from projects._03_factor_selection.utils.date.trade_date_utils import get_end_day_pre_n_day
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -861,6 +856,31 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
     )
     print(f"计算完成，共生成 {sum(len(snaps) for snaps in snapshots.values())} 个IC快照")
 if __name__ == '__main__':
-    all_ = '20250825_091622_98ed2d08'
-    # simple_ = '20250825_091622_98ed2d08'
-    run_cal_and_save_rolling_ic_by_snapshot_config_id(all_,factor_names = ['amihud_liquidity'])
+    # 使用并发执行器进行批量计算
+    from projects._03_factor_selection.utils.efficiency_engineering.concurrent_executor import run_concurrent_factors
+    
+    snapshot_config_id = '20250825_091622_98ed2d08'
+    df = pd.read_csv(r'D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factor_manager\selector\v3未经过残差化版本.csv')
+    factor_names = df['factor_name'].unique().tolist()
+    
+    logger.info(f"📊 开始批量计算 {len(factor_names[6:])} 个因子的滚动IC")
+    
+    # 并发执行 - 单因子模式，适合内存充足的情况
+    successful_results, failed_factors = run_concurrent_factors(
+        factor_names=factor_names[6:],
+        snapshot_config_id=snapshot_config_id,
+        max_workers=3,  # 根据机器配置调整
+        execution_mode="chunked"  # 或 "chunked" 用于分组执行
+    )
+    
+    logger.info(f"🎉 批量计算完成!")
+    logger.info(f"✅ 成功: {len(successful_results)} 个因子")
+    logger.info(f"❌ 失败: {len(failed_factors)} 个因子")
+    
+    if failed_factors:
+        logger.warning("失败的因子:")
+        for factor, error in failed_factors:
+            logger.warning(f"  - {factor}: {error}")
+    
+    # 单个测试用法(保留原有方式)
+    # run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, ['amihud_liquidity'])

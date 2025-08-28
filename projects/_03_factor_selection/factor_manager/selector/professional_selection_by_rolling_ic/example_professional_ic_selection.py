@@ -67,14 +67,14 @@ def demo_professional_factor_selection(snap_config_id):
 
     # 2. 从CSV文件加载所有已测试的因子（实际项目中的候选池）
     csv_file = Path(
-        r"/projects/_03_factor_selection/factor_manager/selector/v3未经过残差化版本.csv")
+        r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factor_manager\selector\v3未经过残差化版本.csv")
 
     if csv_file.exists():
-        # factors_df = pd.read_csv(csv_file)
-        # # 选择评分较高的因子作为候选（模拟实际筛选前的预选）
-        # candidate_factors = factors_df[factors_df['Final_Score'] >= 35]['factor_name'].tolist()
-        # logger.info(f"📊 从CSV加载候选因子: {len(candidate_factors)} 个")
-        candidate_factors = ['turnover_rate_monthly_mean', 'amihud_liquidity', 'volatility_40d']
+        factors_df = pd.read_csv(csv_file)
+        # 选择评分较高的因子作为候选（模拟实际筛选前的预选）
+        candidate_factors = factors_df[factors_df['Final_Score'] >= 0]['factor_name'].tolist()
+        logger.info(f"📊 从CSV加载候选因子: {len(candidate_factors)} 个")
+        # candidate_factors = ['turnover_rate_monthly_mean', 'amihud_liquidity', 'volatility_40d']
     else:
         # 备用候选因子列表（如果CSV不存在）
         candidate_factors = [
@@ -115,10 +115,10 @@ def demo_professional_factor_selection(snap_config_id):
         logger.info(f"  通过率: {selection_summary.get('pass_rate', 0):.1%}")
 
     except Exception as e:
-        logger.error(f"❌ 专业筛选失败: {e}")
-        logger.info("使用备用因子列表进行演示...")
-        selected_factors = ['earnings_stability', 'amihud_liquidity', 'volatility_40d']
-        selection_report = {'method': 'fallback'}
+        raise ValueError(f"❌ 专业筛选失败: {e}")
+        # logger.info("使用备用因子列表进行演示...")
+        # selected_factors = ['earnings_stability', 'amihud_liquidity', 'volatility_40d']
+        # selection_report = {'method': 'fallback'}
 
     return selected_factors, selection_report
 
@@ -227,7 +227,7 @@ def main():
 if __name__ == "__main__":
     snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID 全部
 
-    ic_weighted_synthesis(snap_config_id)
+    demo_professional_factor_selection(snap_config_id)
 
 
-    main()
+    # main()

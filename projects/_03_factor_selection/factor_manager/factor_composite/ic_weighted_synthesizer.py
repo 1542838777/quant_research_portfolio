@@ -129,7 +129,7 @@ class ICWeightCalculator:
 
             # 提取关键指标
             ic_mean = abs(stats.get('ic_mean', 0))  # 使用绝对值
-            ic_ir = stats.get('ic_ir', 0)
+            ic_ir = stats.get('ic_ir', 0) #不适用绝对值 todo？？？？
             ic_win_rate = stats.get('ic_win_rate', 0.5)
             ic_t_stat = abs(stats.get('ic_t_stat', 0))
 
@@ -355,7 +355,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
 
         # 缓存IC统计数据，避免重复计算
         self._ic_stats_cache = {}
-
+    #这个函数没有正交化合成！
     def synthesize_ic_weighted_factor(
             self,
             composite_factor_name: str,
@@ -725,7 +725,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
             
             # 5. 计算聚合统计指标
             aggregated_stats = {}
-            for period, stats_list in all_periods_stats.items():
+            for period, stats_list in all_periods_stats.items():#stat_list：所有快照
                 if not stats_list:
                     continue
                     
