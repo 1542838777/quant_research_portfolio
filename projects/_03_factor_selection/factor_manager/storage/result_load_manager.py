@@ -66,6 +66,15 @@ class ResultLoadManager:
 
         return returns
 
+    def get_close_hfq_data(self, stock_pool_index, start_date, end_date):
+        path = self.main_work_path / stock_pool_index / 'close_hfq' / self.version / 'close_hfq.parquet'
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        # 过滤时间"
+        returns = df.loc[start_date:end_date]
+
+        return returns
+
     def get_factor_self_path(self, stock_pool_index, factor_name):
         return self.main_work_path / stock_pool_index / factor_name / self.calcu_type / self.version
 
