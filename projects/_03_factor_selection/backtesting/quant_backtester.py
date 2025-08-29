@@ -26,6 +26,8 @@ from pathlib import Path
 import warnings
 from datetime import datetime
 
+from vectorbt.portfolio import CallSeqType
+
 from quant_lib.config.logger_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -255,24 +257,10 @@ class StrategySignalGenerator:
 
             # 4. 更新持仓快照
             final_positions_snapshot.loc[dt, chosen_stocks] = True
-        # # --- 开始三步调试法 ---
-        # print("\n" + "=" * 20 + " 法医式调试开始 " + "=" * 20)
-        #
-        # # 步骤 1: 验证调仓决策的变化
-        # # .diff() 会计算当前行与上一行的差异, .abs()取绝对值, .sum()计算总变化
-        # snapshot_diff = final_positions_snapshot.astype(int).diff().abs()
-        # # 每一行的和代表该调仓日有多少只股票发生了变动（买入或卖出）
-        # turnover_counts = snapshot_diff.sum(axis=1)
-        #
-        # print("\n[步骤 1] 每个调仓日的持仓变动股票数:")
-        # print(turnover_counts)
-        #
-        # # 统计有多少个调仓日是完全没有换手的
-        # zero_turnover_days = (turnover_counts == 0).sum()
-        # total_rebalancing_days = len(turnover_counts)
-        # print(f"\n分析: 在 {total_rebalancing_days} 个调仓日中，有 {zero_turnover_days} 天的持仓是完全没有变化的。")
-        # print(f"换手率为零的调仓日占比: {zero_turnover_days / total_rebalancing_days:.2%}")
-        # print("=" * 60)
+        # --- 开始三步调试法 ---
+        print("\n" + "=" * 20 + " 法医式调试开始 " + "=" * 20)
+
+
         daily_holding_signals = final_positions_snapshot.reindex(factor_df.index, method='ffill').fillna(False)
 
         # daily_holding_signals = daily_holding_signals.where(factor_df.notna(), other=False)
@@ -282,7 +270,19 @@ class StrategySignalGenerator:
         # 将理论持仓信号与可交易信号做“与”运算
         # 只有当“我想持有”且“它能交易”时，我才真正持有它
         daily_holding_signals = daily_holding_signals & is_tradable # daily_holding_signals.sum
+        # 步骤 1: 验证调仓决策的变化
+        # .diff() 会计算当前行与上一行的差异, .abs()取绝对值, .sum()计算总变化
+        turnover_counts = daily_holding_signals.astype(int).diff().abs().sum(axis=1)
 
+        print("\n[步骤 1] 每个调仓日的持仓变动股票数:")
+        print(turnover_counts)
+
+        # 统计有多少个调仓日是完全没有换手的
+        zero_turnover_days = (turnover_counts == 0).sum()
+        total_rebalancing_days = len(turnover_counts)
+        print(f"\n分析: 在 {total_rebalancing_days} 个调仓日中，有 {zero_turnover_days} 天的持仓是完全没有变化的。")
+        print(f"换手率为零的调仓日占比: {zero_turnover_days / total_rebalancing_days:.2%}")
+        print("=" * 60)
         return daily_holding_signals
 
     @staticmethod
@@ -454,9 +454,9 @@ class QuantBacktester:
                 close=aligned_price,
                 entries=entry_signals,
                 exits=exit_signals,
-                size=weights_df,  # <--- 核心#1：提供浮动的目标权重
-                size_type=['Percent'],  # <--- 核心#2：告诉 vbt，size 是目标组合价值的百分比
-                call_seq=['exit', 'entry'],  # <--- 核心#3：先卖后买 (Sell then Buy)，解决资金死锁
+                # call_seq='auto',  # first sell then buy 实测!
+                # size_type="percent",#实测！
+                # size= pd.Series(0.75, index=aligned_price.index),  # 动态仓位大小
                 init_cash=self.config.initial_cash,
                 fees=self.config.commission_rate,
                 slippage=self.config.slippage_rate,
