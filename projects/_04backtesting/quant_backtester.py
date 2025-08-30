@@ -223,15 +223,12 @@ class StrategySignalGenerator:
 
         return limited_signals
 
-        # 建议放在你的 StrategySignalGenerator 类中
 
-    # 建议放在你的 StrategySignalGenerator 类中
-    # 放在你的 StrategySignalGenerator 类中
 
     @staticmethod
     def generate_long_holding_signals(factor_df: pd.DataFrame, price_df, config: BacktestConfig) -> pd.DataFrame:
         """
-        【V6 修复版】生成每日目标"持仓"布尔矩阵，确保满仓运作
+        生成每日目标"持仓"布尔矩阵，确保满仓运作
         """
         logger.info("【V6修复】生成持仓信号 - 确保满仓运作")
 
@@ -339,10 +336,6 @@ class StrategySignalGenerator:
         # 5. 合并原有卖出信号和强制卖出信号
         if force_exit_limit:
             final_exits = exits | forced_exits
-        # 7. 调试信息输出
-        # logger.info(f"  -> 总买入信号: {entries.sum().sum()}")
-        # logger.info(f"  -> 总卖出信号: {final_exits.sum().sum()} ")
-
         return entries, final_exits
 
 
@@ -521,10 +514,6 @@ class QuantBacktester:
             self.myself_debug_data(origin_weights_df)
             #照顾vector 专门为他算术！
             weights_df = convert_to_sequential_percents(origin_weights_df)
-            # 将持仓状态转换为实际的买入/卖出交易信号
-            entry_signals, exit_signals = self.signal_generator.generate_rebalancing_signals(holding_signals)
-
-
             # 计算合理的综合交易费用
             # 买入成本: 佣金(万3) + 滑点(千1) = 0.0003 + 0.001 = 0.0013
             # 卖出成本: 佣金(万3) + 印花税(千1) + 滑点(千1) = 0.0003 + 0.001 + 0.001 = 0.0023
@@ -536,10 +525,10 @@ class QuantBacktester:
             )
             # 改进退出信号生成 - 确保在时间窗口结束时强制退出 (这样做，只是为了简单直观看出我的策略效果！
             improved_entries, improved_exits = self._generate_improved_signals(
-                holding_signals, aligned_price, max_holding_days=None
+                holding_signals, aligned_price, max_holding_days=30
             )
             # 【新增调试】检查信号的详细情况
-            self.debug_signal_generation(holding_signals, self.config, entry_signals, exit_signals, origin_weights_df,0,300)
+            self.debug_signal_generation(holding_signals, self.config, improved_entries, improved_exits, origin_weights_df,0,300)
 
             # 1. 检查实际的交易记录
             portfolio = vbt.Portfolio.from_signals(
@@ -815,6 +804,7 @@ class QuantBacktester:
         logger.info(f"  平均每天持仓股票数量: {holding_signals.sum(axis=1).mean()}")
         ##检查持仓权重 是否等于1
         logger.info(f"  每天平均持仓比例: {weights_df.sum(axis=1).mean()}")
+        self._debug_holding_days(holding_signals, entry_signals, exit_signals)
 
     def about_cash(self, portfolio):
         logger.info(f"现金变化情况:")
@@ -834,6 +824,134 @@ class QuantBacktester:
         #按列 整列至少有一个值不为0！
         origin_weights_df = origin_weights_df.loc[:, origin_weights_df.any(axis=0)]
         pass
+
+    def _debug_holding_days(self, holding_signals, entry_signals, exit_signals):
+        """
+        分析持仓天数分布，识别"老妖股"（长期持有的股票）
+        
+        Args:
+            holding_signals: 持仓信号矩阵
+            entry_signals: 买入信号矩阵  
+            exit_signals: 卖出信号矩阵
+        """
+        logger.info("🕵️ 开始分析持仓天数分布...")
+        
+        # 创建持仓天数统计字典
+        stock_holding_stats = {}
+        all_holding_periods = []
+        
+        # 遍历每只股票
+        for stock in holding_signals.columns:
+            stock_entries = entry_signals[stock]
+            stock_exits = exit_signals[stock]
+            stock_holdings = holding_signals[stock]
+            
+            # 找到所有买入时点
+            entry_dates = stock_entries[stock_entries].index.tolist()
+            exit_dates = stock_exits[stock_exits].index.tolist()
+            
+            if len(entry_dates) == 0:
+                continue
+                
+            # 计算每次持仓周期
+            holding_periods = []
+            
+            for entry_date in entry_dates:
+                # 找到对应的卖出日期
+                matching_exits = [exit_date for exit_date in exit_dates if exit_date > entry_date]
+                
+                if matching_exits:
+                    exit_date = min(matching_exits)  # 最近的卖出日期
+                    # 计算持仓天数
+                    holding_days = (exit_date - entry_date).days
+                    holding_periods.append(holding_days)
+                    all_holding_periods.append(holding_days)
+                else:
+                    # 如果没有找到卖出信号，计算到最后一天的持仓天数
+                    last_date = holding_signals.index[-1]
+                    holding_days = (last_date - entry_date).days
+                    holding_periods.append(holding_days)
+                    all_holding_periods.append(holding_days)
+            
+            if holding_periods:
+                stock_holding_stats[stock] = {
+                    'total_trades': len(holding_periods),
+                    'min_holding_days': min(holding_periods),
+                    'max_holding_days': max(holding_periods),
+                    'avg_holding_days': np.mean(holding_periods),
+                    'holding_periods': holding_periods
+                }
+        
+        if not all_holding_periods:
+            logger.warning("⚠️ 没有找到任何持仓记录")
+            return
+            
+        # 整体统计
+        total_trades = len(all_holding_periods)
+        avg_holding = np.mean(all_holding_periods)
+        median_holding = np.median(all_holding_periods)
+        max_holding = max(all_holding_periods)
+        min_holding = min(all_holding_periods)
+        
+        logger.info(f"📊 持仓天数总体统计:")
+        logger.info(f"  总交易次数: {total_trades}")
+        logger.info(f"  平均持仓天数: {avg_holding:.1f}天")
+        logger.info(f"  中位数持仓天数: {median_holding:.1f}天")
+        logger.info(f"  最短持仓: {min_holding}天")
+        logger.info(f"  最长持仓: {max_holding}天")
+        
+        # 持仓天数分布
+        bins = [0, 7, 30, 60, 120, 240, float('inf')]
+        bin_labels = ['<7天', '7-30天', '30-60天', '60-120天', '120-240天', '>240天']
+        
+        for i, (bin_start, bin_end) in enumerate(zip(bins[:-1], bins[1:])):
+            if bin_end == float('inf'):
+                count = sum(1 for days in all_holding_periods if days >= bin_start)
+            else:
+                count = sum(1 for days in all_holding_periods if bin_start <= days < bin_end)
+            
+            percentage = count / total_trades * 100
+            logger.info(f"  {bin_labels[i]}: {count}次 ({percentage:.1f}%)")
+        
+        # 找出"老妖股" - 持仓超过120天的股票
+        long_holding_threshold = 120
+        old_monster_stocks = []
+        
+        for stock, stats in stock_holding_stats.items():
+            max_days = stats['max_holding_days']
+            if max_days >= long_holding_threshold:
+                old_monster_stocks.append({
+                    'stock': stock,
+                    'max_holding_days': max_days,
+                    'avg_holding_days': stats['avg_holding_days'],
+                    'total_trades': stats['total_trades']
+                })
+        
+        # 按最长持仓天数排序
+        old_monster_stocks.sort(key=lambda x: x['max_holding_days'], reverse=True)
+        
+        if old_monster_stocks:
+            logger.info(f"🐉 发现{len(old_monster_stocks)}只老妖股 (持仓>{long_holding_threshold}天):")
+            
+            # 显示前10只最"妖"的股票
+            top_monsters = old_monster_stocks[:10]
+            for i, stock_info in enumerate(top_monsters, 1):
+                logger.info(f"  {i:2d}. {stock_info['stock']}: 最长{stock_info['max_holding_days']}天, "
+                           f"平均{stock_info['avg_holding_days']:.1f}天, 共{stock_info['total_trades']}次交易")
+                
+            if len(old_monster_stocks) > 10:
+                logger.info(f"  ... 还有{len(old_monster_stocks) - 10}只老妖股")
+                
+            # 超级妖股 - 持仓超过240天
+            super_monsters = [s for s in old_monster_stocks if s['max_holding_days'] >= 240]
+            if super_monsters:
+                logger.info(f"👹 其中{len(super_monsters)}只超级妖股 (持仓>240天):")
+                for stock_info in super_monsters:
+                    logger.info(f"     {stock_info['stock']}: {stock_info['max_holding_days']}天")
+        else:
+            logger.info(f"✅ 没有发现老妖股 (所有股票持仓都<{long_holding_threshold}天)")
+        
+        logger.info("🕵️ 持仓天数分析完成")
 
 
 # 便捷函数

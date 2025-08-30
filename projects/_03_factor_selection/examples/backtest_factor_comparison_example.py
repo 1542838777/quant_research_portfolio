@@ -126,10 +126,10 @@ def example_basic_comparison():
         # 2. 配置回测参数
         config = BacktestConfig(
             top_quantile=0.05,           # 做多前20%
-            rebalancing_freq='M',       # 月度调仓
-            commission_rate=0.0003,     # 万3佣金
+            rebalancing_freq='W',       # 月度调仓：M 周：W 季末：Q
+            commission_rate=0.0001,     # 万3佣金
             slippage_rate=0.001,        # 千1滑点
-            stamp_duty=0.001,           # 千1印花税
+            stamp_duty=0.0005,           # 千1印花税
             initial_cash=300000,       # 300万初始资金
             max_positions=30            # 最多持30只股票
         )
