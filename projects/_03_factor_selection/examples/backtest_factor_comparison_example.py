@@ -7,13 +7,12 @@
 import sys
 from pathlib import Path
 import pandas as pd
-import numpy as np
 
 # 添加项目路径
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
-from projects._03_factor_selection.backtesting.quant_backtester import (
+from projects._04backtesting.quant_backtester import (
     QuantBacktester, 
     BacktestConfig,
     quick_factor_backtest
@@ -66,12 +65,12 @@ def load_example_data():
         
         # 4. 数据质量检查和汇总
         factor_dict = {}
-        #
-        # if champion_factor is not None and not champion_factor.empty:
-        #     factor_dict['volatility_40d (冠军因子)'] = champion_factor
-        #     logger.info(f"冠军因子加载成功: {champion_factor.shape}")
-        # else:
-        #     logger.warning("冠军因子 volatility_40d 加载失败或为空")
+        
+        if champion_factor is not None and not champion_factor.empty:
+            factor_dict['volatility_40d (冠军因子)'] = champion_factor
+            logger.info(f"冠军因子加载成功: {champion_factor.shape}")
+        else:
+            logger.warning("冠军因子 volatility_40d 加载失败或为空")
         
         if composite_factor is not None and not composite_factor.empty:
             factor_dict['lqs_orthogonal_v1 (合成因子)'] = composite_factor
@@ -133,7 +132,7 @@ def example_basic_comparison():
             commission_rate=0.0003,     # 万3佣金
             slippage_rate=0.001,        # 千1滑点
             stamp_duty=0.001,           # 千1印花税
-            initial_cash=1000000,       # 100万初始资金
+            initial_cash=300000,       # 300万初始资金
             max_positions=30            # 最多持30只股票
         )
         
@@ -174,7 +173,7 @@ def example_advanced_analysis():
         config = BacktestConfig(
             top_quantile=0.15,          # 做多前15% (更精选)
             rebalancing_freq='M',       # 月度调仓
-            commission_rate=0.0005,     # 稍高的交易成本
+            commission_rate=0.0001,     # 稍高的交易成本
             slippage_rate=0.0015,
             stamp_duty=0.001,
             initial_cash=5000000,       # 500万资金
