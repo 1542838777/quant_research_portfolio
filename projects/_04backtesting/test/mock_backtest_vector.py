@@ -13,7 +13,7 @@ logger = setup_logger(__name__)
 def create_test_data():
     """创建测试数据"""
     # 创建100个交易日的测试数据
-    dates = pd.date_range('2023-01-01', periods=100, freq='D')
+    dates = pd.date_range('2023-01-01', periods=40, freq='D')
     stocks = ['STOCK_A', 'STOCK_B', 'STOCK_C', 'STOCK_D', 'STOCK_E', 'STOCK_F']
     
     # 创建价格数据 - 模拟不同表现的股票
@@ -66,12 +66,12 @@ def t_flow_backtester():
     
     # 配置回测参数
     config = BacktestConfig(
-        top_quantile=0.15,  # 选择前30%股票
+        top_quantile=0.30,  # 选择前30%股票
         rebalancing_freq='W',  # 周度调仓
         commission_rate=0.0003,
         slippage_rate=0.001,
         initial_cash=1000000.0,
-        max_positions=3  # 最多持仓3只股票
+        max_positions=2  # 最多持仓3只股票
     )
     
     # 创建回测器

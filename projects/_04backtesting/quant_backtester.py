@@ -55,7 +55,7 @@ class BacktestConfig:
 
     # 回测参数
     initial_cash: float = 1000000.0  # 初始资金（100万）
-    max_positions: int = 50  # 最大持仓数量
+    max_positions: int = 10  # 最大持仓数量
 
     # 风控参数
     max_weight_per_stock: float = 0.10  # 单股最大权重（10%）
@@ -230,18 +230,13 @@ class StrategySignalGenerator:
         """
         生成每日目标"持仓"布尔矩阵，确保满仓运作
         """
-        logger.info("【V6修复】生成持仓信号 - 确保满仓运作")
-
         # 计算每日排名
         ranks = factor_df.rank(axis=1, pct=True, method='average', na_option='keep')
 
-        # 【关键修复】生成每日持仓信号，而不是只在调仓日
+        # 生成每日持仓信号，而不是只在调仓日
         daily_holding_signals = pd.DataFrame(False, index=factor_df.index, columns=factor_df.columns)
-
         # 获取调仓日期
-
         rebalance_dates = ranks.copy().reindex(generate_rebalance_dates(ranks.index,config.rebalancing_freq)).dropna(how='all').index
-        logger.info(f"调仓日期数量: {len(rebalance_dates)}")
 
         # 当前持仓组合（在调仓间隔期间保持不变）
         current_positions = None
@@ -265,11 +260,12 @@ class StrategySignalGenerator:
                     current_positions = chosen_stocks
                     # logger.info(f"调仓日{date.strftime('%Y-%m-%d')}: 选择{len(chosen_stocks)}只股票")
 
-            # 无论是否调仓日，都要设置当日持仓
-            if current_positions is not None:
-                # 检查股票是否可交易（有价格数据）
-                tradable_positions = current_positions[price_df.loc[date, current_positions].notna()]
-                daily_holding_signals.loc[date, tradable_positions] = True
+            if current_positions is not None: #其实就是变相的ffill ，保持这次调仓及后面n天同状态 ，直到下一次调仓！
+                #最新注释，交给下游 去判断
+                # # 检查股票 是否可交易==>（有价格数据）
+                # current_with_price_positions = price_df.loc[date, current_positions].notna()
+                # tradable_positions = current_positions[current_with_price_positions]
+                daily_holding_signals.loc[date, current_positions] = True
 
         # 验证持仓信号质量
         daily_positions = daily_holding_signals.sum(axis=1)
@@ -451,7 +447,7 @@ class QuantBacktester:
 
         # 持仓天数计数器
         holding_days = pd.DataFrame(0, index=holding_signals.index, columns=holding_signals.columns)
-
+        not_finishied_exit = None
         for i in range(len(holding_signals)):
             if i == 0:
                 # 第一天: 直接买入目标股票
@@ -461,13 +457,15 @@ class QuantBacktester:
                 prev_holdings = holding_signals.iloc[i - 1]
                 curr_holdings = holding_signals.iloc[i]
 
-                # 新买入信号
                 new_entries = curr_holdings & ~prev_holdings
                 entries.iloc[i] = new_entries
 
                 # 正常卖出信号
-                normal_exits = ~curr_holdings & prev_holdings
-                exits.iloc[i] = normal_exits
+                today_need_exit = self.today_need_exit(prev_holdings, curr_holdings, not_finishied_exit)
+                today_can_exit = today_need_exit &  (price_df.iloc[i].notna())#有价格才能卖
+                #check 看看今天价格在不在，价格不在 卖不出去！
+                not_finishied_exit = today_need_exit & (price_df.iloc[i].isna()) #今天需要卖的，卖不走的话，明天卖！
+                exits.iloc[i] = today_can_exit
                 if max_holding_days is None:
                     continue
                 # 需要判断持仓天数
@@ -478,10 +476,13 @@ class QuantBacktester:
                 holding_days.iloc[i] = np.where(new_entries, 1, holding_days.iloc[i]) #很对 通过测试
 
                 # 强制退出 - 持有超过最大天数
-                force_exit_mask = (holding_days.iloc[i] >= max_holding_days) & curr_holdings#算上今天持仓，当好是45天，今天该卖了！
+                today_need_force_exit_mask = (holding_days.iloc[i] >= max_holding_days) & curr_holdings#算上今天持仓，当好是45天，今天该卖了！
+                today_can_force_exit_mask = today_need_force_exit_mask &  (price_df.iloc[i].notna())#有价格才能卖
 
+                # check 看看今天价格在不在，价格不在 卖不出去！
+                not_finishied_exit = (today_need_force_exit_mask & (price_df.iloc[i].isna())) | not_finishied_exit  # 今天需要卖的，卖不走的话，明天卖！
                 # 合并退出信号
-                exits.iloc[i] = normal_exits | force_exit_mask
+                exits.iloc[i] = today_can_exit | today_can_force_exit_mask
 
         # 在最后一个交易日强制清仓所有持仓
         last_day_holdings = holding_signals.iloc[-1]
@@ -528,7 +529,7 @@ class QuantBacktester:
                 holding_signals, aligned_price, max_holding_days=30
             )
             # 【新增调试】检查信号的详细情况
-            self.debug_signal_generation(holding_signals, self.config, improved_entries, improved_exits, origin_weights_df,0,300)
+            self.debug_signal_generation(holding_signals, self.config, improved_entries, improved_exits, origin_weights_df,0,len(holding_signals)-1)
 
             # 1. 检查实际的交易记录
             portfolio = vbt.Portfolio.from_signals(
@@ -783,13 +784,33 @@ class QuantBacktester:
         logger.info("🔍 信号调试分析开始")
         # 检查前几天的信号情况
         sample_dates = generate_rebalance_dates(holding_signals.index,config.rebalancing_freq)
+
+        # --- 核心改进：向量化计算每日的“实际持仓数量” ---
+        # 1. 计算每日持仓数量的“净变化”
+        position_net_change = entry_signals.astype(int) - exit_signals.astype(int)
+        # 2. 使用累积求和，得到每日终点的实际持仓数量
+        actual_positions_count = position_net_change.cumsum(axis=0).sum(axis=1)
+        # ----------------------------------------------------
         sample_dates = holding_signals.index[sidx:eidx]
+
         for date in sample_dates:
+            # “理想”的计划持仓数
+            intended_holdings_count = holding_signals.loc[date].sum()
+            # 当天实际发生的交易
             entry_count = entry_signals.loc[date].sum()
             exit_count = exit_signals.loc[date].sum()
-            holding_count = holding_signals.loc[date].sum()
-            logger.info(
-                f"{date.strftime('%Y-%m-%d')}: 持仓{holding_count}只, 卖出信号({exit_count})个 ，买入信号({entry_count})个")
+
+            # 当天收盘后的“现实”持仓数
+            actual_holding_count = actual_positions_count.loc[date]
+
+            log_msg = (
+                f"{date.strftime('%Y-%m-%d')}: "
+                f"计划持仓({intended_holdings_count}), "
+                f"实际持仓({actual_holding_count}), "
+                f"卖出({exit_count}), "
+                f"买入({entry_count})"
+            )
+            logger.info(log_msg)
 
         # 检查是否所有信号都是False
         total_entries = entry_signals.sum().sum()
@@ -952,6 +973,13 @@ class QuantBacktester:
             logger.info(f"✅ 没有发现老妖股 (所有股票持仓都<{long_holding_threshold}天)")
         
         logger.info("🕵️ 持仓天数分析完成")
+
+    def today_need_exit(self, prev_holdings, curr_holdings, not_finishied_exit):
+        today_exit_signal =  ~curr_holdings & prev_holdings
+        if not_finishied_exit is not None: #昨天没卖出去，今天赶紧卖！
+            today_exit_signal = today_exit_signal | not_finishied_exit
+
+        return today_exit_signal
 
 
 # 便捷函数
