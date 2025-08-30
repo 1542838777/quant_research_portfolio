@@ -52,7 +52,7 @@ def load_example_data():
 
         # 3. 加载因子数据
         logger.info("正在加载因子数据...")
-        
+
         # 加载冠军因子
         champion_factor = result_manager.get_factor_data(
             'volatility_40d', stock_pool_index, start_date, end_date
@@ -65,12 +65,12 @@ def load_example_data():
         
         # 4. 数据质量检查和汇总
         factor_dict = {}
-        
-        if champion_factor is not None and not champion_factor.empty:
-            factor_dict['volatility_40d (冠军因子)'] = champion_factor
-            logger.info(f"冠军因子加载成功: {champion_factor.shape}")
-        else:
-            logger.warning("冠军因子 volatility_40d 加载失败或为空")
+        #
+        # if champion_factor is not None and not champion_factor.empty:
+        #     factor_dict['volatility_40d (冠军因子)'] = champion_factor
+        #     logger.info(f"冠军因子加载成功: {champion_factor.shape}")
+        # else:
+        #     logger.warning("冠军因子 volatility_40d 加载失败或为空")
         
         if composite_factor is not None and not composite_factor.empty:
             factor_dict['lqs_orthogonal_v1 (合成因子)'] = composite_factor
@@ -125,7 +125,7 @@ def example_basic_comparison():
         
         # 2. 配置回测参数
         config = BacktestConfig(
-            top_quantile=0.20,           # 做多前20%
+            top_quantile=0.05,           # 做多前20%
             rebalancing_freq='M',       # 月度调仓
             commission_rate=0.0003,     # 万3佣金
             slippage_rate=0.001,        # 千1滑点

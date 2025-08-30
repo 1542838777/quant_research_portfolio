@@ -66,7 +66,7 @@ def t_flow_backtester():
     
     # 配置回测参数
     config = BacktestConfig(
-        top_quantile=0.3,  # 选择前30%股票
+        top_quantile=0.15,  # 选择前30%股票
         rebalancing_freq='W',  # 周度调仓
         commission_rate=0.0003,
         slippage_rate=0.001,

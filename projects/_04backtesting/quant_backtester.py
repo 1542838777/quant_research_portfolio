@@ -29,6 +29,7 @@ from datetime import datetime
 from vectorbt.portfolio import CallSeqType
 
 from quant_lib.config.logger_config import setup_logger
+from quant_lib.rebalance_utils import generate_rebalance_dates
 from utils.math.math_utils import convert_to_sequential_percents
 
 logger = setup_logger(__name__)
@@ -241,7 +242,8 @@ class StrategySignalGenerator:
         daily_holding_signals = pd.DataFrame(False, index=factor_df.index, columns=factor_df.columns)
 
         # 获取调仓日期
-        rebalance_dates = ranks.resample(config.rebalancing_freq).last().dropna(how='all').index
+
+        rebalance_dates = ranks.copy().reindex(generate_rebalance_dates(ranks.index,config.rebalancing_freq)).dropna(how='all').index
         logger.info(f"调仓日期数量: {len(rebalance_dates)}")
 
         # 当前持仓组合（在调仓间隔期间保持不变）
@@ -311,7 +313,7 @@ class StrategySignalGenerator:
 
         # 强制卖出逻辑 - 用于调试交易执行问题
         forced_exits=None
-        logger.info("  -> 正在添加60天强制卖出逻辑...")
+        # logger.info("  -> 正在添加60天强制卖出逻辑...")
         if force_exit_limit:
             # 创建持仓天数计数器
             holding_days = pd.DataFrame(0, index=holding_signals.index, columns=holding_signals.columns)
@@ -338,8 +340,8 @@ class StrategySignalGenerator:
         if force_exit_limit:
             final_exits = exits | forced_exits
         # 7. 调试信息输出
-        logger.info(f"  -> 总买入信号: {entries.sum().sum()}")
-        logger.info(f"  -> 总卖出信号: {final_exits.sum().sum()} ")
+        # logger.info(f"  -> 总买入信号: {entries.sum().sum()}")
+        # logger.info(f"  -> 总卖出信号: {final_exits.sum().sum()} ")
 
         return entries, final_exits
 
@@ -516,6 +518,7 @@ class QuantBacktester:
                                                                                   self.config)
 
             origin_weights_df = self.get_position_weights_by_per_weight(holding_signals)
+            self.myself_debug_data(origin_weights_df)
             #照顾vector 专门为他算术！
             weights_df = convert_to_sequential_percents(origin_weights_df)
             # 将持仓状态转换为实际的买入/卖出交易信号
@@ -536,7 +539,7 @@ class QuantBacktester:
                 holding_signals, aligned_price, max_holding_days=None
             )
             # 【新增调试】检查信号的详细情况
-            self.debug_signal_generation(holding_signals, self.config, entry_signals, exit_signals, origin_weights_df)
+            self.debug_signal_generation(holding_signals, self.config, entry_signals, exit_signals, origin_weights_df,0,300)
 
             # 1. 检查实际的交易记录
             portfolio = vbt.Portfolio.from_signals(
@@ -564,9 +567,12 @@ class QuantBacktester:
             logger.info(f"  期望交易数: {expected_trades}")
             logger.info(f"  实际交易数: {len(trades)}")
             print(portfolio.stats())
+
+            self.plot_cumulative_returns_curve(portfolio)
             self.portfolios[factor_name] = portfolio
 
         logger.info(f"🎉 {factor_dict.keys()}因子回测完成")
+
         return self.portfolios
 
     def _recalculate_trade_metric(self, corrected_stats, trades, metric):
@@ -784,18 +790,17 @@ class QuantBacktester:
         weights_df = holding_signals.mul(target_weights, axis=0)
         return weights_df
 
-    def debug_signal_generation(self, holding_signals, config,entry_signals, exit_signals,weights_df):
+    def debug_signal_generation(self, holding_signals, config,entry_signals, exit_signals,weights_df,sidx,eidx):
         logger.info("🔍 信号调试分析开始")
         # 检查前几天的信号情况
-        sample_dates = holding_signals.resample(config.rebalancing_freq).last().dropna(how='all').index
-
-        sample_dates = sample_dates[:5]  # 前10天
+        sample_dates = generate_rebalance_dates(holding_signals.index,config.rebalancing_freq)
+        sample_dates = holding_signals.index[sidx:eidx]
         for date in sample_dates:
             entry_count = entry_signals.loc[date].sum()
             exit_count = exit_signals.loc[date].sum()
             holding_count = holding_signals.loc[date].sum()
             logger.info(
-                f"{date.strftime('%Y-%m-%d')}: 持仓{holding_count}只, 买入信号{entry_count}个, 卖出信号{exit_count}个")
+                f"{date.strftime('%Y-%m-%d')}: 持仓{holding_count}只, 卖出信号({exit_count})个 ，买入信号({entry_count})个")
 
         # 检查是否所有信号都是False
         total_entries = entry_signals.sum().sum()
@@ -816,6 +821,18 @@ class QuantBacktester:
         cash_flows  = portfolio.cash()
         initial_cash = float(cash_flows.iloc[0])
         final_cash = float(cash_flows.iloc[-1])
+        pass
+
+    def plot_cumulative_returns_curve(self,portfolio):
+        cumulative_returns_builtin = (1 + portfolio.returns()).cumprod() - 1
+
+        # 使用内置函数还有一个巨大的好处：可以直接调用 vbt 的绘图功能
+        print("\n正在绘制权益曲线...")
+        cumulative_returns_builtin.vbt.plot(title='Equity Curve').show()
+
+    def myself_debug_data(self, origin_weights_df):
+        #按列 整列至少有一个值不为0！
+        origin_weights_df = origin_weights_df.loc[:, origin_weights_df.any(axis=0)]
         pass
 
 
