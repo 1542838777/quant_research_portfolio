@@ -42,30 +42,37 @@ def convert_to_sequential_percents(target_weights: pd.DataFrame) -> pd.DataFrame
         [convert_target_to_sequential_percents(row) for _, row in target_weights.iterrows()]
     )
 
-# --- 演示你的例子 ---
 
-# 例子 1: 0.5, 0.5, 0.0
-target_1 = [0.5, 0.5, 0.0]
-sequential_1 = convert_target_to_sequential_percents(target_1)
-print(f"目标权重: {target_1}")
-print(f"转换结果: {sequential_1}  <-- 第一个0.5, 第二个是 0.5/(1-0.5)=1.0")
+def t_demo():
+    # --- 演示你的例子 ---
 
-print("-" * 30)
+    # 例子 1: 0.5, 0.5, 0.0
+    target_1 = [0.5, 0.5, 0.0]
+    sequential_1 = convert_target_to_sequential_percents(target_1)
+    print(f"目标权重: {target_1}")
+    print(f"转换结果: {sequential_1}  <-- 第一个0.5, 第二个是 0.5/(1-0.5)=1.0")
 
-# 例子 2: 0.5, 0.25, 0.25
-target_2 = [0.5, 0.25, 0.25]
-sequential_2 = convert_target_to_sequential_percents(target_2)
-print(f"目标权重: {target_2}")
-print(f"转换结果: {sequential_2} <-- 分别是 0.5, 0.25/(1-0.5)=0.5, 0.25/(1-0.5-0.25)=1.0")
+    print("-" * 30)
 
-print("-" * 30)
+    # 例子 2: 0.5, 0.25, 0.25
+    target_2 = [0.5, 0.25, 0.25]
+    sequential_2 = convert_target_to_sequential_percents(target_2)
+    print(f"目标权重: {target_2}")
+    print(f"转换结果: {sequential_2} <-- 分别是 0.5, 0.25/(1-0.5)=0.5, 0.25/(1-0.5-0.25)=1.0")
 
-# 例子 3: 0.1, 0.4, 0.5
-target_3 = [0.1, 0.4, 0.5]
-sequential_3 = convert_target_to_sequential_percents(target_3)
-print(f"目标权重: {target_3}")
-print(f"转换结果: {sequential_3} <-- 分别是 0.1, 0.4/(1-0.1)≈0.444, 0.5/(1-0.1-0.4)=1.0")
-target_4 = [0, 0.4, 0.5,0.1,0,0]
-sequential_4 = convert_target_to_sequential_percents(target_4)
-print(f"目标权重: {target_4}")
-print(f"转换结果: {sequential_4} <-- 分别是 0, 0.4, 0.83333 ,1,0,0")
+    print("-" * 30)
+
+    # 例子 3: 0.1, 0.4, 0.5
+    target_3 = [0.1, 0.4, 0.5]
+    sequential_3 = convert_target_to_sequential_percents(target_3)
+    print(f"目标权重: {target_3}")
+    print(f"转换结果: {sequential_3} <-- 分别是 0.1, 0.4/(1-0.1)≈0.444, 0.5/(1-0.1-0.4)=1.0")
+    target_4 = [0, 0.4, 0.5, 0.1, 0, 0]
+    sequential_4 = convert_target_to_sequential_percents(target_4)
+    print(f"目标权重: {target_4}")
+    print(f"转换结果: {sequential_4} <-- 分别是 0, 0.4, 0.83333 ,1,0,0")
+
+
+
+if __name__ == '__main__':
+    t_demo()

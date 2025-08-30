@@ -117,17 +117,15 @@ def load_example_data():
 
 def example_basic_comparison():
     """基础对比回测示例"""
-    logger.info("=" * 60)
     logger.info("示例1: 基础因子对比回测")
-    logger.info("=" * 60)
-    
+
     try:
         # 1. 加载数据
         price_df, factor_dict = load_example_data()
         
         # 2. 配置回测参数
         config = BacktestConfig(
-            top_quantile=0.2,           # 做多前20%
+            top_quantile=0.20,           # 做多前20%
             rebalancing_freq='M',       # 月度调仓
             commission_rate=0.0003,     # 万3佣金
             slippage_rate=0.001,        # 千1滑点

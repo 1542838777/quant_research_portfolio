@@ -500,9 +500,6 @@ class QuantBacktester:
             price_df: pd.DataFrame,
             factor_dict: Dict[str, pd.DataFrame]
     ) -> Dict[str, any]:
-        """
-        - 使用手动生成的精确调仓信号，兼容所有vectorbt版本
-        """
         # 1. 数据准备
         all_dfs = [price_df] + list(factor_dict.values())
         aligned_dfs = vbt.base.reshape_fns.broadcast(*all_dfs, keep_pd=True, align_index=True, align_columns=True)
@@ -534,7 +531,7 @@ class QuantBacktester:
                     self.config.slippage_rate +  # 滑点 0.001
                     self.config.stamp_duty / 2  # 印花税分摊 0.0005
             )
-            # 改进退出信号生成 - 确保在时间窗口结束时强制退出
+            # 改进退出信号生成 - 确保在时间窗口结束时强制退出 (这样做，只是为了简单直观看出我的策略效果！
             improved_entries, improved_exits = self._generate_improved_signals(
                 holding_signals, aligned_price, max_holding_days=None
             )
@@ -569,7 +566,7 @@ class QuantBacktester:
             print(portfolio.stats())
             self.portfolios[factor_name] = portfolio
 
-        logger.info("🎉 所有因子回测完成")
+        logger.info(f"🎉 {factor_dict.keys()}因子回测完成")
         return self.portfolios
 
     def _recalculate_trade_metric(self, corrected_stats, trades, metric):
@@ -613,167 +610,6 @@ class QuantBacktester:
         else:
             corrected_stats[metric] = 0.0
 
-    def _recalculate_profit_factor(self, corrected_stats, trades):
-        """重新计算盈利因子"""
-        # 【修复】正确过滤已关闭交易 - Status可能是字符串'Closed'或整数1
-        if 'Status' in trades.columns:
-            status_values = trades['Status'].unique()
-            if 'Closed' in status_values:
-                closed_trades = trades[trades['Status'] == 'Closed']
-            elif 1 in status_values:
-                closed_trades = trades[trades['Status'] == 1]
-            else:
-                closed_trades = trades
-        else:
-            closed_trades = trades
-
-        if len(closed_trades) > 0:
-            winning_trades = closed_trades[closed_trades['PnL'] > 0]
-            losing_trades = closed_trades[closed_trades['PnL'] < 0]
-
-            total_wins = winning_trades['PnL'].sum() if len(winning_trades) > 0 else 0
-            total_losses = abs(losing_trades['PnL'].sum()) if len(losing_trades) > 0 else 0
-
-            MIN_LOSS = 1e-3  # 最小亏损阈值
-            if total_losses > MIN_LOSS:
-                pf = total_wins / total_losses
-                corrected_stats['Profit Factor'] = min(pf, 100)  # 限制上限为100
-            else:
-                logger.info(f"⚠️ Profit Factor: 亏损过小({total_losses:.6f}), 设为合理上限")
-                corrected_stats['Profit Factor'] = 10.0 if total_wins > 0 else 1.0
-        else:
-            corrected_stats['Profit Factor'] = 1.0
-
-    def _calculate_corrected_stats(self, portfolio):
-        """
-        计算修正后的统计指标，解决NaN和inf问题
-        
-        Args:
-            portfolio: vectorbt portfolio对象
-            
-        Returns:
-            Dict: 修正后的统计指标
-        """
-        try:
-            # 获取原始stats
-            original_stats = portfolio.stats()
-            corrected_stats = original_stats.copy()
-
-            # 获取交易记录
-            trades = portfolio.trades.records_readable
-
-            # 【最终修复策略】只修复inf/NaN问题，完全保留vectorbt的正确统计
-            trade_related_metrics = [
-                'Win Rate [%]', 'Best Trade [%]', 'Worst Trade [%]',
-                'Avg Winning Trade [%]', 'Avg Losing Trade [%]',
-                'Profit Factor', 'Expectancy'
-            ]
-
-            # 检查并仅修复真正异常的指标
-            for metric in trade_related_metrics:
-                if metric in original_stats.index:
-                    original_value = original_stats[metric]
-
-                    # 只有当值真正异常时才修复
-                    if np.isinf(original_value):
-                        logger.info(f"⚠️ 发现inf异常 - 修复{metric}: {original_value}")
-                        if metric == 'Profit Factor':
-                            corrected_stats[metric] = 10.0 if len(trades) > 0 else 1.0
-                        else:
-                            corrected_stats[metric] = 0.0
-                    elif np.isnan(original_value):
-                        logger.info(f"⚠️ 发现NaN异常 - 修复{metric}: {original_value}")
-                        corrected_stats[metric] = 0.0
-                    # 如果原值正常(包括0值)，保持不变，不重新计算！
-
-            # 【稳健修复】风险调整收益指标的inf问题
-            returns = portfolio.returns()
-            if len(returns) > 1:
-                # 处理多列收益率情况
-                if isinstance(returns, pd.DataFrame) and len(returns.columns) > 1:
-                    # 计算总组合收益率
-                    portfolio_value = portfolio.value()
-                    if isinstance(portfolio_value, pd.DataFrame):
-                        total_value = portfolio_value.sum(axis=1)
-                    else:
-                        total_value = portfolio_value
-                    returns = total_value.pct_change().dropna()
-                elif isinstance(returns, pd.DataFrame):
-                    returns = returns.iloc[:, 0]
-
-                mean_return = returns.mean()
-
-                # 【稳健修复】夏普比率 - 防止极小波动导致的inf
-                return_std = returns.std()
-                MIN_STD = 1e-6  # 最小标准差阈值
-
-                if return_std > MIN_STD:
-                    sharpe = mean_return / return_std * np.sqrt(252)
-                    # 限制在合理范围内
-                    corrected_stats['Sharpe Ratio'] = max(min(sharpe, 100), -100)
-                else:
-                    logger.info(f"⚠️ 夏普比率: 收益波动过小({return_std:.8f}), 设为0")
-                    corrected_stats['Sharpe Ratio'] = 0.0
-
-                # 【稳健修复】Sortino比率 - 防止无负收益或极小下行波动
-                downside_returns = returns[returns < 0]
-                MIN_LOSS_COUNT = 1  # 至少要有1天负收益
-
-                if len(downside_returns) >= MIN_LOSS_COUNT:
-                    downside_std = downside_returns.std()
-                    if downside_std > MIN_STD:
-                        sortino = mean_return / downside_std * np.sqrt(252)
-                        corrected_stats['Sortino Ratio'] = max(min(sortino, 100), -100)
-                    else:
-                        logger.info(f"⚠️ Sortino比率: 下行波动过小({downside_std:.8f}), 设为合理值")
-                        corrected_stats['Sortino Ratio'] = 10.0 if mean_return > 0 else -10.0
-                else:
-                    logger.info(f"⚠️ Sortino比率: 无负收益天数({len(downside_returns)}), 设为合理上限")
-                    corrected_stats['Sortino Ratio'] = 10.0 if mean_return > 0 else 1.0
-
-                # 【稳健修复】Omega比率 - 防止无负收益导致的inf
-                positive_returns = returns[returns > 0].sum()
-                negative_returns = abs(returns[returns < 0].sum())
-                MIN_LOSS = 1e-6  # 最小亏损阈值
-
-                if negative_returns > MIN_LOSS:
-                    omega = positive_returns / negative_returns
-                    corrected_stats['Omega Ratio'] = min(omega, 100)  # 限制上限
-                else:
-                    logger.info(f"⚠️ Omega比率: 负收益过小({negative_returns:.8f}), 设为合理上限")
-                    corrected_stats['Omega Ratio'] = 10.0 if positive_returns > 0 else 1.0
-
-                # 【稳健修复】Calmar比率 - 防止零回撤导致的inf
-                try:
-                    drawdown_series = portfolio.drawdown()
-                    if isinstance(drawdown_series, pd.DataFrame):
-                        max_drawdown = abs(drawdown_series.min().min())
-                    else:
-                        max_drawdown = abs(drawdown_series.min())
-
-                    MIN_DRAWDOWN = 1e-4  # 最小回撤阈值 (0.01%)
-
-                    if max_drawdown > MIN_DRAWDOWN:
-                        total_return = portfolio.total_return()
-                        if isinstance(total_return, pd.Series):
-                            total_return = total_return.mean()
-                        annual_return = (total_return + 1) ** (252 / len(returns)) - 1
-                        calmar = annual_return / max_drawdown
-                        corrected_stats['Calmar Ratio'] = max(min(calmar, 100), -100)
-                    else:
-                        logger.info(f"⚠️ Calmar比率: 回撤过小({max_drawdown:.8f}), 设为合理上限")
-                        corrected_stats['Calmar Ratio'] = 50.0 if mean_return > 0 else -50.0
-
-                except Exception as e:
-                    logger.warning(f"Calmar比率计算失败: {e}")
-                    corrected_stats['Calmar Ratio'] = 0.0
-
-            logger.info("✅ 统计指标修正完成")
-            return corrected_stats
-
-        except Exception as e:
-            logger.error(f"统计指标修正失败: {e}")
-            return portfolio.stats()
 
     def get_comparison_table(self, metrics: Optional[List[str]] = None) -> pd.DataFrame:
         """
