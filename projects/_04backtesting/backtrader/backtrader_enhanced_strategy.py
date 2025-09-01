@@ -315,7 +315,7 @@ class EnhancedFactorStrategy(bt.Strategy):
             return
         
         # 计算等权重目标权重
-        target_weight = 1.0 / len(target_stocks)
+        target_weight = 1.0 / len(target_stocks) *0.9 #还是别全仓！
         
         buys_attempted = 0
         buys_successful = 0
@@ -430,12 +430,15 @@ class EnhancedFactorStrategy(bt.Strategy):
             if order.issell():
                 # 卖出成功，清理记录
                 self._cleanup_position_records(stock_name)
+          #todo 新增买入记录！
+            #todo 以这里交易情况为准！
             
             if self.p.log_detailed:
-                logger.info(f"{action}成功: {stock_name}, "
+                logger.info(f"\t\t\t{self.datetime.date(0)}--{action}成功: {stock_name}, "
                            f"数量: {order.executed.size:.0f}, "
-                           f"价格: {order.executed.price:.2f}")
-        
+                           f"价格: {order.executed.price:.2f},"
+                           f"乘积: {order.executed.price *    order.executed.size     }" )
+
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             # 订单失败处理
             self.failed_orders += 1
