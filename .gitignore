@@ -8,10 +8,28 @@ D:\lqs\codeAbout\py\env/
 # IDE files
 .idea/
 
-# Python bytecode
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Testing and cache directories
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
 
 # 忽略所有 parquet 文件
 *.parquet
@@ -19,8 +37,12 @@ __pycache__/
 # 忽略所有 png 图片
 *.png
 
-# 忽略所有 log 文件
+# 忽略所有 log 文件和目录
 *.log
+logs/
+log/
+
+# 忽略配置和数据文件
 *.yaml
 *.xlsx
 *.json
