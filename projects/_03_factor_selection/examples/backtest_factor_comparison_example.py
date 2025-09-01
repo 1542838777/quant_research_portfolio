@@ -122,16 +122,23 @@ def example_basic_comparison():
     try:
         # 1. 加载数据
         price_df, factor_dict = load_example_data()
+        # ##filter
+        # price_df = price_df[['600373.SH','601318.SH','600062.SH','600667.SH','000895.SZ','600967.SH']]
+        # price_df = price_df[price_df.index >=pd.to_datetime('2020-12-21')]
+        # factor_dict = { name:item[['600373.SH','601318.SH','600062.SH','600667.SH','000895.SZ','600967.SH']] for name,item in factor_dict.items()}
+        # factor_dict = { name:item[item.index>=pd.to_datetime('2020-12-21')] for name,item in factor_dict.items()}
         
         # 2. 配置回测参数
         config = BacktestConfig(
-            top_quantile=0.05,           # 做多前20%
+            top_quantile=0.30,           # 做多前20%
             rebalancing_freq='M',       # 月度调仓：M 周：W 季末：Q
             commission_rate=0.0001,     # 万3佣金
             slippage_rate=0.001,        # 千1滑点
             stamp_duty=0.0005,           # 千1印花税
             initial_cash=300000,       # 300万初始资金
-            max_positions=10            # 最多持30只股票
+            max_positions=30,            # 最多持30只股票
+            max_holding_days=60
+
         )
         
         # 3. 使用便捷函数快速回测

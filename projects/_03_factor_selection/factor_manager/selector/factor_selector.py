@@ -384,7 +384,7 @@ if __name__ == '__main__':
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,
-        top_n_final=40,
+        top_n_final=2,
         correlation_threshold=0.0,
         run_version='latest'
     )

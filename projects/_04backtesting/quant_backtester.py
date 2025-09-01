@@ -26,7 +26,7 @@ from pathlib import Path
 import warnings
 from datetime import datetime
 
-from vectorbt.portfolio import CallSeqType
+from vectorbt.portfolio import CallSeqType, SizeType
 
 from quant_lib.config.logger_config import setup_logger
 from quant_lib.rebalance_utils import generate_rebalance_dates
@@ -64,6 +64,9 @@ class BacktestConfig:
     # 数据验证参数
     min_data_coverage: float = 0.8  # 最小数据覆盖率
     max_missing_consecutive_days: int = 5  # 最大连续缺失天数
+
+    #股票持有信息：
+    max_holding_days: int= 45
 
 
 class DataValidator:
@@ -431,67 +434,118 @@ class QuantBacktester:
         logger.info(f"数据准备完成，最终维度: {aligned_price.shape}")
         return aligned_price, aligned_factors
 
-    def _generate_improved_signals(self, holding_signals, price_df, max_holding_days=None):
+    def _generate_improved_signals(
+            self,
+            holding_signals: pd.DataFrame,
+            price_df: pd.DataFrame,
+            max_holding_days: int = None,
+            retry_buy_limit: int = 3  # 买入重试的有效期（天数）
+    ):
         """
-        生成改进的买卖信号，确保交易能正常关闭
-        Args:
-            holding_signals: 持仓信号矩阵
-            price_df: 价格数据
-            max_holding_days: 最大持仓天数
-        Returns:
-            Tuple: (买入信号, 卖出信号)
-        """
-        logger.info(f"改进卖出信号 - 满最大持仓天数强制卖: {max_holding_days}")
+               -   a_holdings 状态变量，精确追踪每日真实持仓。
+
+               - 彻底解决“负数持仓”、“僵尸信号”、“回声信号”等所有状态管理Bug。
+               - 这是在 for 循环框架内最稳健的实现。
+               buy_num_should_base_on_sell_num: 卖出去多少只，决定能买入多少只（场景：比如一天10股票都停牌，你哪里还有钱买入！ 今日可买入数量=前一天空余可购入股票数量+今天已经卖出数量！ 思考明天接着买吗？不接着买：那这只股票可能就错过了！接着买：有可能极端情况20天后才买入！，但是已经很晚了！也是有问题！ 你有什么好的方案吗
+               #最新实测结论：buy_num_should_base_on_sell_num 我想多了，vector 已经帮我想到了！，自己做了判断，买不进去 不会强行买的！！！！
+               #问题：但是vector默认是不会再次购入的，扔了多可惜 解决办法：
+               - 新增“待买清单”逻辑，处理因停牌或资金不足而失败的买入信号。
+                - 信号具有“有效期”，过期作废。 （最多只让重试n天
+               """
+        logger.info(f"【V7 最终版】开始生成信号，最大持仓: {max_holding_days}, 买入重试期: {retry_buy_limit}天")
+
+        # --- 初始化 ---
         entries = pd.DataFrame(False, index=holding_signals.index, columns=holding_signals.columns)
         exits = pd.DataFrame(False, index=holding_signals.index, columns=holding_signals.columns)
 
+        # --- 状态变量 ---
+        # 【核心】“实际持仓”状态，作为循环内部的地面实况
+        actual_holdings = pd.Series(False, index=holding_signals.columns)
+
         # 持仓天数计数器
-        holding_days = pd.DataFrame(0, index=holding_signals.index, columns=holding_signals.columns)
-        not_finishied_exit = None
+        holding_days = pd.Series(0, index=holding_signals.columns)
+
+        # “待卖清单”，追踪需要卖出但可能被延迟的股票
+        pending_exits_tracker = pd.Series(False, index=holding_signals.columns)
+
+        # “待买清单”和任务有效期计数器
+        pending_buys_tracker = pd.Series(False, index=holding_signals.columns)
+        pending_buys_age = pd.Series(0, index=holding_signals.columns)
+
+        # --- 逐日循环生成信号 ---
         for i in range(len(holding_signals)):
-            if i == 0:
-                # 第一天: 直接买入目标股票
-                entries.iloc[i] = holding_signals.iloc[i]
-                holding_days.iloc[i] = np.where(entries.iloc[i], 1, 0)
-            else:
-                prev_holdings = holding_signals.iloc[i - 1]
-                curr_holdings = holding_signals.iloc[i]
+            curr_holdings_plan = holding_signals.iloc[i]
 
-                new_entries = curr_holdings & ~prev_holdings
-                entries.iloc[i] = new_entries
+            # --- 1. 状态更新（每日开始时）---
+            # a. 对“待买清单”上的任务进行“老化”，并作废“过期”任务
+            if pending_buys_tracker.any():
+                pending_buys_age[pending_buys_tracker] += 1
+                expired_buys = pending_buys_age > retry_buy_limit
+                pending_buys_tracker[expired_buys] = False #不用再买入了
+                pending_buys_age[expired_buys] = 0# 年龄也跟着置为0 反正不买了
 
-                # 正常卖出信号
-                today_need_exit = self.today_need_exit(prev_holdings, curr_holdings, not_finishied_exit)
-                today_can_exit = today_need_exit &  (price_df.iloc[i].notna())#有价格才能卖
-                #check 看看今天价格在不在，价格不在 卖不出去！
-                not_finishied_exit = today_need_exit & (price_df.iloc[i].isna()) #今天需要卖的，卖不走的话，明天卖！
-                exits.iloc[i] = today_can_exit
-                if max_holding_days is None:
-                    continue
-                # 需要判断持仓天数
-                continuing_holds = curr_holdings & prev_holdings #昨天在场，今天也在
-                holding_days.iloc[i] = np.where(continuing_holds,
-                                                holding_days.iloc[i - 1] + 1,
-                                                0)
-                holding_days.iloc[i] = np.where(new_entries, 1, holding_days.iloc[i]) #很对 通过测试
+            # b. 更新持仓天数: 只为实际持有的股票累加天数
+            holding_days[actual_holdings] += 1   #有点跳跃。疑问：万一今天是卖出信号，你这里加一没有影响吗？答：确实没有，因为最后：holding_days[actual_holdings=0
 
-                # 强制退出 - 持有超过最大天数
-                today_need_force_exit_mask = (holding_days.iloc[i] >= max_holding_days) & curr_holdings#算上今天持仓，当好是45天，今天该卖了！
-                today_can_force_exit_mask = today_need_force_exit_mask &  (price_df.iloc[i].notna())#有价格才能卖
+            # --- 2. 【收集意图】计算所有可能的“卖出意图” ---
+            # a. 正常调仓卖出: 计划不再持有，但我们实际还持有
+            normal_exits_intent = ~curr_holdings_plan & actual_holdings
 
-                # check 看看今天价格在不在，价格不在 卖不出去！
-                not_finishied_exit = (today_need_force_exit_mask & (price_df.iloc[i].isna())) | not_finishied_exit  # 今天需要卖的，卖不走的话，明天卖！
-                # 合并退出信号
-                exits.iloc[i] = today_can_exit | today_can_force_exit_mask
+            # b. 强制持有期满卖出: 达到最大天数且仍在实际持有
+            force_exit_intent = pd.Series(False, index=holding_signals.columns)
+            if max_holding_days is not None:
+                force_exit_intent = (holding_days >= max_holding_days) & actual_holdings
 
-        # 在最后一个交易日强制清仓所有持仓
-        last_day_holdings = holding_signals.iloc[-1]
-        exits.iloc[-1] = exits.iloc[-1] | last_day_holdings
+            # c. 合并所有卖出意图（包括昨日未完成的）
+            total_intent_to_sell = normal_exits_intent | force_exit_intent | pending_exits_tracker
 
-        logger.info(f"改进信号生成完成:买入信号: {entries.sum().sum()} 总卖出信号: {exits.sum().sum()} --  达到最长持有强制退出次数: ({((holding_days >= max_holding_days) & holding_signals).sum().sum()}) --最后一日清仓：({last_day_holdings.sum()}) ")
+            # --- 3. 【收集意图】计算所有可能的“买入意图” ---
+            # a. 今天新产生的买入意图: 计划要持有，但我们实际没有持有
+            new_buy_intent = curr_holdings_plan & ~actual_holdings
+
+            # b. 合并“待买清单”中的任务，形成“今日总买入意图”
+            total_intent_to_buy = new_buy_intent | pending_buys_tracker
+
+            # --- 4. 【处理执行】结合市场现实（停牌），决定今天实际的交易 ---
+            is_tradable_today = price_df.iloc[i].notna()
+
+            executable_exits = total_intent_to_sell & is_tradable_today
+            executable_entries = total_intent_to_buy & is_tradable_today
+
+            # 记录最终信号
+            exits.iloc[i] = executable_exits
+            entries.iloc[i] = executable_entries
+
+            # --- 5.【更新状态】为“明天”准备好所有状态变量 ---
+            # a. 更新“实际持仓”
+            actual_holdings = (actual_holdings | executable_entries) & ~executable_exits
+
+            # b. 更新“待卖清单”
+            pending_exits_tracker = total_intent_to_sell & ~is_tradable_today
+
+            # c. 更新“待买清单”和“年龄”
+            pending_buys_tracker = total_intent_to_buy & ~executable_entries
+            pending_buys_age[~pending_buys_tracker] = 0  # 不在清单上的，年龄归零 （非待买的，==0
+            # 新加入清单的，年龄从1开始（因为今天已经算一天了）
+            newly_pending_buys_mask = pending_buys_tracker & (pending_buys_age == 0)
+            pending_buys_age[newly_pending_buys_mask] = 1
+
+            # d. 更新“持仓天数”
+            # 对于今天新买入的，天数设为1；对于今天卖出的，天数归零
+            holding_days[executable_entries] = 1
+            holding_days[executable_exits] = 0
+
+        # --- 期末处理 ---
+        # 在最后一个交易日，强制清仓所有仍在持有的、或仍在待卖清单上的股票
+        final_holdings = actual_holdings | pending_exits_tracker
+        is_tradable_last_day = price_df.iloc[-1].notna()
+        exits.iloc[-1] = exits.iloc[-1] | (final_holdings & is_tradable_last_day)
+
+        logger.info(f"信号生成完成: 买入信号({entries.sum().sum()})个, 总卖出信号({exits.sum().sum()})个")
         return entries, exits
 
-    def run_backtest(
+
+    def run_backtest_old(
             self,
             price_df: pd.DataFrame,
             factor_dict: Dict[str, pd.DataFrame]
@@ -526,7 +580,7 @@ class QuantBacktester:
             )
             # 改进退出信号生成 - 确保在时间窗口结束时强制退出 (这样做，只是为了简单直观看出我的策略效果！
             improved_entries, improved_exits = self._generate_improved_signals(
-                holding_signals, aligned_price, max_holding_days=30
+                holding_signals, aligned_price, max_holding_days=self.config.max_holding_days
             )
             # 【新增调试】检查信号的详细情况
             self.debug_signal_generation(holding_signals, self.config, improved_entries, improved_exits, origin_weights_df,0,len(holding_signals)-1)
@@ -558,13 +612,577 @@ class QuantBacktester:
             logger.info(f"  实际交易数: {len(trades)}")
             print(portfolio.stats())
 
+            self.create_final_report(portfolio, holding_signals, 0, len(holding_signals)-1)
             self.plot_cumulative_returns_curve(portfolio)
+            records = portfolio.trades.records_readable
+            records
             self.portfolios[factor_name] = portfolio
 
         logger.info(f"🎉 {factor_dict.keys()}因子回测完成")
 
         return self.portfolios
 
+    def _generate_signals_final_version(
+            self,
+            holding_signals: pd.DataFrame,
+            price_df: pd.DataFrame,
+            max_holding_days: int = None,
+            retry_buy_limit: int = 3
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        【V7 - 状态机循环最终版 - 完整代码】
+        - 引入 actual_holdings 状态变量，精确追踪每日真实持仓。
+        - 新增“待买清单”逻辑，处理因停牌或资金不足而失败的买入信号，并设有“有效期”。
+        - 彻底解决“负数持仓”、“僵尸信号”、“回声信号”等所有状态管理Bug。
+        - 这是在 for 循环框架内最稳健的实现。
+
+        Args:
+            holding_signals: “理想持仓计划”矩阵 (来自上游函数)。
+            price_df: 对齐后的价格数据。
+            max_holding_days: 最大持仓天数，用于时间止损。
+            retry_buy_limit: 买入信号失败后，重试的最大天数。
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame]: (最终的买入信号, 最终的卖出信号)
+        """
+        logger.info(f"【V7 最终版】开始生成信号，最大持仓: {max_holding_days}, 买入重试期: {retry_buy_limit}天")
+
+        # --- 初始化 ---
+        entries = pd.DataFrame(False, index=holding_signals.index, columns=holding_signals.columns)
+        exits = pd.DataFrame(False, index=holding_signals.index, columns=holding_signals.columns)
+
+        # --- 状态变量 ---
+        # 【核心】“实际持仓”状态，作为循环内部的地面实况
+        actual_holdings = pd.Series(False, index=holding_signals.columns)
+
+        # 持仓天数计数器
+        holding_days = pd.Series(0, index=holding_signals.columns)
+
+        # “待卖清单”，追踪需要卖出但可能被延迟的股票
+        pending_exits_tracker = pd.Series(False, index=holding_signals.columns)
+
+        # “待买清单”和任务有效期计数器
+        pending_buys_tracker = pd.Series(False, index=holding_signals.columns)
+        pending_buys_age = pd.Series(0, index=holding_signals.columns)
+
+        # --- 逐日循环生成信号 ---
+        for i in range(len(holding_signals)):
+            curr_date = holding_signals.index[i]
+            curr_holdings_plan = holding_signals.iloc[i]
+
+            # --- 1. 状态更新（每日开始时）---
+            # a. 对“待买清单”上的任务进行“老化”，并作废“过期”任务
+            if pending_buys_tracker.any():
+                pending_buys_age[pending_buys_tracker] += 1
+                expired_buys = pending_buys_age > retry_buy_limit
+                pending_buys_tracker[expired_buys] = False
+                pending_buys_age[expired_buys] = 0
+
+            # b. 更新持仓天数: 只为实际持有的股票累加天数
+            holding_days[actual_holdings] += 1
+
+            # --- 2. 【收集意图】计算所有可能的“卖出意图” ---
+            # a. 正常调仓卖出: 计划不再持有，但我们实际还持有
+            normal_exits_intent = ~curr_holdings_plan & actual_holdings
+
+            # b. 强制持有期满卖出: 达到最大天数且仍在实际持有
+            force_exit_intent = pd.Series(False, index=holding_signals.columns)
+            if max_holding_days is not None:
+                force_exit_intent = (holding_days >= max_holding_days) & actual_holdings
+
+            # c. 合并所有卖出意图（包括昨日未完成的）
+            total_intent_to_sell = normal_exits_intent | force_exit_intent | pending_exits_tracker
+
+            # --- 3. 【收集意图】计算所有可能的“买入意图” ---
+            # a. 今天新产生的买入意图: 计划要持有，但我们实际没有持有
+            new_buy_intent = curr_holdings_plan & ~actual_holdings
+
+            # b. 合并“待买清单”中的任务，形成“今日总买入意图”
+            total_intent_to_buy = new_buy_intent | pending_buys_tracker
+
+            # --- 4.【处理执行】结合市场现实（停牌），决定今天实际的交易 ---
+            is_tradable_today = price_df.iloc[i].notna()
+
+            executable_exits = total_intent_to_sell & is_tradable_today
+            executable_entries = total_intent_to_buy & is_tradable_today
+
+            # 记录最终信号
+            exits.iloc[i] = executable_exits
+            entries.iloc[i] = executable_entries
+
+            # --- 5.【更新状态】为“明天”准备好所有状态变量 ---
+            # a. 更新“实际持仓”
+            actual_holdings = (actual_holdings | executable_entries) & ~executable_exits
+
+            # b. 更新“待卖清单”
+            pending_exits_tracker = total_intent_to_sell & ~is_tradable_today
+
+            # c. 更新“待买清单”和“年龄”
+            pending_buys_tracker = total_intent_to_buy & ~executable_entries
+            pending_buys_age[~pending_buys_tracker] = 0  # 不在清单上的，年龄归零
+            # 新加入清单的，年龄从1开始（因为今天已经算一天了）
+            newly_pending_buys_mask = pending_buys_tracker & (pending_buys_age == 0)
+            pending_buys_age[newly_pending_buys_mask] = 1
+
+            # d. 更新“持仓天数”
+            # 对于今天新买入的，天数设为1；对于今天卖出的，天数归零
+            holding_days[executable_entries] = 1
+            holding_days[executable_exits] = 0
+
+        # --- 期末处理 ---
+        # 在最后一个交易日，强制清仓所有仍在持有的、或仍在待卖清单上的股票
+        final_holdings = actual_holdings | pending_exits_tracker
+        is_tradable_last_day = price_df.iloc[-1].notna()
+        exits.iloc[-1] = exits.iloc[-1] | (final_holdings & is_tradable_last_day)
+
+        logger.info(f"信号生成完成: 买入信号({entries.sum().sum()})个, 总卖出信号({exits.sum().sum()})个")
+        return entries, exits
+
+    def generate_wide_format_orders(
+            self,
+            holding_signals: pd.DataFrame,
+            price_df: pd.DataFrame,
+            init_cash: float,
+            fees: float,
+            max_holding_days: int = None,
+            retry_buy_limit: int = 3
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        【V9 - 宽格式订单生成器】
+        - 在循环内完整模拟现金、持仓股数等状态。
+        - 直接生成 from_orders 所需的 size, price, direction 三个宽格式DataFrame。
+        - 这是在最底层接口上工作的终极解决方案。
+        """
+        logger.info(f"【V9 宽格式订单生成器版】开始生成精确订单...")
+
+        # --- 初始化 ---
+        # 为 size, price, direction 创建空的、与价格表对齐的DataFrame
+        # 用 np.nan 填充，因为0可能是一个有效值（比如size=0）
+        size_df = pd.DataFrame(np.nan, index=holding_signals.index, columns=holding_signals.columns)
+        price_df_orders = pd.DataFrame(np.nan, index=holding_signals.index, columns=holding_signals.columns)
+        direction_df = pd.DataFrame(np.nan, index=holding_signals.index, columns=holding_signals.columns)
+
+        # --- 状态变量 (与V8相同) ---
+        cash = init_cash
+        actual_positions = pd.Series(0, index=holding_signals.columns)
+        # ... (其他状态变量：holding_days, pending_exits, pending_buys, pending_buys_age)
+        holding_days = pd.Series(0, index=holding_signals.columns)
+        pending_exits_tracker = pd.Series(False, index=holding_signals.columns)
+        pending_buys_tracker = pd.Series(False, index=holding_signals.columns)
+        pending_buys_age = pd.Series(0, index=holding_signals.columns)
+
+        # --- 逐日循环，模拟交易 ---
+        for i in range(len(holding_signals)):
+            curr_date = holding_signals.index[i]
+            # ... (所有V8版本的状态更新和意图收集逻辑完全不变) ...
+            # --- Start of copy from V8.1 logic ---
+            if pending_buys_tracker.any():
+                pending_buys_age[pending_buys_tracker] += 1
+                expired_buys = pending_buys_age > retry_buy_limit
+                pending_buys_tracker[expired_buys] = False
+                pending_buys_age[expired_buys] = 0
+            currently_held_mask = actual_positions > 0
+            holding_days[currently_held_mask] += 1
+            curr_holdings_plan = holding_signals.iloc[i]
+            normal_exits_intent = ~curr_holdings_plan & currently_held_mask
+            force_exit_intent = pd.Series(False, index=holding_signals.columns)
+            if max_holding_days is not None:
+                force_exit_intent = (holding_days >= max_holding_days) & currently_held_mask
+            total_intent_to_sell = normal_exits_intent | force_exit_intent | pending_exits_tracker
+            new_buy_intent = curr_holdings_plan & ~currently_held_mask
+            total_intent_to_buy = new_buy_intent | pending_buys_tracker
+            is_tradable_today = price_df.iloc[i].notna()
+            executable_exits_mask = total_intent_to_sell & is_tradable_today
+            executable_entries_mask = total_intent_to_buy & is_tradable_today
+            # --- End of copy from V8.1 logic ---
+
+            # --- 【核心改造】直接填充宽格式DataFrame，而不是append到list ---
+
+            # a. 处理卖出
+            stocks_to_sell = executable_exits_mask[executable_exits_mask].index
+            for stock in stocks_to_sell:
+                price = price_df.loc[curr_date, stock]
+                size_to_sell = actual_positions[stock]
+                if size_to_sell > 0:
+                    size_df.loc[curr_date, stock] = size_to_sell
+                    price_df_orders.loc[curr_date, stock] = price
+                    direction_df.loc[curr_date, stock] = 1  # 1 for Sell
+                    cash += size_to_sell * price * (1 - fees)
+                    actual_positions[stock] = 0
+
+            # b. 处理买入
+            stocks_to_buy = executable_entries_mask[executable_entries_mask].index
+            num_buys = len(stocks_to_buy)
+            if num_buys > 0:
+                cash_per_stock = cash / num_buys
+                for stock in stocks_to_buy:
+                    price = price_df.loc[curr_date, stock]
+                    if price > 0:
+                        size_to_buy = np.floor((cash_per_stock / (price * (1 + fees))) / 100) * 100
+                        if size_to_buy > 0:
+                            size_df.loc[curr_date, stock] = size_to_buy
+                            price_df_orders.loc[curr_date, stock] = price
+                            direction_df.loc[curr_date, stock] = -1  # 0 for Buy
+                            cash -= size_to_buy * price * (1 + fees)
+                            actual_positions[stock] += size_to_buy
+
+            # ... (所有V8版本的状态更新逻辑完全不变) ...
+            # --- Start of copy from V8.1 logic for state update ---
+            executed_entries_today = pd.Series(False, index=holding_signals.columns)
+            for stock in stocks_to_buy:  # More robust check for executed entries
+                if size_df.loc[curr_date, stock] > 0:
+                    executed_entries_today[stock] = True
+            pending_exits_tracker = total_intent_to_sell & ~is_tradable_today
+            pending_buys_tracker = total_intent_to_buy & ~executed_entries_today
+            pending_buys_age[~pending_buys_tracker] = 0
+            newly_pending_buys_mask = pending_buys_tracker & (pending_buys_age == 0)
+            pending_buys_age[newly_pending_buys_mask] = 1
+            holding_days[executed_entries_today] = 1
+            holding_days[executable_exits_mask] = 0
+            # --- End of copy from V8.1 logic for state update ---
+
+        return size_df, price_df_orders, direction_df
+    #from_order
+    def run_backtest(
+            self,
+            price_df: pd.DataFrame,
+            factor_dict: Dict[str, pd.DataFrame]
+    ) -> Dict[str, any]:
+        # 1. 数据准备
+        all_dfs = [price_df] + list(factor_dict.values())
+        aligned_dfs = vbt.base.reshape_fns.broadcast(*all_dfs, keep_pd=True, align_index=True, align_columns=True)
+
+        aligned_price = aligned_dfs[0]
+        aligned_factors = {name: df for name, df in zip(factor_dict.keys(), aligned_dfs[1:])}
+        logger.info(f"数据对齐完成，最终维度: {aligned_price.shape}")
+        # 2. 逐个因子回测
+        for factor_name, factor_data in aligned_factors.items():
+            logger.info(f"🚀 开始回测因子: {factor_name}")
+            # 3. 信号生成流水线
+            # 首先，生成每日的目标持仓状态 全是true false 表示当日rank情况的true flase
+            holding_signals = self.signal_generator.generate_long_holding_signals(factor_data, aligned_price,
+                                                                                  self.config)
+
+            origin_weights_df = self.get_position_weights_by_per_weight(holding_signals)
+            self.myself_debug_data(origin_weights_df)
+            # 照顾vector 专门为他算术！
+            weights_df = convert_to_sequential_percents(origin_weights_df)
+            # 计算合理的综合交易费用
+            # 买入成本: 佣金(万3) + 滑点(千1) = 0.0003 + 0.001 = 0.0013
+            # 卖出成本: 佣金(万3) + 印花税(千1) + 滑点(千1) = 0.0003 + 0.001 + 0.001 = 0.0023
+            # 平均双边成本: (0.0013 + 0.0023) / 2 = 0.0018
+            comprehensive_fee_rate = (
+                    self.config.commission_rate +  # 佣金 0.0003
+                    self.config.slippage_rate +  # 滑点 0.001
+                    self.config.stamp_duty / 2  # 印花税分摊 0.0005
+            )
+            # 改进退出信号生成 - 确保在时间窗口结束时强制退出 (这样做，只是为了简单直观看出我的策略效果！
+            improved_entries, improved_exits = self._generate_improved_signals(
+                holding_signals, aligned_price, max_holding_days=self.config.max_holding_days
+            )
+            # 【新增调试】检查信号的详细情况
+            self.debug_signal_generation(holding_signals, self.config, improved_entries, improved_exits,
+                                         origin_weights_df, 0, len(holding_signals) - 1)
+
+            # 1. 检查实际的交易记录
+
+            # 2. 【核心】调用V9订单生成器，获取三份“配料表”
+            size_wide_df, price_wide_df, direction_wide_df = self.generate_wide_format_orders(
+                holding_signals=holding_signals,
+                price_df=aligned_price,
+                init_cash=self.config.initial_cash,
+                fees=comprehensive_fee_rate,
+                max_holding_days=60
+                # ... 其他参数 ...
+            )
+
+            # 3. 将这三份精确的“配料表”交给 vectorbt 的底层厨师
+            portfolio = vbt.Portfolio.from_orders(
+                close=aligned_price,
+                size=size_wide_df,
+                price=price_wide_df,
+                direction=direction_wide_df,
+
+                # 我们不再需要任何 sizing 或 signal 参数
+
+                init_cash=self.config.initial_cash,
+                fees=0,  # 因为我们已在循环中手动计算了费用
+                freq='D'
+            )
+
+
+            # 3. 检查持仓记录
+            trades = portfolio.positions.records_readable
+            expected_trades = improved_entries.sum().sum()
+            logger.info(f"  期望交易数: {expected_trades}")
+            logger.info(f"  实际交易数: {len(trades)}")
+            print(portfolio.stats())
+
+            self.create_final_report(portfolio, holding_signals, 0, len(holding_signals) - 1)
+            self.plot_cumulative_returns_curve(portfolio)
+            records = portfolio.trades.records_readable
+            records
+            self.portfolios[factor_name] = portfolio
+
+        logger.info(f"🎉 {factor_dict.keys()}因子回测完成")
+
+        return self.portfolios
+
+    def generate_orders_final_version(
+            self,
+            holding_signals: pd.DataFrame,
+            price_df: pd.DataFrame,
+            init_cash: float,
+            fees: float,
+            max_holding_days: int = None,
+            retry_buy_limit: int = 3
+    ) -> pd.DataFrame:
+        """
+        【V8.1 - 订单生成器最终版 - 完整代码】
+        - 在循环内完整模拟现金、持仓股数等所有状态。
+        - 生成精确的买卖订单列表，供 Portfolio.from_orders 使用。
+        - 补全了所有状态更新逻辑，确保行为的精确性。
+        - 这是在无法使用 target-based sizing 模式下的终极解决方案。
+        """
+        logger.info(f"【V8.1 订单生成器版】开始生成精确订单...")
+
+        # --- 初始化 ---
+        order_records = []
+
+        # --- 状态变量 ---
+        cash = init_cash
+        actual_positions = pd.Series(0, index=holding_signals.columns)  # 追踪持仓股数
+        holding_days = pd.Series(0, index=holding_signals.columns)
+        pending_exits_tracker = pd.Series(False, index=holding_signals.columns)
+        pending_buys_tracker = pd.Series(False, index=holding_signals.columns)
+        pending_buys_age = pd.Series(0, index=holding_signals.columns)
+
+        # --- 逐日循环，模拟交易 ---
+        for i in range(len(holding_signals)):
+            curr_date = holding_signals.index[i]
+            curr_holdings_plan = holding_signals.iloc[i]
+
+            # --- 1. 状态更新（每日开始时） ---
+            if pending_buys_tracker.any():
+                pending_buys_age[pending_buys_tracker] += 1
+                expired_buys = pending_buys_age > retry_buy_limit
+                pending_buys_tracker[expired_buys] = False
+                pending_buys_age[expired_buys] = 0
+
+            currently_held_mask = actual_positions > 0
+            holding_days[currently_held_mask] += 1
+
+            # --- 2. 【收集意图】 ---
+            normal_exits_intent = ~curr_holdings_plan & currently_held_mask
+            force_exit_intent = pd.Series(False, index=holding_signals.columns)
+            if max_holding_days is not None:
+                force_exit_intent = (holding_days >= max_holding_days) & currently_held_mask
+
+            total_intent_to_sell = normal_exits_intent | force_exit_intent | pending_exits_tracker
+            new_buy_intent = curr_holdings_plan & ~currently_held_mask
+            total_intent_to_buy = new_buy_intent | pending_buys_tracker
+
+            # --- 3.【处理执行】---
+            is_tradable_today = price_df.iloc[i].notna()
+            executable_exits_mask = total_intent_to_sell & is_tradable_today
+            executable_entries_mask = total_intent_to_buy & is_tradable_today
+
+            # --- 4.【生成精确订单】---
+            executed_entries_today = pd.Series(False, index=holding_signals.columns)  # 精确记录当日成功买入
+
+            # a. 处理卖出订单 (Sell Phase)
+            stocks_to_sell = executable_exits_mask[executable_exits_mask].index
+            for stock in stocks_to_sell:
+                price = price_df.loc[curr_date, stock]
+                size_to_sell = actual_positions[stock]
+                if size_to_sell > 0:
+                    order_records.append({
+                        'Timestamp': curr_date, 'Symbol': stock, 'Size': size_to_sell,
+                        'Side': 1, 'Price': price
+                    })
+                    cash += size_to_sell * price * (1 - fees)
+                    actual_positions[stock] = 0
+
+            # b. 处理买入订单 (Buy Phase)
+            stocks_to_buy = executable_entries_mask[executable_entries_mask].index
+            num_buys = len(stocks_to_buy)
+            if num_buys > 0:
+                cash_per_stock = cash / num_buys
+
+                for stock in stocks_to_buy:
+                    price = price_df.loc[curr_date, stock]
+                    if price > 0:
+                        size_to_buy = (cash_per_stock / (price * (1 + fees)))
+                        size_to_buy = np.floor(size_to_buy / 100) * 100
+
+                        if size_to_buy > 0:
+                            order_records.append({
+                                'Timestamp': curr_date, 'Symbol': stock, 'Size': size_to_buy,
+                                'Side': 0, 'Price': price
+                            })
+                            cash -= size_to_buy * price * (1 + fees)
+                            actual_positions[stock] += size_to_buy
+                            executed_entries_today[stock] = True  # 精确标记成功买入
+
+            # --- 5.【更新状态】为“明天”准备 ---
+            # a. 待卖清单: 卖出意图存在，但今天无法交易
+            pending_exits_tracker = total_intent_to_sell & ~is_tradable_today
+
+            # b. 待买清单: 买入意图存在，但今天未成功执行
+            pending_buys_tracker = total_intent_to_buy & ~executed_entries_today
+
+            # c. 待买清单年龄
+            pending_buys_age[~pending_buys_tracker] = 0
+            newly_pending_buys_mask = pending_buys_tracker & (pending_buys_age == 0)
+            pending_buys_age[newly_pending_buys_mask] = 1
+
+            # d. 持仓天数
+            holding_days[executed_entries_today] = 1  # 新买入的，天数设为1
+            holding_days[executable_exits_mask] = 0  # 成功卖出的，天数归零
+
+        # --- 期末处理与返回 ---
+        if not order_records:
+            return pd.DataFrame(columns=['Timestamp', 'Symbol', 'Size', 'Side', 'Price'])
+
+        # 将订单列表转换为 vectorbt 需要的格式
+        order_df = pd.DataFrame(order_records)
+        order_df = order_df.rename(
+            columns={'Timestamp': 'Order Timestamp', 'Symbol': 'Symbol', 'Size': 'Size', 'Side': 'Side', 'Price': 'Price'})
+        order_df = order_df.set_index('Order Timestamp')
+
+        return order_df
+
+    def run_backtest_from_order(
+            self,
+            price_df: pd.DataFrame,
+            factor_dict: Dict[str, pd.DataFrame]
+    ) -> Dict[str, any]:
+        # 1. 数据准备
+        all_dfs = [price_df] + list(factor_dict.values())
+        aligned_dfs = vbt.base.reshape_fns.broadcast(*all_dfs, keep_pd=True, align_index=True, align_columns=True)
+
+        aligned_price = aligned_dfs[0]
+        aligned_factors = {name: df for name, df in zip(factor_dict.keys(), aligned_dfs[1:])}
+        logger.info(f"数据对齐完成，最终维度: {aligned_price.shape}")
+        # 2. 逐个因子回测
+        for factor_name, factor_data in aligned_factors.items():
+            logger.info(f"🚀 开始回测因子: {factor_name}")
+            # 3. 信号生成流水线
+            # 首先，生成每日的目标持仓状态 全是true false 表示当日rank情况的true flase
+            holding_signals = self.signal_generator.generate_long_holding_signals(factor_data, aligned_price,
+                                                                                  self.config)
+
+            origin_weights_df = self.get_position_weights_by_per_weight(holding_signals)
+            self.myself_debug_data(origin_weights_df)
+            #照顾vector 专门为他算术！
+            weights_df = convert_to_sequential_percents(origin_weights_df)
+            # 计算合理的综合交易费用
+            # 买入成本: 佣金(万3) + 滑点(千1) = 0.0003 + 0.001 = 0.0013
+            # 卖出成本: 佣金(万3) + 印花税(千1) + 滑点(千1) = 0.0003 + 0.001 + 0.001 = 0.0023
+            # 平均双边成本: (0.0013 + 0.0023) / 2 = 0.0018
+            comprehensive_fee_rate = (
+                    self.config.commission_rate +  # 佣金 0.0003
+                    self.config.slippage_rate +  # 滑点 0.001
+                    self.config.stamp_duty / 2  # 印花税分摊 0.0005
+            )
+            # 改进退出信号生成 - 确保在时间窗口结束时强制退出 (这样做，只是为了简单直观看出我的策略效果！
+            improved_entries, improved_exits = self._generate_improved_signals(
+                holding_signals, aligned_price, max_holding_days=self.config.max_holding_days
+            )
+            # 【新增调试】检查信号的详细情况
+            self.debug_signal_generation(holding_signals, self.config, improved_entries, improved_exits, origin_weights_df,0,len(holding_signals)-1)
+
+
+
+    def get_daily_holdings_count_from_trades(self,portfolio, full_date_index: pd.DatetimeIndex) -> pd.Series:
+        """
+        【通用版】从最底层的交易记录中，精确重构每日的实际持仓股票数量。
+        不依赖任何高版本 vectorbt 的特定属性。
+
+        Args:
+            portfolio: vectorbt 回测完成后返回的 Portfolio 对象。
+            full_date_index: 完整的、包含所有回测日期的索引。
+
+        Returns:
+            pd.Series: 索引为日期，值为当天实际持仓股票数的序列。
+        """
+        trades = portfolio.trades.records_readable
+
+        if trades.empty:
+            # 如果没有任何交易，则始终持仓为0
+            return pd.Series(0, index=full_date_index)
+
+        # 1. 获取所有“入场”事件，按天统计
+        entry_events = trades.groupby(trades['Entry Timestamp'].dt.date).size()
+        entry_events.name = 'entries'
+
+        # 2. 获取所有“出场”事件，按天统计
+        exit_events = trades.groupby(trades['Exit Timestamp'].dt.date).size()
+        exit_events.name = 'exits'
+
+        # 3. 将事件合并，计算每日的“净持仓变化”
+        #   注意 .dt.date 会导致索引变为 object，需要转回 datetime
+        entry_events.index = pd.to_datetime(entry_events.index)
+        exit_events.index = pd.to_datetime(exit_events.index)
+
+        daily_net_change = entry_events.sub(exit_events, fill_value=0)
+
+        # 4. 将“净变化”扩展到整个回测周期
+        #   在没有交易的日子里，净变化为0
+        daily_net_change_full = daily_net_change.reindex(full_date_index, fill_value=0)
+
+        # 5. 【核心】对每日的净变化进行累积求和，得到每日的最终持仓数
+        actual_positions_count = daily_net_change_full.cumsum().astype(int)
+
+        return actual_positions_count
+    def create_final_report(
+            self,
+            portfolio,
+            holding_signals: pd.DataFrame,
+            sidx: int,
+            eidx: int
+    ):
+        """
+        【法务审计级 V3.1 - 兼容版】
+        - 使用从交易记录中重构的每日持仓数，兼容旧版 vectorbt。
+        """
+        logger.info("🔍【法务审计级 V3.1 兼容版】日志分析开始...")
+
+        # --- 1. 使用我们新的、兼容性强的函数来获取“地面实况” ---
+        actual_holdings_count = self.get_daily_holdings_count_from_trades(
+            portfolio=portfolio,
+            full_date_index=holding_signals.index
+        )
+
+        # --- 后续逻辑与之前完全相同 ---
+        trades = portfolio.trades.records_readable
+        daily_entries_count = trades.groupby(trades['Entry Timestamp'].dt.date).size()
+        daily_exits_count = trades.groupby(trades['Exit Timestamp'].dt.date).size()
+
+        log_df = pd.DataFrame(index=holding_signals.index)
+        log_df['intended_holdings'] = holding_signals.sum(axis=1)
+        log_df['actual_holdings'] = actual_holdings_count
+
+        daily_entries_count.index = pd.to_datetime(daily_entries_count.index)
+        daily_exits_count.index = pd.to_datetime(daily_exits_count.index)
+
+        log_df['actual_entries'] = daily_entries_count
+        log_df['actual_exits'] = daily_exits_count
+        log_df = log_df.fillna(0).astype(int)
+
+        # --- 3. 打印日志 ---
+        sample_dates = log_df.index[sidx:eidx]
+        for date in sample_dates:
+            row = log_df.loc[date]
+            log_msg = (
+                f"{date.strftime('%Y-%m-%d')}: "
+                f"实际持仓({row['actual_holdings']}), "
+                f"实际卖出({row['actual_exits']}), "
+                f"实际买入({row['actual_entries']})"
+            )
+            logger.info(log_msg)
+
+        return log_df
     def _recalculate_trade_metric(self, corrected_stats, trades, metric):
         """重新计算特定的交易指标"""
         # 【修复】正确过滤已关闭交易 - Status可能是字符串'Closed'或整数1
@@ -595,16 +1213,16 @@ class QuantBacktester:
                 if len(winning_trades) > 0:
                     corrected_stats[metric] = winning_trades['Return'].mean() * 100
                 else:
-                    corrected_stats[metric] = 0.0
+                    corrected_stats[metric] = 0
             elif metric == 'Avg Losing Trade [%]':
                 if len(losing_trades) > 0:
                     corrected_stats[metric] = losing_trades['Return'].mean() * 100
                 else:
-                    corrected_stats[metric] = 0.0
+                    corrected_stats[metric] = 0
             elif metric == 'Expectancy':
                 corrected_stats[metric] = closed_trades['PnL'].mean()
         else:
-            corrected_stats[metric] = 0.0
+            corrected_stats[metric] = 0
 
 
     def get_comparison_table(self, metrics: Optional[List[str]] = None) -> pd.DataFrame:
@@ -784,33 +1402,6 @@ class QuantBacktester:
         logger.info("🔍 信号调试分析开始")
         # 检查前几天的信号情况
         sample_dates = generate_rebalance_dates(holding_signals.index,config.rebalancing_freq)
-
-        # --- 核心改进：向量化计算每日的“实际持仓数量” ---
-        # 1. 计算每日持仓数量的“净变化”
-        position_net_change = entry_signals.astype(int) - exit_signals.astype(int)
-        # 2. 使用累积求和，得到每日终点的实际持仓数量
-        actual_positions_count = position_net_change.cumsum(axis=0).sum(axis=1)
-        # ----------------------------------------------------
-        sample_dates = holding_signals.index[sidx:eidx]
-
-        for date in sample_dates:
-            # “理想”的计划持仓数
-            intended_holdings_count = holding_signals.loc[date].sum()
-            # 当天实际发生的交易
-            entry_count = entry_signals.loc[date].sum()
-            exit_count = exit_signals.loc[date].sum()
-
-            # 当天收盘后的“现实”持仓数
-            actual_holding_count = actual_positions_count.loc[date]
-
-            log_msg = (
-                f"{date.strftime('%Y-%m-%d')}: "
-                f"计划持仓({intended_holdings_count}), "
-                f"实际持仓({actual_holding_count}), "
-                f"卖出({exit_count}), "
-                f"买入({entry_count})"
-            )
-            logger.info(log_msg)
 
         # 检查是否所有信号都是False
         total_entries = entry_signals.sum().sum()
