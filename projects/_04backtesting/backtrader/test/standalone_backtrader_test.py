@@ -216,7 +216,7 @@ def create_test_data():
     logger.info("创建测试数据...")
     
     # 创建6个月的数据
-    dates = pd.date_range('2020-01-01', periods=10, freq='B')  # 约6个月的工作日
+    dates = pd.date_range('2024-01-02', periods=10, freq='B')  # 约6个月的工作日
     stocks = ['STOCK_A', 'STOCK_B', 'STOCK_C', 'STOCK_D', 'STOCK_E']
     
     np.random.seed(42)

@@ -280,12 +280,12 @@ def demo_problem_solving():
                 strategy = result['strategy']
                 logger.info(f"{factor_name} - 策略统计:")
                 logger.info(f"  调仓次数: {strategy.rebalance_count}")
-                logger.info(f"  总订单: {strategy.total_orders}")
+                logger.info(f"  总订单: {strategy.total_buy_orders}")
                 logger.info(f"  成功订单: {strategy.successful_orders}")
                 logger.info(f"  失败订单: {strategy.failed_orders}")
 
-                if strategy.total_orders > 0:
-                    success_rate = strategy.successful_orders / strategy.total_orders * 100
+                if strategy.total_buy_orders > 0:
+                    success_rate = strategy.successful_orders / strategy.total_buy_orders * 100
                     logger.info(f"  订单成功率: {success_rate:.1f}%")
 
     except Exception as e:
@@ -410,12 +410,12 @@ def t_():
                 strategy = result['strategy']
                 logger.info(f"{factor_name} - 策略统计:")
                 logger.info(f"  调仓次数: {strategy.rebalance_count}")
-                logger.info(f"  总订单: {strategy.total_orders}")
+                logger.info(f"  总订单: {strategy.total_buy_orders}")
                 logger.info(f"  成功订单: {strategy.successful_orders}")
                 logger.info(f"  失败订单: {strategy.failed_orders}")
 
-                if strategy.total_orders > 0:
-                    success_rate = strategy.successful_orders / strategy.total_orders * 100
+                if strategy.total_buy_orders > 0:
+                    success_rate = strategy.successful_orders / strategy.total_buy_orders * 100
                     logger.info(f"  订单成功率: {success_rate:.1f}%")
 
     except Exception as e:

@@ -111,12 +111,12 @@ def demo_basic_backtrader():
             strategy = result['strategy']
             logger.info(f"\n{factor_name} 执行统计:")
             logger.info(f"  调仓次数: {strategy.rebalance_count}")
-            logger.info(f"  总订单数: {strategy.total_orders}")
+            logger.info(f"  总订单数: {strategy.total_buy_orders}")
             logger.info(f"  成功订单: {strategy.successful_orders}")
             logger.info(f"  失败订单: {strategy.failed_orders}")
             
-            if strategy.total_orders > 0:
-                success_rate = strategy.successful_orders / strategy.total_orders * 100
+            if strategy.total_buy_orders > 0:
+                success_rate = strategy.successful_orders / strategy.total_buy_orders * 100
                 logger.info(f"  订单成功率: {success_rate:.1f}%")
             
             logger.info(f"  强制卖出: {strategy.forced_exits}次")
@@ -289,7 +289,7 @@ def demo_problem_resolution():
                 logger.info(f"  最终价值: {result['final_value']:,.2f}")
                 logger.info(f"  是否成功避免Size<100: ✅")  # Backtrader自动处理
                 logger.info(f"  现金管理: 自动优化")
-                logger.info(f"  交易成功率: {strategy.successful_orders/max(strategy.total_orders,1)*100:.1f}%")
+                logger.info(f"  交易成功率: {strategy.successful_orders / max(strategy.total_buy_orders, 1) * 100:.1f}%")
         
     except Exception as e:
         logger.error(f"演示失败: {e}")
