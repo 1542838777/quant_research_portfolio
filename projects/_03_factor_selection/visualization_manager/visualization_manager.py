@@ -26,6 +26,8 @@ import seaborn as sns
 import plotly.graph_objects as go
 import plotly.express as px
 from matplotlib import gridspec
+import matplotlib
+matplotlib.use("TkAgg")   #  for fix ：'FigureCanvas'. Did you mean: 'FigureCanvasAgg'?
 from matplotlib.font_manager import FontProperties
 from plotly.subplots import make_subplots
 from typing import Dict, List, Optional, Tuple, Any, Union
@@ -39,7 +41,7 @@ import sys
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
-from quant_lib.config.logger_config import setup_logger, log_success, log_warning
+from quant_lib.config.logger_config import setup_logger, log_warning
 
 warnings.filterwarnings('ignore')
 
