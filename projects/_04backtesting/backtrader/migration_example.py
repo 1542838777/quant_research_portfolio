@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from projects._03_factor_selection.standalone_backtrader_test import create_test_data
+from projects._04backtesting.backtrader.test.standalone_backtrader_test import create_test_data
 
 # 添加项目路径
 project_root = Path(__file__).parent.parent.parent.parent
