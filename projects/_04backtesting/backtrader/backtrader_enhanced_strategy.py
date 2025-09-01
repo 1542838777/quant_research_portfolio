@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Tuple
 from enum import Enum
 import warnings
 
+from data.local_data_load import load_trading_lists, get_last_b_day
+
 warnings.filterwarnings('ignore')
 
 from quant_lib.config.logger_config import setup_logger
@@ -62,6 +64,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         ('debug_mode', True),  # 调试模式
         ('log_detailed', True),  # 详细日志
         ('enable_retry', True),  # 启用重试机制
+        ('trading_days', None),  # 交易日列表
     )
 
     def __init__(self):
@@ -88,15 +91,20 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         # 5. 性能统计和调试
         self.daily_stats = []  # 每日统计信息
-        self.rebalance_count = 0
-        self.total_buy_orders = 0
-        self.sell_orders = 0
-        self.successful_orders = 0
-        self.failed_orders = 0
+        self.rebalance_count = 0 #调仓次数！
+        self.submit_buy_orders = 0 #
+        self.submit_sell_orders = 0
+        self.success_buy_orders = 0
+        self.success_sell_orders = 0
+        self.failed_orders = 0 #（别担心，反正有重试
 
         # 6. 风险控制
         self.emergency_exits = 0  # 紧急止损次数
         self.forced_exits = 0  # 强制超期卖出次数
+
+        #辅助信息
+
+
 
         logger.info(f"策略初始化完成:")
         logger.info(f"  调仓日期: {len(self.rebalance_dates_set)}个")
@@ -131,12 +139,12 @@ class EnhancedFactorStrategy(bt.Strategy):
             self._execute_rebalancing(current_date)
 
         # === 第4步：处理待买清单（替代pending_buys_tracker）=== #剩菜，有余力再买
-        self._process_pending_buys()
+        self._process_pending_buys() #bug todo  万一是当天调仓日买入失败的票呢？  这次调仓日就不买了才对啊， 这里要调整下
 
         # === 第6步：记录统计信息 ===
         if self.p.log_detailed:
             self._log_daily_status(current_date)
-
+    #step1
     def _daily_state_update(self):
         """
         每日状态更新 - 替代vectorBT中每日循环开始的状态更新
@@ -158,7 +166,7 @@ class EnhancedFactorStrategy(bt.Strategy):
 
             if days_elapsed > self.p.retry_buy_days:
                 # 超期，放弃买入
-                del self.pending_buys[stock_name]
+                del self.pending_buys[stock_name] #todo 测试！
                 if self.p.debug_mode:
                     logger.info(f"买入任务超期放弃: {stock_name}")
 
@@ -199,7 +207,7 @@ class EnhancedFactorStrategy(bt.Strategy):
             if self.getposition(data_obj).size > 0 and self._is_tradable(data_obj):
                 # 尝试卖出
                 order = self._submit_order(stock_name=stock_name, data_obj=data_obj, target_weight=0,
-                                           action='sell')  # todo 回测 targer 卖完啊，参数如何填
+                                           action='sell')
                 if order:
                     del self.pending_sells[stock_name]
                     if self.p.debug_mode:
@@ -269,7 +277,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         for data_obj in self.datas:
             stock_name = data_obj._name
             position = self.getposition(data_obj)
-            # 这个股票都没不是持仓状态
+            # 这个股票都不是持仓状态
             if position.size <= 0:
                 continue
 
@@ -277,20 +285,19 @@ class EnhancedFactorStrategy(bt.Strategy):
             should_sell_due_to_rebalance = stock_name not in today_want_hold_stocks
             # 遍历所有持仓，发现某只停牌！ 应该也卖掉！
             is_untradable_today = not self._is_tradable(data_obj)
-            reason = "发现持仓停牌" if should_sell_due_to_rebalance else "调仓不再持有"
+            reason = "发现持仓期间的股票停牌" if is_untradable_today else "调仓不再持有这股票"
 
             # 只要满足以上任一理由，就必须处理这只股票
             if should_sell_due_to_rebalance or is_untradable_today:
                 if self._is_tradable(data_obj):
-                    self._submit_order(stock_name=stock_name, data_obj=data_obj, target_weight=0,
-                                       action='sell')  # todo 回测 targer 卖完啊，参数如何填
+                    self._submit_order(stock_name=stock_name, data_obj=data_obj, target_weight=0.0,
+                                       action='sell')
                 else:
                     # 停牌，无法卖出，加入待卖清单
-                    self.pending_sells[stock_name] = (0, self.datetime.date(0), "停牌导致卖出失败的")
-                    sells_attempted += 1
+                    if stock_name in self.pending_sells:
+                        sells_attempted = self.pending_sells[stock_name][0]
+                    self.pending_sells[stock_name] = (sells_attempted+1, self.datetime.date(0), f"{reason}-但停牌导致卖出失败的") #log todo
 
-                    if self.p.debug_mode:
-                        logger.warning(f"\t\t\t{self.datetime.date(0)} 卖出失败(因为停牌): {stock_name}")
 
     def _execute_buy_phase(self, target_stocks: List[str]):
         """
@@ -336,6 +343,10 @@ class EnhancedFactorStrategy(bt.Strategy):
         Returns:
             bool: 是否创单成功
         """
+        if action == 'buy':
+            self.submit_buy_orders += 1
+        else:
+            self.submit_sell_orders += 1
         try:
             order = self.order_target_percent(data=data_obj, target=target_weight)
             if order:
@@ -343,7 +354,7 @@ class EnhancedFactorStrategy(bt.Strategy):
                     f"\t\t\t\t{self.datetime.date(0)}-{action}订单提交: {stock_name}, 目标权重: {target_weight}")
                 return True
             else:
-                logger.warning(f"{self.datetime.date(0)}-{action}订单提交失败: {stock_name}")
+                logger.warning(f"{self.datetime.date(0)}-{action}订单提交失败: {stock_name}") #场景：如果当天之前某股票停牌，现在这个受影响卖不出去！todo
                 return False
         except Exception as e:
             logger.error(f"{self.datetime.date(0)}-Error executing buy order for {stock_name}: {e}")
@@ -384,7 +395,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         Args:
             stock_name: 股票名称
         """
-        self.total_buy_orders += 1
+        self.success_buy_orders += 1
         # 初始化持仓记录
         self.holding_start_dates[stock_name] = self.datetime.date(0)
         self.holding_days_counter[stock_name] = 1
@@ -399,7 +410,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         Args:
             stock_name: 股票名称
         """
-        self.sell_orders += 1
+        self.success_sell_orders += 1
         # 清理已平仓的记录
         self._cleanup_position_records(stock_name)
         # 移除，反正我今天是卖出去了
@@ -416,7 +427,6 @@ class EnhancedFactorStrategy(bt.Strategy):
         pending_sells_snap = self.pending_sells
         # 订单成功执行
         if order.status == order.Completed:
-            self.successful_orders += 1
             action = "买入" if order.isbuy() else "卖出"
             actionTimeType = "延迟日级别重试" if (
                         (stock_name in pending_sells_snap) or (stock_name in pending_sells_snap)) else "调仓"
@@ -429,7 +439,8 @@ class EnhancedFactorStrategy(bt.Strategy):
                 self.refresh_for_success_sell(stock_name, pending_sells_snap)
 
             if self.p.log_detailed:
-                logger.info(f"\t\t\t{self.datetime.date(0)}--{actionTimeType}-{action}-成功: {stock_name}, "
+                current = get_last_b_day(self.p.trading_days,pd.Timestamp(self.datetime.date(0)))
+                logger.info(f"\t\t\t{current}--{actionTimeType}-{action}-成功: {stock_name}, "
                             f"股数: {order.executed.size:.0f}, "
                             f"价格: {order.executed.price:.2f},"
                             f"乘积: {order.executed.price * order.executed.size}")
@@ -536,12 +547,12 @@ class EnhancedFactorStrategy(bt.Strategy):
         logger.info(f"  总收益率: {total_return:.2f}%")
 
         # 交易统计
-        success_rate = self.successful_orders / max(self.total_buy_orders, 1) * 100
+        success_rate = self.success_buy_orders / max(self. submit_buy_orders, 1) * 100
+        #统计基准！！
         logger.info(f"交易统计:")
-        logger.info(f"  总订单数: {self.total_buy_orders}")
-        logger.info(f"  成功订单: {self.successful_orders}")
-        logger.info(f"  失败订单: {self.failed_orders}")
-        logger.info(f"  成功率: {success_rate:.1f}%")
+        logger.info(f"  总提交订单数（提交买入订单数）: {self. submit_buy_orders}")
+        logger.info(f"  失败订单（别担心，反正有重试: {self.failed_orders}")
+        logger.info(f"  买入成功率: {success_rate:.1f}%")
 
         # 调仓统计
         logger.info(f"调仓统计:")
@@ -704,6 +715,7 @@ class BacktraderMigrationEngine:
                     max_holding_days=self.bt_config['max_holding_days'],
                     retry_buy_days=self.bt_config['retry_buy_days'],
                     debug_mode=True,
+                    trading_days=load_trading_lists(aligned_factor.index[0],aligned_price.index[-1]),
                     log_detailed=True
                 )
 
@@ -752,7 +764,6 @@ class BacktraderMigrationEngine:
                 raise ValueError("失败") from e
 
         self.results = migration_results
-        logger.info("所有因子迁移完成!")
 
         return migration_results
 
@@ -869,6 +880,8 @@ class BacktraderMigrationEngine:
             if current_positions is not None:
                 holding_signals.loc[date, current_positions] = True
 
+        #兜底保证，停牌日的持仓信号为False
+        holding_signals[price_df.isna() | (price_df <= 0)] = False
         return holding_signals
 
     def get_comparison_with_vectorbt(self, vectorbt_results: Dict = None) -> pd.DataFrame:
@@ -938,14 +951,6 @@ def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFr
 
     # 生成对比表
     comparison_table = migration_engine.get_comparison_with_vectorbt()
-
-    logger.info("=" * 80)
-    logger.info("🎉 迁移完成！主要改进:")
-    logger.info("✅ 解决了vectorBT的Size小于100问题")
-    logger.info("✅ 自动处理现金管理和权重分配")
-    logger.info("✅ 优雅处理停牌和交易失败")
-    logger.info("✅ 简化复杂的状态管理逻辑")
-    logger.info("=" * 80)
 
     return results, comparison_table
 

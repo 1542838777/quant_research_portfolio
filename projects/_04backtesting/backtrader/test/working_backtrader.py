@@ -296,7 +296,7 @@ def run_working_test():
         # 7. 验证结果
         final_value = cerebro.broker.getvalue()
         
-        if strategy.rebalance_count > 0 and strategy.total_buy_orders > 0:
+        if strategy.rebalance_count > 0 and strategy.success_buy_orders > 0:
             print("✅ 测试成功！Backtrader正常工作")
             print("✅ 已解决Size小于100问题")
             print("✅ 调仓和交易逻辑正常")
@@ -304,8 +304,8 @@ def run_working_test():
             return True, {
                 'final_value': final_value,
                 'rebalance_count': strategy.rebalance_count,
-                'total_orders': strategy.total_buy_orders,
-                'success_rate': strategy.successful_orders / max(strategy.total_buy_orders, 1) * 100
+                'total_orders': strategy.success_buy_orders,
+                'success_rate': strategy.submit_buy_orders / max(strategy.success_buy_orders, 1) * 100
             }
         else:
             print("❌ 测试仍有问题")
@@ -442,8 +442,8 @@ def run_single_factor_backtest(factor_name, price_df, factor_df, config):
             'strategy': strategy,
             'final_value': cerebro.broker.getvalue(),
             'rebalance_count': strategy.rebalance_count,
-            'total_orders': strategy.total_buy_orders,
-            'success_orders': strategy.successful_orders
+            'total_orders': strategy.success_buy_orders,
+            'success_orders': strategy.submit_buy_orders
         }
         
     except Exception as e:

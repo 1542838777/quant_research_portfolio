@@ -280,12 +280,12 @@ def demo_problem_solving():
                 strategy = result['strategy']
                 logger.info(f"{factor_name} - 策略统计:")
                 logger.info(f"  调仓次数: {strategy.rebalance_count}")
-                logger.info(f"  总订单: {strategy.total_buy_orders}")
-                logger.info(f"  成功订单: {strategy.successful_orders}")
+                logger.info(f"  总订单: {strategy.success_buy_orders}")
+                logger.info(f"  成功订单: {strategy.submit_buy_orders}")
                 logger.info(f"  失败订单: {strategy.failed_orders}")
 
-                if strategy.total_buy_orders > 0:
-                    success_rate = strategy.successful_orders / strategy.total_buy_orders * 100
+                if strategy.success_buy_orders > 0:
+                    success_rate = strategy.submit_buy_orders / strategy.success_buy_orders * 100
                     logger.info(f"  订单成功率: {success_rate:.1f}%")
 
     except Exception as e:
@@ -365,8 +365,6 @@ def migration_guide():
 
 def main():
     """主测试函数"""
-    logger.info("🚀 开始vectorBT → Backtrader迁移测试")
-    
     # 选择测试类型
     test_type = "problem_solving"  # "comparison", "problem_solving", "migration", "all"
     
@@ -395,34 +393,13 @@ def t_():
         max_holding_days=20  # 短期持有
     )
 
-
-    try:
-        results, comparison = one_click_migration(
-            price_df,
-            {'problem_factor': factor_df},
-            problem_config
-        )
-        print("Backtrader结果:")
-        print(comparison)
-        # 分析交易明细
-        for factor_name, result in results.items():
-            if result:
-                strategy = result['strategy']
-                logger.info(f"{factor_name} - 策略统计:")
-                logger.info(f"  调仓次数: {strategy.rebalance_count}")
-                logger.info(f"  总订单: {strategy.total_buy_orders}")
-                logger.info(f"  成功订单: {strategy.successful_orders}")
-                logger.info(f"  失败订单: {strategy.failed_orders}")
-
-                if strategy.total_buy_orders > 0:
-                    success_rate = strategy.successful_orders / strategy.total_buy_orders * 100
-                    logger.info(f"  订单成功率: {success_rate:.1f}%")
-
-    except Exception as e:
-        logger.error(f"Backtrader测试失败: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-
+    results, comparison = one_click_migration(
+        price_df,
+        {'problem_factor': factor_df},
+        problem_config
+    )
+    print("Backtrader结果:")
+    print(comparison)
 
 if __name__ == "__main__":
     t_()

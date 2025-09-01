@@ -48,6 +48,7 @@ class BacktraderConfig:
     retry_sell_days: int = 5             # 卖出重试天数
     enable_forced_exits: bool = True     # 启用强制卖出
     enable_retry_mechanism: bool = True   # 启用重试机制
+    trading_days: list = None         #  交易日期列表
     
     # === 新增：动态权重管理 ===
     use_dynamic_weights: bool = True     # 使用动态权重分配

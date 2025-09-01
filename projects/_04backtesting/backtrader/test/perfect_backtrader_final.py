@@ -293,14 +293,14 @@ def _run_perfect_backtest(factor_name, price_df, factor_data, config):
         strategy = strategy_results[0]
         
         final_value = cerebro.broker.getvalue()
-        success_rate = strategy.successful_orders / max(strategy.total_buy_orders, 1) * 100
+        success_rate = strategy.submit_buy_orders / max(strategy.success_buy_orders, 1) * 100
         
         return {
             'strategy': strategy,
             'final_value': final_value,
             'rebalance_count': strategy.rebalance_count,
-            'total_orders': strategy.total_buy_orders,
-            'success_orders': strategy.successful_orders,
+            'total_orders': strategy.success_buy_orders,
+            'success_orders': strategy.submit_buy_orders,
             'success_rate': success_rate
         }
         

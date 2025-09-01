@@ -11,6 +11,8 @@ import numpy as np
 import backtrader as bt
 from datetime import datetime
 
+from data.local_data_load import get_trading_dates
+
 # 添加项目路径
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
@@ -216,7 +218,7 @@ def create_test_data():
     logger.info("创建测试数据...")
     
     # 创建6个月的数据
-    dates = pd.date_range('2024-01-02', periods=10, freq='B')  # 约6个月的工作日
+    dates =  get_trading_dates('2024-01-02','2024-01-12')
     stocks = ['STOCK_A', 'STOCK_B', 'STOCK_C', 'STOCK_D', 'STOCK_E']
     
     np.random.seed(42)
@@ -244,7 +246,9 @@ def create_test_data():
     
     logger.info(f"测试数据创建完成: 价格{price_df.shape}, 因子{factor_df.shape}")
     logger.info(f"价格范围: {price_df.min().min():.2f} - {price_df.max().max():.2f}")
-    
+
+    price_df = price_df.iloc[1:]
+    price_df.loc[price_df.index[1], 'STOCK_A'] = np.nan
     return price_df, factor_df
 
 
