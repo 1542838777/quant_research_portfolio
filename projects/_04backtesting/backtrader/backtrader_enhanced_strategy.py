@@ -475,8 +475,8 @@ class EnhancedFactorStrategy(bt.Strategy):
         current_value,_ = self.get_current_value_approximate()
 
         if self.p.debug_mode:
-            logger.debug(f"\t\t\t订单前状态 - 现金: {current_cash:.2f}, 总价值: {current_value:.2f}, "
-                         f"{stock_name}价格: {current_price:.2f}, 当前持仓: {current_position}")
+            logger.debug(f"\t\t\t提交订单前状态 - 现金: {current_cash:.2f}, 总价值: {current_value:.2f}, "
+                         f"此次目标:-{stock_name}-价格: {current_price:.2f}, 当前已持仓: {current_position}")
         return current_position, current_cash ,current_price
     def get_current_value_approximate(self):
         """
@@ -653,15 +653,14 @@ class EnhancedFactorStrategy(bt.Strategy):
         current_holdings_count = len([d for d in self.datas if self.getposition(d).size > 0])
         pending_sells_count = len(self.pending_sells)
         pending_buys_count = len(self.pending_buys)
-        total_value = self.broker.get_value()
-        cash_ratio = self.broker.get_cash() / total_value
+        total_value = self.get_current_value_approximate()
+        cash = self.broker.get_cash()
 
         daily_stat = {
             'date': current_date,
             'holdings': current_holdings_count,
             'pending_sells': pending_sells_count,
             'pending_buys': pending_buys_count,
-            'cash_ratio': cash_ratio,
             'total_value': total_value
         }
 
@@ -670,7 +669,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         if self.p.debug_mode:
             logger.info(f"\t\t{current_date}: 持仓{current_holdings_count}只, "
                         f"待卖{pending_sells_count}只, 待买{pending_buys_count}只, "
-                        f"现金比例{cash_ratio:.1%}")
+                        f"现金{cash:.1%}--总价值{total_value}")
 
     def stop(self):
         """策略结束处理 - 详细统计和分析"""
