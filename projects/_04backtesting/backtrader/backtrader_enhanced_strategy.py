@@ -66,6 +66,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         ('log_detailed', True),  # 详细日志
         ('enable_retry', True),  # 启用重试机制
         ('trading_days', None),  # 交易日列表
+        ('real_wide_prices', None),  #保存真实价格
     )
 
     def __init__(self):
@@ -102,6 +103,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 6. 风险控制
         self.emergency_exits = 0  # 紧急止损次数
         self.forced_exits = 0  # 强制超期卖出次数
+        self.real_wide_prices = self.p.real_wide_prices # 保存真实价格
 
         # 辅助信息
 
@@ -507,7 +509,7 @@ class EnhancedFactorStrategy(bt.Strategy):
                 elif target_weight < 0.001:
                     failure_reason = "目标权重过小"
                 else:
-                    failure_reason = f"买入订单被拒绝-目标权重-{target_weight}"
+                    failure_reason = f"未知原因-目标权重{target_weight}"
 
             logger.warning(f"{self.datetime.date(0)}-{action}预备订单提交失败: {stock_name} (原因: {failure_reason})")
             logger.warning(
@@ -526,13 +528,10 @@ class EnhancedFactorStrategy(bt.Strategy):
         Args:  data_obj: 数据对象
         Returns:bool: 是否可交易
         """
-        try:
-            # 检查是否有有效价格数据
-            current_price = data_obj.open[0]
-            return not (np.isnan(current_price) or current_price <= 0)
-        except:
-            return False
-
+        current_date = self.datetime.date(0) #可能需要+Bday ：最终解释：千万不要，那样偷看了未来！
+        stock_name = data_obj._name
+        price = self.p.real_wide_prices.loc[pd.to_datetime(current_date), stock_name]
+        return not pd.isna(price)
 
     def _cleanup_position_records(self, stock_name: str):
         """
@@ -939,15 +938,22 @@ class BacktraderMigrationEngine:
             try:
                 # === 1. 数据对齐（兼容原有逻辑）===
                 aligned_price, aligned_factor = self._align_data(price_df, factor_data)
+                # ===：创建两份价格数据 ===
+                # a. 一份用于“欺骗”Backtrader底层引擎，确保getvalue()正常
+                #
+                price_for_bt_engine = aligned_price.fillna(method='ffill').fillna(method='bfill')
+
+                # b. 另一份是包含真实NaN的原始数据，用于策略的精准判断
+                price_for_strategy_logic = aligned_price
 
                 # === 2. 生成明天的持仓信号
-                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor, aligned_price)
+                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor, price_for_strategy_logic)
 
                 cerebro = bt.Cerebro(quicknotify=True)
                 # cerebro.broker.set_coo(True)
 
                 # 添加数据源
-                self.add_wide_df_to_cerebro(cerebro, aligned_price, aligned_factor)
+                self.add_wide_df_to_cerebro(cerebro, price_for_bt_engine, aligned_factor)
                 # for d in cerebro.datas:
                 #     for i in range(len(d)):
                 #         print(d.datetime.date(i), d.open[i])
@@ -968,6 +974,7 @@ class BacktraderMigrationEngine:
                     retry_buy_days=self.bt_config['retry_buy_days'],
                     debug_mode=True,
                     trading_days=load_trading_lists(aligned_factor.index[0], aligned_price.index[-1]),
+                    real_wide_prices=price_for_strategy_logic,
                     log_detailed=True
                 )
 
@@ -1051,9 +1058,9 @@ class BacktraderMigrationEngine:
             #     #所有价格*1.5
             #     df_single_stock[['open','close','volume','low','high']]=df_single_stock[['open','close','volume','low','high']]*1.5
 
-            #mock数据 todo
-            if stock_symbol == 'STOCK_B':
-                df_single_stock.loc[df_single_stock.index[2],['open','close','volume','low','high','openinterest']]=np.nan
+            # #mock数据 todo
+            # if stock_symbol == 'STOCK_B':
+            #     df_single_stock.loc[df_single_stock.index[2],['open','close','volume','low','high','openinterest']]=np.nan
             # 4. 【核心】调用PandasData，并明确告知每一列的位置 (mapping)
             data_feed = bt.feeds.PandasData(
                 dataname=df_single_stock,
@@ -1098,7 +1105,7 @@ class BacktraderMigrationEngine:
         holding_signals = self._generate_holding_signals(factor_df,price_df)
         # 将 T 日的交易计划，移动到 T-1 日的行上，为策略的 next() 方法做好准备
         final_signals_for_strategy = holding_signals.shift(-1)
-        return final_signals_for_strategy
+        return final_signals_for_strategy.astype(bool)
 
     def _generate_holding_signals(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
         """
