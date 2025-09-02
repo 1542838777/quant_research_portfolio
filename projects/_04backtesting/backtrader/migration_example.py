@@ -384,7 +384,7 @@ def t_():
     # 配置：容易触发Size问题的参数
     problem_config = BacktestConfig(
         top_quantile=0.5,  # 做多60%（容易频繁调仓）
-        rebalancing_freq='D',  # 周度调仓（更频繁）
+        rebalancing_freq='2D',  # 周度调仓（更频繁）
         commission_rate=0.0003,  # 稍高费用
         slippage_rate=0.0015,
         stamp_duty=0.001,
