@@ -45,7 +45,7 @@ class BacktraderConfig:
     
     # === 新增：Backtrader特有参数 ===
     retry_buy_days: int = 3              # 买入重试天数
-    retry_sell_days: int = 5             # 卖出重试天数
+    retry_sell_days: int = 50             # 卖出重试天数
     enable_forced_exits: bool = True     # 启用强制卖出
     enable_retry_mechanism: bool = True   # 启用重试机制
     trading_days: list = None         #  交易日期列表
