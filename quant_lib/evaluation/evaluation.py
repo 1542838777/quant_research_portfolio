@@ -47,14 +47,16 @@ def calculate_forward_returns_tradable_o2c(period: int,
                                                 open_df: pd.DataFrame,
                                                 winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
     """
-    【生产级 Tradable O2C】计算从 T+1日开盘价 到 T+period日收盘价 的未来收益率。
+    周三收盘算出来的因子！t-1
+    周四：t这一日：实际上是t-1的因子数据  （所以需要t日开盘价参与收益率计算
+    计算从 T+1日开盘价 到 T+period日收盘价 的未来收益率。
     包含了生存偏差过滤和截面去极值处理。
     """
     open_prices = open_df.copy(deep=True)
     close_prices = close_df.copy(deep=True)
 
     # 1. 定义起点和终点价格 (逻辑核心)
-    start_price = open_prices.shift(-1)
+    start_price = open_prices
     end_price = close_prices.shift(-period)
 
     # 2. 创建“未来存续”掩码
@@ -75,6 +77,7 @@ def calculate_forward_returns_tradable_o2c(period: int,
 
     return forward_returns_winsorized
 #ok
+# C2C 仅用于学术对比或历史统计，不适合实盘回测
 def calculate_forward_returns_c2c(period: int,
                                   close_df: pd.DataFrame,
                                   winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
@@ -167,7 +170,7 @@ def calculate_forward_returns_c2c(period: int,
 # #
 # def calcu_forward_returns_close_close(period, price_df):
 #     # 1. 定义起点和终点价格 (严格遵循T-1原则)
-#     start_price = price_df.shift(1)
+#     start_price = price_df.shift(1) #问题所在！
 #     end_price = price_df.shift(1 - period)
 #
 #     # 2. 创建“未来存续”掩码 (确保在持有期首尾股价都存在)

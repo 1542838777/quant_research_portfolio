@@ -248,7 +248,7 @@ def create_test_data():
     logger.info(f"价格范围: {price_df.min().min():.2f} - {price_df.max().max():.2f}")
 
     price_df = price_df.iloc[1:]
-    price_df.loc[price_df.index[1], 'STOCK_A'] = np.nan
+    # price_df.loc[price_df.index[1], 'STOCK_A'] = np.nan
     return price_df, factor_df
 
 
