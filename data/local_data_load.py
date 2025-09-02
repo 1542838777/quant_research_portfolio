@@ -60,7 +60,18 @@ def get_last_b_day(trading_days:list,targetDay:pd.DatetimeIndex):
         raise ValueError("目标日期必须是 pd.Timestamp 对象")
     previous_day = max(d for d in trading_days if d < targetDay)
 
-    return previous_day
+    return previous_day.date()
+def get_tomorrow_b_day(trading_days:list,targetDay:pd.DatetimeIndex):
+    """
+    获取目标日期的后一个交易日
+    """
+    if not trading_days:
+        raise ValueError("交易日列表不能为空")
+    if not isinstance(targetDay, pd.Timestamp):
+        raise ValueError("目标日期必须是 pd.Timestamp 对象")
+    previous_day = min(d for d in trading_days if d > targetDay)
+
+    return previous_day.date()
 def load_all_stock_codes():
     df = pd.read_parquet(LOCAL_PARQUET_DATA_DIR / 'stock_basic.parquet')
     return list(df['ts_code'].unique())

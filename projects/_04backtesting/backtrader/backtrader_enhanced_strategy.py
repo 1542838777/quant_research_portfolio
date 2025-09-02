@@ -17,7 +17,7 @@ import backtrader as bt
 import numpy as np
 import pandas as pd
 
-from data.local_data_load import load_trading_lists
+from data.local_data_load import load_trading_lists, get_tomorrow_b_day
 
 warnings.filterwarnings('ignore')
 
@@ -110,40 +110,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         logger.info(f"  最大持仓: {self.p.max_positions}只")
         logger.info(f"  最大持有期: {self.p.max_holding_days}天")
         logger.info(f"  重试期限: {self.p.retry_buy_days}天")
-
-    # def next_open(self):
-    #     """
-    #     执行顺序（严格按照原有逻辑）：
-    #     1. 状态更新（持仓天数、重试计数等）
-    #     2. 处理强制卖出（超期持仓）
-    #     3. 处理待卖清单
-    #     4. 处理待买清单
-    #     5. 调仓日执行（如果是调仓日）
-    #     6. 记录统计和调试信息
-    #     """
-    #     log_success('进入next——open')
-    #     current_date = self.datetime.date(0)
-    #
-    #     # === 第1步：日常状态更新 ===
-    #     self._daily_state_update()
-    #
-    #     # === 第2步：处理强制卖出（替代force_exit_intent逻辑）===
-    #     self._process_forced_exits()
-    #
-    #     # === 第3步：处理待卖清单（替代pending_exits_tracker）===
-    #     self._process_pending_sells()
-    #
-    #     # === 第5步：调仓日执行（如果是调仓日）=== #新菜 逻辑提前！
-    #     if current_date in self.rebalance_dates_set:
-    #         self._execute_rebalancing(current_date)
-    #
-    #     # === 第4步：处理待买清单（替代pending_buys_tracker）=== #剩菜，有余力再买
-    #     self._process_pending_buys() #bug todo  万一是当天调仓日买入失败的票呢？  这次调仓日就不买了才对啊， 这里要调整下
-    #
-    #     # === 第6步：记录统计信息 ===
-    #     if self.p.log_detailed:
-    #         self._log_daily_status(current_date)
-
+    #next机制：函数内部：决定好明天买什么！，明天9点半准时开盘价买入 （所以我给的信号，也是说明明天要买什么的信号！
     def next(self):
         """
         执行顺序（严格按照原有逻辑）：
@@ -154,7 +121,11 @@ class EnhancedFactorStrategy(bt.Strategy):
         5. 调仓日执行（如果是调仓日）
         6. 记录统计和调试信息
         """
-        log_success('进入next')
+        if len(self) == self.data.buflen():
+            # 如果已处理的K线数等于总数，说明这是最后一根，直接返回
+            logger.warning("到达回测终点，不再为明天做决策。")
+            return
+        log_success('现在准备明天事宜')
         current_date = self.datetime.date(0)
 
         # === 第1步：日常状态更新（add 天数而已） ===
@@ -179,6 +150,41 @@ class EnhancedFactorStrategy(bt.Strategy):
         # === 第6步：记录统计信息 ===
         if self.p.log_detailed:
             self._log_daily_status(current_date)
+    # def next(self):
+    #     """
+    #     执行顺序（严格按照原有逻辑）：
+    #     1. 状态更新（持仓天数、重试计数等）
+    #     2. 处理强制卖出（超期持仓）
+    #     3. 处理待卖清单
+    #     4. 处理待买清单
+    #     5. 调仓日执行（如果是调仓日）
+    #     6. 记录统计和调试信息
+    #     """
+    #     log_success('进入next')
+    #     current_date = self.datetime.date(0)
+    #
+    #     # === 第1步：日常状态更新（add 天数而已） ===
+    #     self._daily_state_update()
+    #     # --第一优先！最先处理昨天没有卖出的！！
+    #     self._process_pending_sells()
+    #
+    #     # === 第2步：为了持仓安全，该卖的卖！ （强制到期卖、监听到停牌（预感不对 卖！）===
+    #     # ---2.1
+    #     self._process_forced_exits()
+    #
+    #     ##----2.2 监听到停牌（预感不对 卖！）   # todo 因为每天都调仓日 融合到了 _execute_rebalancing执行，后续需要拆分出来！
+    #     self._process_suspended_exits()
+    #
+    #     # === 第5步：调仓日执行（如果是调仓日）=== #新菜 逻辑提前！
+    #     if current_date in self.rebalance_dates_set:
+    #         self._execute_rebalancing(current_date)
+    #
+    #     # === 第4步：处理待买清单（替代pending_buys_tracker）=== #剩菜，有余力再买
+    #     # self._process_pending_buys()  # bug todo  万一是当天调仓日买入失败的票呢？  这次调仓日就不买了才对啊， 这里要调整下
+    #
+    #     # === 第6步：记录统计信息 ===
+    #     if self.p.log_detailed:
+    #         self._log_daily_status(current_date)
 
     def _process_suspended_exits(self):
         for data_obj in self.datas: #可优化的点！考虑直接self.getpositions 但是好像娶不到stockName
@@ -284,12 +290,13 @@ class EnhancedFactorStrategy(bt.Strategy):
 
     def _execute_rebalancing(self, current_date):
         """
-        执行调仓 - 替代vectorBT中复杂的调仓逻辑
+        执行调仓 -
         Args:
             current_date: 调仓日期
         """
+        execution_date = get_tomorrow_b_day(self.p.trading_days,pd.Timestamp(self.datetime.date(0)))
         if self.p.debug_mode:
-            logger.info(f"--- 调仓日: {current_date} ---")
+            logger.info(f"--- 决策日: {current_date} (为 {execution_date} 的开盘做准备) ---")
 
         self.rebalance_count += 1
 
@@ -299,11 +306,11 @@ class EnhancedFactorStrategy(bt.Strategy):
             today_want_hold_stocks = target_holdings_signal[target_holdings_signal].index.tolist()
         except KeyError:
             if self.p.debug_mode:
-                logger.warning(f"\t\t未找到日期{current_date}的持仓信号")
+                logger.warning(f"\t\t未找到日期{execution_date}的持仓信号")
             return
 
         if self.p.debug_mode:
-            logger.info(f"\t\t目标持仓: {len(today_want_hold_stocks)}只股票")
+            logger.info(f"\t\t目标持仓 (for {execution_date}): {len(today_want_hold_stocks)}只股票")
 
         # === 阶段1：处理卖出（normal_exits_intent + pending_exits） ===
         self._execute_sell_phase(today_want_hold_stocks)
@@ -557,7 +564,7 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         if self.p.debug_mode:
             logger.debug(f"\t\t\t提交订单前状态 - 现金: {current_cash:.2f}, 总价值: {current_value:.2f}, "
-                         f"此次目标:-{stock_name}-价格: {current_price:.2f}, 当前已持仓: {current_position}")
+                         f"此次目标: {stock_name}  价格: {current_price:.2f}, 当前已持仓: {current_position}")
         return current_position, current_cash, current_price
 
 
@@ -672,9 +679,8 @@ class EnhancedFactorStrategy(bt.Strategy):
                 self.refresh_for_success_sell(stock_name, pending_sells_snap)
 
             if self.p.log_detailed:
-                # current = get_last_b_day(self.p.trading_days,pd.Timestamp(self.datetime.date(0)))
-                current = self.datetime.date(0)
-                logger.info(f"\t\t\t{current}--{actionTimeType}-{action}-成功: {stock_name}, "
+                execution_date = get_tomorrow_b_day(self.p.trading_days, pd.Timestamp(self.datetime.date(0)))
+                logger.info(f"\t\t\t{execution_date}--{actionTimeType}-{action}-成功: {stock_name}, "
                             f"股数: {order.executed.size:.0f}, "
                             f"价格: {order.executed.price:.2f},"
                             f"乘积: {order.executed.price * order.executed.size}")
@@ -740,7 +746,7 @@ class EnhancedFactorStrategy(bt.Strategy):
 
     def _log_daily_status(self, current_date):
         """
-        记录每日状态 - 用于调试和监控
+        每日状态 - 用于调试和监控
 
         Args:
             current_date: 当前日期
@@ -749,7 +755,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         current_holdings_count = len([d for d in self.datas if self.getposition(d).size > 0])
         pending_sells_count = len(self.pending_sells)
         pending_buys_count = len(self.pending_buys)
-        total_value = self.get_current_value_approximate()
+        total_value,_ = self.get_current_value_approximate()
         cash = self.broker.get_cash()
 
         daily_stat = {
@@ -757,7 +763,8 @@ class EnhancedFactorStrategy(bt.Strategy):
             'holdings': current_holdings_count,
             'pending_sells': pending_sells_count,
             'pending_buys': pending_buys_count,
-            'total_value': total_value
+            'total_value': total_value,
+            'cash_ratio': cash/total_value,
         }
 
         self.daily_stats.append(daily_stat)
@@ -765,7 +772,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         if self.p.debug_mode:
             logger.info(f"\t\t{current_date}: 实际持仓{current_holdings_count}只, "
                         f"待卖{pending_sells_count}只, 待买{pending_buys_count}只, "
-                        f"现金{cash:.1%}--总价值{total_value}")
+                        f"现金{cash:.1f}--总价值{total_value}")
 
 
     def stop(self):
@@ -927,11 +934,11 @@ class BacktraderMigrationEngine:
                 # === 1. 数据对齐（兼容原有逻辑）===
                 aligned_price, aligned_factor = self._align_data(price_df, factor_data)
 
-                # === 2. 生成持仓信号（完整替代generate_long_holding_signals）===
-                holding_signals = self._generate_holding_signals(aligned_factor, aligned_price)
+                # === 2. 生成明天的持仓信号
+                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor, aligned_price)
 
                 cerebro = bt.Cerebro(quicknotify=True)
-                cerebro.broker.set_coc(True)
+                # cerebro.broker.set_coo(True)
 
                 # 添加数据源
                 self.add_wide_df_to_cerebro(cerebro, aligned_price, aligned_factor)
@@ -948,7 +955,7 @@ class BacktraderMigrationEngine:
                 cerebro.addstrategy(
                     EnhancedFactorStrategy,
                     factor_data=aligned_factor,
-                    holding_signals=holding_signals,
+                    holding_signals=holding_signals_for_next,
                     rebalance_dates=rebalance_dates,
                     max_positions=self.bt_config['max_positions'],
                     max_holding_days=self.bt_config['max_holding_days'],
@@ -979,7 +986,7 @@ class BacktraderMigrationEngine:
                 logger.info(f"开始执行{factor_name}回测...")
                 start_time = datetime.now()
 
-                strategy_results = cerebro.run(cheat_on_close=True)
+                strategy_results = cerebro.run()
 
                 end_time = datetime.now()
                 execution_time = (end_time - start_time).total_seconds()
@@ -1011,40 +1018,48 @@ class BacktraderMigrationEngine:
 
     def add_wide_df_to_cerebro(self, cerebro: bt.Cerebro, wide_price_df: pd.DataFrame,
                                factor_wide_df: pd.DataFrame) -> None:
+
+        logger.info(f"【V4 终极稳健版】开始加载数据...")
+
         wide_price_df, factor_wide_df = self._align_data(wide_price_df, factor_wide_df)
-        wide_price_df.index = pd.to_datetime(wide_price_df.index, format="%Y%m%d")
+
         for stock_symbol in wide_price_df.columns:
             # 1. 创建一个不带索引的DataFrame
-            df_single_stock = pd.DataFrame(index=wide_price_df.index)
+            df_single_stock = pd.DataFrame()
 
             # 2. 【核心】将日期从索引变成一个名为'datetime'的普通列
-            # df_single_stock['datetime'] = pd.to_datetime(wide_price_df.index)
+            #    确保它是python原生的datetime对象，兼容性最好
+            df_single_stock['datetime'] = pd.to_datetime(wide_price_df.index)
 
             # 3. 填充OHLCV和其他数据列
             #    使用 .values 可以避免pandas版本差异带来的索引对齐问题
-            temp = wide_price_df[stock_symbol]
-            df_single_stock['open'] = temp * 0.9
+            temp = wide_price_df[stock_symbol].values
+            df_single_stock['open'] = temp
             df_single_stock['high'] = temp
             df_single_stock['low'] = temp
             df_single_stock['close'] = temp
             df_single_stock['volume'] = 0
-            df_single_stock['openinterest'] = -1
+            df_single_stock['openinterest'] = 0
 
             # 4. 【核心】调用PandasData，并明确告知每一列的位置 (mapping)
             data_feed = bt.feeds.PandasData(
                 dataname=df_single_stock,
-                open=0,  # 第1列是开盘价
-                high=1,  # 第2列是最高价
-                low=2,  # 第3列是最低价
-                close=3,  # 第4列是收盘价
-                volume=4,  # 第5列是成交量
-                openinterest=5  # 第6列是持仓量
+
+                # --- 手动指定“表格”的每一列 ---
+                datetime=0,  # 第0列是日期时间
+                open=1,  # 第1列是开盘价
+                high=2,  # 第2列是最高价
+                low=3,  # 第3列是最低价
+                close=4,  # 第4列是收盘价
+                volume=5,  # 第5列是成交量
+                openinterest=6  # 第6列是持仓量
             )
 
             cerebro.adddata(data_feed, name=stock_symbol)
             logger.info(f"  -> 已为 {stock_symbol} 添加数据源。")
 
         logger.info(f"\n成功为 {len(cerebro.datas)} 只股票添加了独立的数据源。")
+
 
     def _align_data(self, price_df: pd.DataFrame, factor_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -1066,6 +1081,11 @@ class BacktraderMigrationEngine:
         aligned_factor = factor_df.loc[common_dates, common_stocks]
 
         return aligned_price, aligned_factor
+    def _generate_holding_signals_for_next(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
+        holding_signals = self._generate_holding_signals(factor_df,price_df)
+        # 将 T 日的交易计划，移动到 T-1 日的行上，为策略的 next() 方法做好准备
+        final_signals_for_strategy = holding_signals.shift(-1)
+        return final_signals_for_strategy
 
     def _generate_holding_signals(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
         """
