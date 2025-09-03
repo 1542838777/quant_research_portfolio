@@ -50,6 +50,8 @@ class BacktraderConfig:
     enable_retry_mechanism: bool = True   # 启用重试机制
     trading_days: list = None         #  交易日期列表
     real_wide_prices: pd.DataFrame =None        #  真实价格
+    _buy_success_num: dict=None
+    _sell_success_num: dict=None
 
     # === 新增：动态权重管理 ===
     use_dynamic_weights: bool = True     # 使用动态权重分配

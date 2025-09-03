@@ -67,7 +67,9 @@ class EnhancedFactorStrategy(bt.Strategy):
         ('log_detailed', True),  # 详细日志
         ('enable_retry', True),  # 启用重试机制
         ('trading_days', None),  # 交易日列表
-        ('real_wide_prices', None),  #保存真实价格
+        ('_buy_success_num', {}),  #每日买入数量
+        ('_sell_success_num', {}),  #每日卖出数量
+        ('real_wide_prices', None),  # 保存真实价格
     )
 
     def __init__(self):
@@ -104,7 +106,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 6. 风险控制
         self.emergency_exits = 0  # 紧急止损次数
         self.forced_exits = 0  # 强制超期卖出次数
-        self.real_wide_prices = self.p.real_wide_prices # 保存真实价格
+        self.real_wide_prices = self.p.real_wide_prices  # 保存真实价格
 
         # 辅助信息
 
@@ -113,7 +115,8 @@ class EnhancedFactorStrategy(bt.Strategy):
         logger.info(f"  最大持仓: {self.p.max_positions}只")
         logger.info(f"  最大持有期: {self.p.max_holding_days}天")
         logger.info(f"  重试期限: {self.p.retry_buy_days}天")
-    #next机制：函数内部：决定好明天买什么！，明天9点半准时开盘价买入 （所以我给的信号，也是说明明天要买什么的信号！
+
+    # next机制：函数内部：决定好明天买什么！，明天9点半准时开盘价买入 （所以我给的信号，也是说明明天要买什么的信号！
     def expect_t_buy_by_signals(self):
         """
         预期明天买入的股票 -
@@ -125,7 +128,8 @@ class EnhancedFactorStrategy(bt.Strategy):
         return t_want_hold_stocks
 
     def showt_t_buy_by_signals(self):
-        logger.info(f"\t\t\t{self.datetime.date(0)}今天准备明天买入的股票:::{  self.expect_t_buy_by_signals()}")
+        logger.info(f"\t\t\t{self.datetime.date(0)}今天准备明天买入的股票:::{self.expect_t_buy_by_signals()}")
+
     def next(self):
         """
         统一的sell-buy分离架构 - 优先卖出释放现金，再统一买入
@@ -136,28 +140,27 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         self.show_cur_day_first()
 
-        
         # === 第1步：日常状态更新 ===
         self._daily_state_update()
-        
+
         # === 第2步：统一卖出阶段 ===
         # 1. 收集所有今天需要卖出的股票
         stocks_to_sell_today = self._get_all_sell_intentions()
-        
+
         # 2. 一次性执行所有卖出
         self._execute_all_sells(stocks_to_sell_today)
-        
+
         # === 第3步：统一买入阶段 ===
         # 3. 收集所有今天需要买入的股票
-        stocks_to_sell_today,no_pending_buys = self._get_all_buy_intentions()
+        stocks_to_sell_today, no_pending_buys = self._get_all_buy_intentions()
 
         # 4. 一次性执行所有买入（Backtrader会自动处理资金约束）
-        self._execute_all_buys_prioritized(stocks_to_sell_today,no_pending_buys)
-        
+        self._execute_all_buys_prioritized(stocks_to_sell_today, no_pending_buys)
 
     def tomorrow_is_rebalance_day(self):
-        execution_date = get_tomorrow_b_day(self.p.trading_days,pd.Timestamp(self.datetime.date(0)))
-        return  execution_date in self.rebalance_dates_set
+        execution_date = get_tomorrow_b_day(self.p.trading_days, pd.Timestamp(self.datetime.date(0)))
+        return execution_date in self.rebalance_dates_set
+
     def show_cur_day_first(self):
         current_date = self.datetime.date(0)
         log_success(f'{current_date}今天准备明天事宜')
@@ -182,23 +185,23 @@ class EnhancedFactorStrategy(bt.Strategy):
         pending_buy_candidates = set(self.pending_buys)
 
         # 3. 返回合并后的总候选池
-        return new_buy_candidates.union(pending_buy_candidates),set(self.pending_buys.keys()).__len__()==0
+        return new_buy_candidates.union(pending_buy_candidates), set(self.pending_buys.keys()).__len__() == 0
 
-    def _execute_all_buys_prioritized(self, buy_candidates: set,no_pending_buys:bool=None):
+    def _execute_all_buys_prioritized(self, buy_candidates: set, no_pending_buys: bool = None):
         """
         统一执行所有买入
         - 核心：对所有候选者，根据最新因子值进行重排，择优录取。
         """
         if not buy_candidates:
             return
-        if no_pending_buys :
-             self._execute_all_buys(buy_candidates)
-             return
+        if no_pending_buys:
+            self._execute_all_buys(buy_candidates)
+            return
         current_date = self.datetime.date(0)
 
         # 1. 【择优】获取所有候选者“今天”的最新因子排名
         #    注意：我们索引的是 factor_data 的【今天】，它包含的是 T-1 的因子值
-        try:#todo思考 会不会有问题！，这里基于昨天收盘的后排序！ 然后明天开盘买入！ 显然不合理
+        try:  # todo思考 会不会有问题！，这里基于昨天收盘的后排序！ 然后明天开盘买入！ 显然不合理
             latest_ranks = self.p.factor_data.loc[pd.to_datetime(current_date), list(buy_candidates)].dropna()
         except KeyError:
             raise ValueError(f"[{current_date}] 无法获取部分候选者的最新因子值。")
@@ -208,9 +211,8 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 3. 从排名最高的候选者中，选出最终要买入的股票
         final_stocks_to_buy = latest_ranks.nlargest(slots_available).index.tolist()
 
-
         if not final_stocks_to_buy:
-            #这活生生的把新选出来的股票丢了？那不能！
+            # 这活生生的把新选出来的股票丢了？那不能！
             for buy_candidate in buy_candidates:
                 self.push_to_pending_buys(buy_candidate)
             return
@@ -234,7 +236,7 @@ class EnhancedFactorStrategy(bt.Strategy):
                 )
             else:
                 # 停牌，加入/更新待买清单
-                self.push_to_pending_buys(stock_name,"")
+                self.push_to_pending_buys(stock_name, "")
 
     def _get_all_sell_intentions(self, target_stocks_for_rebalance=None):
         """
@@ -325,85 +327,75 @@ class EnhancedFactorStrategy(bt.Strategy):
         trading_days = 0
         current = start_date
         while current < end_date:
-            current = get_tomorrow_b_day(self.p.trading_days,pd.to_datetime(current))
+            current = get_tomorrow_b_day(self.p.trading_days, pd.to_datetime(current))
             if pd.Timestamp(current) in self._trading_calendar:
                 trading_days += 1
         return trading_days
-
-
 
     def del_pengding_buys_safe(self, stock_name):
         if stock_name in self.pending_buys:
             del self.pending_buys[stock_name]
 
-
     def del_pengding_sells_safe(self, stock_name):
         if stock_name in self.pending_sells:
             del self.pending_sells[stock_name]
-
-
-
-
-
-
-
 
     def _get_rebalance_buy_intentions(self):
         """调仓日的买入意图"""
         target_stocks = self.expect_t_buy_by_signals()
         buy_list = {}
-        
+
         current_holdings_count = len([d for d in self.datas if self.getposition(d).size > 0])
         target_stocks_num = min(len(target_stocks), self.p.max_positions)
-        
+
         if target_stocks_num <= 0:
             return buy_list
-        
+
         # 权重计算
         if current_holdings_count > 0:
             target_weight = 0.8 / target_stocks_num
         else:
             target_weight = 0.9 / target_stocks_num
-        
+
         for stock_name in target_stocks:
             data_obj = self.getdatabyname(stock_name)
             if self.getposition(data_obj).size == 0:  # 只买入未持有的
                 buy_list[stock_name] = target_weight
-        
+
         return buy_list
 
     def _get_pending_buy_intentions(self):
         """非调仓日：处理待买清单"""
         buy_list = {}
         current_date = self.datetime.date(0)
-        
+
         for stock_name in list(self.pending_buys.keys()):
             retry_count, target_date, target_weight = self.pending_buys[stock_name]
             trading_days_elapsed = self._get_trading_days_between(target_date, current_date)
-            
+
             if trading_days_elapsed > self.p.retry_buy_days:
                 self.del_pengding_buys_safe(stock_name)
             else:
                 buy_list[stock_name] = target_weight
-        
+
         return buy_list
 
     def _execute_all_sells(self, stocks_to_sell):
         """统一执行所有卖出"""
         for stock_name, reason in stocks_to_sell.items():
             data_obj = self.getdatabyname(stock_name)
-            
+
             if self.getposition(data_obj).size > 0:
                 if self._is_tradable(data_obj):
                     self._submit_order_with_pending(
-                        stock_name=stock_name, 
-                        data_obj=data_obj, 
+                        stock_name=stock_name,
+                        data_obj=data_obj,
                         target_weight=0,
-                        action='sell', 
+                        action='sell',
                         reason=reason
                     )
                     # 注意：统计计数器在notify_order中更新，这里不需要重复
-                    
+
 
                 else:
                     # 不可交易，加入待卖清单
@@ -414,11 +406,11 @@ class EnhancedFactorStrategy(bt.Strategy):
         target_weight = self._calculate_dynamic_weight(len(stocks_to_buy))
         for stock_name in stocks_to_buy:
             data_obj = self.getdatabyname(stock_name)
-            
+
             if self._is_tradable(data_obj):
                 self._submit_order_with_pending(
                     stock_name=stock_name,
-                    data_obj=data_obj, 
+                    data_obj=data_obj,
                     target_weight=target_weight,
                     action='buy'
                 )
@@ -453,8 +445,8 @@ class EnhancedFactorStrategy(bt.Strategy):
             self.push_to_pending_buys(stock_name, "提交买入订单失败（原因：" + reason + ")")
         return False
 
-
-    def _submit_order(self, stock_name: str, data_obj, target_weight: float, action: str, reason: str = 'narmal') -> bool:
+    def _submit_order(self, stock_name: str, data_obj, target_weight: float, action: str,
+                      reason: str = 'narmal') -> bool:
         """
         提交订单 -
         Args:
@@ -467,7 +459,8 @@ class EnhancedFactorStrategy(bt.Strategy):
         else:
             self.submit_sell_orders += 1
         try:
-            current_position, current_cash, current_price = self.debug_data_for_submit(stock_name, action, target_weight)
+            current_position, current_cash, current_price = self.debug_data_for_submit(stock_name, action,
+                                                                                       target_weight)
             # 对于卖出订单 （无脑强制卖）（为了照顾：如果是COC当日买卖限制  （第一个c是昨日收盘价！我们人为理解是昨天的买入！。但是此框架今天买入！。导致今天无法卖出！，所以出此下策！强制卖！
             if action == 'sell':
                 order = self.order_target_size(data=data_obj, target=0)
@@ -522,14 +515,13 @@ class EnhancedFactorStrategy(bt.Strategy):
             logger.error(f"  异常详情: 现金={self.broker.get_cash():.2f}, 价格={data_obj.close[0]:.2f}")
             raise ValueError(e)
 
-
     def _is_tradable(self, data_obj) -> bool:
         """
         检查股票是否可交易 -
         Args:  data_obj: 数据对象
         Returns:bool: 是否可交易
         """
-        current_date = self.datetime.date(0) #可能需要+Bday ：最终解释：千万不要，那样偷看了未来！
+        current_date = self.datetime.date(0)  # 可能需要+Bday ：最终解释：千万不要，那样偷看了未来！
         stock_name = data_obj._name
         price = self.p.real_wide_prices.loc[pd.to_datetime(current_date), stock_name]
         return not pd.isna(price)
@@ -549,7 +541,6 @@ class EnhancedFactorStrategy(bt.Strategy):
         for record_dict in records_to_clean:
             if stock_name in record_dict:
                 del record_dict[stock_name]
-
 
     def debug_data_for_submit(self, stock_name, action, target_weight):
         data_obj = self.getdatabyname(stock_name)
@@ -573,7 +564,6 @@ class EnhancedFactorStrategy(bt.Strategy):
                          f"此次目标: {stock_name}  价格: {current_price:.2f}, 当前已持仓: {current_position}")
         return current_position, current_cash, current_price
 
-
     def get_current_value_approximate(self):
         """
        解决Backtrader在某些情况下get_value返回NaN的问题
@@ -596,7 +586,6 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         return current_cash + sum_value, True
 
-
     def find_last_notNa_price(self, data):
         """
            从当前bar往前找，返回最近一个非NaN的收盘价
@@ -618,7 +607,6 @@ class EnhancedFactorStrategy(bt.Strategy):
                 return price
             i += 1
 
-
     def refresh_for_success_buy(self, stock_name: str, pending_buys_snap):
         """
         成功买入后的记录刷新
@@ -634,7 +622,6 @@ class EnhancedFactorStrategy(bt.Strategy):
         if stock_name in pending_buys_snap:
             self.pending_buys.pop(stock_name, None)
 
-
     def refresh_for_success_sell(self, stock_name: str, pending_sells_snap):
         """
         成功卖出后的记录刷新
@@ -645,27 +632,23 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 清理已平仓的记录
         self._cleanup_position_records(stock_name)
         # 移除，反正我今天是卖出去了
-        if stock_name in pending_sells_snap:
-            self.pending_sells.pop(stock_name, None)
-
+        self.pending_sells.pop(stock_name, None)
 
     def push_to_pending_sells(self, stock_name, descrip=""):
         old_retrys = 0
         if stock_name in self.pending_sells:
             old_retrys = self.pending_sells[stock_name][0]  # 获取重试次数
-        trade_day=get_tomorrow_b_day(self.p.trading_days, pd.to_datetime(self.datetime.date(0)))
+        trade_day = get_tomorrow_b_day(self.p.trading_days, pd.to_datetime(self.datetime.date(0)))
 
         self.pending_sells[stock_name] = (old_retrys + 1, trade_day, descrip)
-
 
     def push_to_pending_buys(self, stock_name, descrip):
         old_retrys = 0
         if stock_name in self.pending_buys:
             old_retrys = self.pending_buys[stock_name][0]  # 获取重试次数
 
-        trade_day=get_tomorrow_b_day(self.p.trading_days, pd.to_datetime(self.datetime.date(0)))
-        self.pending_buys[stock_name] = (old_retrys + 1,trade_day, descrip)
-
+        trade_day = get_tomorrow_b_day(self.p.trading_days, pd.to_datetime(self.datetime.date(0)))
+        self.pending_buys[stock_name] = (old_retrys + 1, trade_day, descrip)
 
     def notify_order(self, order):
         """
@@ -699,6 +682,8 @@ class EnhancedFactorStrategy(bt.Strategy):
                             f"股数: {order.executed.size:.0f}, "
                             f"价格: {order.executed.price:.2f},"
                             f"乘积: {order.executed.price * order.executed.size}")
+            # 存入map
+            self.push_to_cur_day_num(execution_date, order)
 
         # 订单失败处理
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
@@ -719,13 +704,24 @@ class EnhancedFactorStrategy(bt.Strategy):
             # 根据失败类型决定重试策略
             if order.isbuy() and self.p.enable_retry:
                 # 买入失败，加入待买清单
-                    self.push_to_pending_buys(stock_name,"")
+                self.push_to_pending_buys(stock_name, "")
             elif order.issell():
                 # 卖出失败，加入待卖清单
-                    self.push_to_pending_sells(stock_name,"")
+                self.push_to_pending_sells(stock_name, "")
 
             if self.p.debug_mode:
-                    logger.warning(f"{action}失败，加入重试: {stock_name}, 原因: {failure_record}")
+                logger.warning(f"{action}失败，加入重试: {stock_name}, 原因: {failure_record}")
+
+    def push_to_cur_day_num(self, execution_date, order):
+        origin_num = 0
+        if order.isbuy():
+            if execution_date in self.p._buy_success_num:
+                origin_num = self.p._buy_success_num[execution_date]
+            self.p._buy_success_num[execution_date] = origin_num + 1
+            return
+        if execution_date in self.p._sell_success_num:
+            origin_num = self.p._sell_success_num[execution_date]
+        self.p._sell_success_num[execution_date] = origin_num + 1
 
     # 注意场景！
     def _calculate_dynamic_weight(self, need_buy_count, ) -> float:  # todo 需要测试 回测
@@ -738,14 +734,13 @@ class EnhancedFactorStrategy(bt.Strategy):
         current_positions = len([d for d in self.datas if self.getposition(d).size > 0])
 
         # 总目标持仓数
-        total_target = min(self.p.max_positions, current_positions + need_buy_count )
+        total_target = min(self.p.max_positions, current_positions + need_buy_count)
 
         # 动态权重分配
-        if current_positions <= 0: #么有持仓
+        if current_positions <= 0:  # 么有持仓
             return 0.9 / total_target
         else:
             return 0.9 / self.p.max_positions
-
 
     def _log_daily_status(self, current_date):
         """
@@ -758,7 +753,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         current_holdings_count = len([d for d in self.datas if self.getposition(d).size > 0])
         pending_sells_count = len(self.pending_sells)
         pending_buys_count = len(self.pending_buys)
-        total_value,_ = self.get_current_value_approximate()
+        total_value, _ = self.get_current_value_approximate()
         cash = self.broker.get_cash()
 
         daily_stat = {
@@ -767,7 +762,7 @@ class EnhancedFactorStrategy(bt.Strategy):
             'pending_sells': pending_sells_count,
             'pending_buys': pending_buys_count,
             'total_value': total_value,
-            'cash_ratio': cash/total_value,
+            'cash_ratio': cash / total_value,
         }
 
         self.daily_stats.append(daily_stat)
@@ -776,7 +771,6 @@ class EnhancedFactorStrategy(bt.Strategy):
             logger.info(f"\t\t{current_date}: 实际持仓{current_holdings_count}只, "
                         f"pending_sells_count {pending_sells_count}只, pending_buys_count {pending_buys_count}只, "
                         f"现金{cash:.1f}--总价值{total_value}")
-
 
     def stop(self):
         """策略结束处理 - 详细统计和分析"""
@@ -820,7 +814,6 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         # 持仓分析
         self._analyze_holding_patterns()
-
 
     def _analyze_holding_patterns(self):
         """
@@ -945,7 +938,8 @@ class BacktraderMigrationEngine:
                 price_for_strategy_logic = aligned_price
 
                 # === 2. 生成明天的持仓信号
-                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor, price_for_strategy_logic)
+                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor,
+                                                                                   price_for_strategy_logic)
 
                 cerebro = bt.Cerebro(quicknotify=True)
                 # cerebro.broker.set_coo(True)
@@ -1014,7 +1008,7 @@ class BacktraderMigrationEngine:
                     'config_used': self.bt_config.copy()
                 }
 
-                logger.info(f"{factor_name} 迁移完成: 最终价值 {final_value:,.2f}, "
+                logger.info(f"最终价值 {final_value:,.2f}, "
                             f"耗时 {execution_time:.2f}秒")
 
             except Exception as e:
@@ -1042,11 +1036,10 @@ class BacktraderMigrationEngine:
             #    确保它是python原生的datetime对象，兼容性最好
             df_single_stock['datetime'] = pd.to_datetime(wide_price_df.index)
 
-
             # 3. 填充OHLCV和其他数据列
             #    使用 .values 可以避免pandas版本差异带来的索引对齐问题
             temp = wide_price_df[stock_symbol].values
-            df_single_stock['open'] = temp*0.8
+            df_single_stock['open'] = temp * 0.8
             df_single_stock['high'] = temp
             df_single_stock['low'] = temp
             df_single_stock['close'] = temp
@@ -1078,7 +1071,6 @@ class BacktraderMigrationEngine:
 
         logger.info(f"\n成功为 {len(cerebro.datas)} 只股票添加了独立的数据源。")
 
-
     def _align_data(self, price_df: pd.DataFrame, factor_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         数据对齐 - 兼容原有的vectorBT对齐逻辑
@@ -1099,8 +1091,9 @@ class BacktraderMigrationEngine:
         aligned_factor = factor_df.loc[common_dates, common_stocks]
 
         return aligned_price, aligned_factor
+
     def _generate_holding_signals_for_next(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
-        holding_signals = self._generate_holding_signals(factor_df,price_df)
+        holding_signals = self._generate_holding_signals(factor_df, price_df)
         # 将 T 日的交易计划，移动到 T-1 日的行上，为策略的 next() 方法做好准备
         final_signals_for_strategy = holding_signals.shift(-1)
         return final_signals_for_strategy.astype(bool)
@@ -1116,7 +1109,7 @@ class BacktraderMigrationEngine:
         Returns:
             pd.DataFrame: 持仓信号矩阵
         """
-        #安全起见，  factor_df跟price_df 对照一下，如果价格为nan，那么把factor也置为nan，然后再去rank
+        # 安全起见，  factor_df跟price_df 对照一下，如果价格为nan，那么把factor也置为nan，然后再去rank
         is_tradable_mask = price_df.notna() & (price_df > 0)
         factor_df = factor_df.where(is_tradable_mask)
         # 计算每日排名百分位
@@ -1154,8 +1147,8 @@ class BacktraderMigrationEngine:
 
         # 兜底保证，停牌日的持仓信号为False 放弃！
         # holding_signals[price_df.isna() | (price_df <= 0)] = False#下游策略“信息缺失”，无法区分“主动调仓”与“被动停牌”
-        #思考：还是有必要置为false ，因为backTrade用的fill数据价格，无法感知停牌！next（我们手动判断：也只能满足：每天看看持有的：哪些停牌了，得卖出。而无法满足：拦截买入时判断停牌状态！
-        #假设两个仓之间：A因为停牌，卖出，但是信号一直为True，每天都在尝试买入! 假设后面可买入，准备明天开盘买，但是明天又停牌了!导致买入失败！ （但是好像也不大
+        # 思考：还是有必要置为false ，因为backTrade用的fill数据价格，无法感知停牌！next（我们手动判断：也只能满足：每天看看持有的：哪些停牌了，得卖出。而无法满足：拦截买入时判断停牌状态！
+        # 假设两个仓之间：A因为停牌，卖出，但是信号一直为True，每天都在尝试买入! 假设后面可买入，准备明天开盘买，但是明天又停牌了!导致买入失败！ （但是好像也不大
         # holding_signals[price_df.isna() | (price_df <= 0)] = False
         return holding_signals.astype(bool)
 
@@ -1230,11 +1223,9 @@ def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFr
     return results, comparison_table
 
 
-
 # 运行测试
 
 if __name__ == "__main__":
     print()
-    # 测试示例：
-    # 假设你有原有的数据和配置
-    # results, comparison = one_click_migration(price_df, factor_dict, original_config)
+   #调用
+
