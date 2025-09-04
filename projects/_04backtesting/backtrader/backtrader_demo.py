@@ -67,7 +67,7 @@ def load_data_for_backtrader_demo():
             raise ValueError("未能加载到有效的因子数据")
         
         logger.info(f"数据加载完成: 价格{price_df.shape}, 因子{len(factor_dict)}个")
-        price_df = price_df[-17:]
+        price_df = price_df[-20:]
         return price_df, factor_dict
         
     except Exception as e:

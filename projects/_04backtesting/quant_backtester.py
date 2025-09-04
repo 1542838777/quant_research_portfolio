@@ -67,6 +67,7 @@ class BacktestConfig:
 
     #股票持有信息：
     max_holding_days: int= 45
+    buy_after_sell_cooldown:int=10
 
 
 class DataValidator:

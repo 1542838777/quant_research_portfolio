@@ -51,8 +51,8 @@ class EnhancedFactorStrategy(bt.Strategy):
     params = (
         # 策略核心参数
         ('factor_data', None),  # 因子数据DataFrame
-        ('holding_signals', None),  # 预计算的持仓信号矩阵
         ('rebalance_dates', []),  # 调仓日期列表
+        ('top_quantile', []),  #
         ('max_positions', 10),  # 最大持仓数量
         ('max_holding_days', 60),  # 最大持仓天数（强制卖出）
         ('retry_buy_days', 3),  # 买入重试天数
@@ -70,6 +70,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         ('_buy_success_num', {}),  #每日买入数量
         ('_sell_success_num', {}),  #每日卖出数量
         ('real_wide_prices', None),  # 保存真实价格
+        ('buy_after_sell_cooldown', None),  #
     )
 
     def __init__(self):
@@ -93,6 +94,16 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 4. 交易重试管理（完全替代vectorBT中的复杂重试逻辑）
         self.buy_retry_log = {}  # {stock_name: [失败日期列表]}
         self.sell_retry_log = {}  # {stock_name: [失败日期列表]}
+        #交易冷却
+        self.recently_sold={}
+
+        # 1. 加载未经shift的原始因子计算出的每日排名
+        #    ranks.loc[T] 存储的是基于T日收盘信息计算出的排名
+        #反正就要今日数据!.用于参考出rank排名,明天好买入!
+        self.ranks = self.load_t_ranks_df()
+
+        # 2. “明日目标持仓”状态变量， (每次调仓日才决定写入!!
+        self.tomorrow_target_positions = set()
 
         # 5. 性能统计和调试
         self.daily_stats = []  # 每日统计信息
@@ -115,20 +126,47 @@ class EnhancedFactorStrategy(bt.Strategy):
         logger.info(f"  最大持仓: {self.p.max_positions}只")
         logger.info(f"  最大持有期: {self.p.max_holding_days}天")
         logger.info(f"  重试期限: {self.p.retry_buy_days}天")
+    def load_t_ranks_df(self):
+          origin_t1= self.p.factor_data.copy()#因为我们传入的t-1
+          factor_df =origin_t1.shift(-1)
+          return factor_df.rank(axis=1, pct=True, method='average', na_option='keep')
 
     # next机制：函数内部：决定好明天买什么！，明天9点半准时开盘价买入 （所以我给的信号，也是说明明天要买什么的信号！
     def expect_t_buy_by_signals(self):
-        """
-        预期明天买入的股票 -
-        """
+        # """
+        # 预期明天买入的股票 -
+        # """
+        # current_date = self.datetime.date(0)
+        # target_holdings_signal = self.p.holding_signals.loc[pd.to_datetime(current_date)]
+        # t_want_hold_stocks = target_holdings_signal[target_holdings_signal].index.tolist()
+        #
+        # return t_want_hold_stocks
+        return self.tomorrow_target_positions
+    def is_rebalance_day(self):
         current_date = self.datetime.date(0)
-        target_holdings_signal = self.p.holding_signals.loc[pd.to_datetime(current_date)]
-        t_want_hold_stocks = target_holdings_signal[target_holdings_signal].index.tolist()
+        return pd.to_datetime(current_date) in  self.p.rebalance_dates
 
-        return t_want_hold_stocks
+    def init_data_for_target_positions_if_rebalance_day(self):
+        current_date = self.datetime.date(0)
+        #在调仓日，更新“战略目标  ###不然每天都任由每天的rank情况进行自由选股,那样手续费罩不住!
+        if self.is_rebalance_day():
+            try:
+                # a. 获取今天的排名 (基于今天收盘的数据)
+                daily_ranks = self.ranks.loc[pd.to_datetime(current_date)].dropna()
 
-    def showt_t_buy_by_signals(self):
-        logger.info(f"\t\t\t{self.datetime.date(0)}今天准备明天买入的股票:::{self.expect_t_buy_by_signals()}")
+                if not daily_ranks.empty:
+                    # b. 根据排名和规则选股
+                    num_to_select = int(np.ceil(len(daily_ranks) * self.p.top_quantile))
+                    if self.p.max_positions:
+                        num_to_select = min(num_to_select, self.p.max_positions)
+
+                    # c. 【核心】更新目标持仓状态变量
+                    new_targets = set(daily_ranks.nlargest(num_to_select).index)
+                    if self.tomorrow_target_positions != new_targets:
+                        logger.info(f"【调仓日】明日待买目标更新为: {new_targets}")
+                        self.tomorrow_target_positions = new_targets
+            except KeyError:
+                raise ValueError(f"在 {current_date} 无法找到因子排名数据。")
 
     def next(self):
         """
@@ -142,6 +180,7 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         # === 第1步：日常状态更新 ===
         self._daily_state_update()
+        self.init_data_for_target_positions_if_rebalance_day()
 
         # === 第2步：统一卖出阶段 ===
         # 1. 收集所有今天需要卖出的股票
@@ -167,25 +206,24 @@ class EnhancedFactorStrategy(bt.Strategy):
         # === 当天开端统计信息 ===
         if self.p.log_detailed:
             self._log_daily_status(current_date)
-        self.showt_t_buy_by_signals()
 
     def _get_all_buy_intentions(self):
         """
           收集所有潜在的买入候选者（新的+待办的）。
           """
         # 1. 获取今天“理想计划”中的新买入目标
-        current_date = self.datetime.date(0)
-        target_signal = self.p.holding_signals.loc[pd.to_datetime(current_date)]
-        all_target_stocks = set(target_signal[target_signal].index.tolist())
+        target_signal = self.expect_t_buy_by_signals()
 
         current_positions = set([d._name for d in self.datas if self.getposition(d).size > 0])
-        new_buy_candidates = all_target_stocks - current_positions
+        new_buy_candidates = target_signal - current_positions
 
         # 2. 获取“待买清单”中的旧目标
         pending_buy_candidates = set(self.pending_buys)
 
         # 3. 返回合并后的总候选池
-        return new_buy_candidates.union(pending_buy_candidates), set(self.pending_buys.keys()).__len__() == 0
+        buys = new_buy_candidates.union(pending_buy_candidates)
+        buys = self._filter_cooldown_stocks(buys)
+        return buys, set(self.pending_buys.keys()).__len__() == 0
 
     def _execute_all_buys_prioritized(self, buy_candidates: set, no_pending_buys: bool = None):
         """
@@ -194,7 +232,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         """
         if not buy_candidates:
             return
-        if no_pending_buys:
+        if no_pending_buys:#没有待买的股票 需要重新rank -->那就直接买!.
             self._execute_all_buys(buy_candidates)
             return
         current_date = self.datetime.date(0)
@@ -212,7 +250,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         final_stocks_to_buy = latest_ranks.nlargest(slots_available).index.tolist()
 
         if not final_stocks_to_buy:
-            # 这活生生的把新选出来的股票丢了？那不能！
+            # 这活生生的把新选出来的股票丢了？那不能！ (场景:当天满持仓,确实买不进去了,那么进入pending
             for buy_candidate in buy_candidates:
                 self.push_to_pending_buys(buy_candidate)
             return
@@ -294,6 +332,27 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         return all_sells
 
+    # 在你的策略类中
+    def _filter_cooldown_stocks(self, buy_candidates: set) -> set:
+        """从买入候选中，剔除正在冷却期的股票（基于K线索引计算）"""
+        if not self.recently_sold:
+            return buy_candidates
+
+        current_bar_index = len(self)
+        stocks_in_cooldown = set()
+
+        for stock, sold_bar_index in list(self.recently_sold.items()):
+            # 极其简单、高效且精确的整数减法
+            bars_since_sold = current_bar_index - sold_bar_index
+
+            if bars_since_sold < self.p.buy_after_sell_cooldown:
+                stocks_in_cooldown.add(stock)
+            else:
+                # 冷却期已过，从字典中移除
+                del self.recently_sold[stock]
+                logger.info(f"【冷却解除】: {stock} 已度过 {bars_since_sold} 根K线，解除冷却。")
+
+        return buy_candidates - stocks_in_cooldown
     def _daily_state_update(self):
         """
         每日状态更新 -
@@ -386,20 +445,13 @@ class EnhancedFactorStrategy(bt.Strategy):
             data_obj = self.getdatabyname(stock_name)
 
             if self.getposition(data_obj).size > 0:
-                if self._is_tradable(data_obj):
-                    self._submit_order_with_pending(
-                        stock_name=stock_name,
-                        data_obj=data_obj,
-                        target_weight=0,
-                        action='sell',
-                        reason=reason
-                    )
-                    # 注意：统计计数器在notify_order中更新，这里不需要重复
-
-
-                else:
-                    # 不可交易，加入待卖清单
-                    self.push_to_pending_sells(stock_name, reason)
+                self._submit_order_with_pending(
+                    stock_name=stock_name,
+                    data_obj=data_obj,
+                    target_weight=0,
+                    action='sell',
+                    reason=reason
+                )
 
     def _execute_all_buys(self, stocks_to_buy):
         """统一执行所有买入"""
@@ -408,13 +460,13 @@ class EnhancedFactorStrategy(bt.Strategy):
             data_obj = self.getdatabyname(stock_name)
 
             if self._is_tradable(data_obj):
+                #有必要判断,明天该买的股票 今天居然是停牌状态!,所以有必要让其加入pending,次日就不买! 次次日 发现pending有数据,会重新rank排序,如果发现排序依然在前面,才买!这样更安全
                 self._submit_order_with_pending(
                     stock_name=stock_name,
                     data_obj=data_obj,
                     target_weight=target_weight,
                     action='buy'
                 )
-                # 注意：不要在这里清理记录，应该在notify_order中订单成功后清理
             else:
                 # 停牌，保持在待买清单
                 self.push_to_pending_buys(stock_name)
@@ -706,14 +758,22 @@ class EnhancedFactorStrategy(bt.Strategy):
             # 根据失败类型决定重试策略
             if order.isbuy() and self.p.enable_retry:
                 # 买入失败，加入待买清单
-                self.push_to_pending_buys(stock_name, "")
+                self.push_to_pending_buys(stock_name,  f"{failure_record['status']}")
             elif order.issell():
                 # 卖出失败，加入待卖清单
-                self.push_to_pending_sells(stock_name, "")
+                self.push_to_pending_sells(stock_name, f"{failure_record['status']}")
 
             if self.p.debug_mode:
                 logger.warning(f"{action}失败，加入重试: {stock_name}, 原因: {failure_record}")
 
+    def notify_trade(self, trade):
+        """当一笔交易关闭（平仓）时，记录该股票和当时的K线索引"""
+        if trade.isclosed:
+            stock_name = trade.data._name
+            # len(self) 提供了当前K线的索引+1，是完美的“时间戳”
+            bar_index_when_sold = len(self)
+            self.recently_sold[stock_name] = bar_index_when_sold  # 记录的是整数索引
+            # logger.info(f"【冷却记录】: {stock_name} 在第 {bar_index_when_sold} 根K线被卖出，进入冷却期。")
     def push_to_cur_day_num(self, execution_date, order):
         origin_num = 0
         if order.isbuy():
@@ -892,7 +952,8 @@ class BacktraderMigrationEngine:
             'max_holding_days': getattr(vectorbt_config, 'max_holding_days', 60),
             'retry_buy_days': 3,
             'max_weight_per_stock': getattr(vectorbt_config, 'max_weight_per_stock', 0.15),
-            'min_weight_threshold': getattr(vectorbt_config, 'min_weight_threshold', 0.01)
+            'min_weight_threshold': getattr(vectorbt_config, 'min_weight_threshold', 0.01),
+            'buy_after_sell_cooldown': getattr(vectorbt_config, 'buy_after_sell_cooldown', 0.01),
         }
 
     def _default_config(self) -> Dict:
@@ -935,16 +996,12 @@ class BacktraderMigrationEngine:
                 # === 2. 生成明天的持仓信号
                 logger.info("开始信号生成")
 
-                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor,
-                                                                                   aligned_price)
                 logger.info("信号生成结束")
                 cerebro = bt.Cerebro(quicknotify=True)
                 # cerebro.broker.set_coo(True)
 
                 # todo 提前判断，！如果有的股票，从古到今都是在尾巴，那就tichu
-
-                holding_signals_for_next = holding_signals_for_next.loc[:, holding_signals_for_next.any(axis=0)].astype(bool)
-                aligned_factor = aligned_factor[holding_signals_for_next.columns]
+                aligned_factor = self.reshape_del_always_tottom(aligned_factor)
                 aligned_price, aligned_factor = self._align_data(price_df, aligned_factor)
                 # ===：创建两份价格数据 ===
                 # a. 一份用于“欺骗”Backtrader底层引擎，确保getvalue()正常
@@ -968,11 +1025,12 @@ class BacktraderMigrationEngine:
                 cerebro.addstrategy(
                     EnhancedFactorStrategy,
                     factor_data=aligned_factor,
-                    holding_signals=holding_signals_for_next,
                     rebalance_dates=rebalance_dates,
                     max_positions=self.bt_config['max_positions'],
+                    top_quantile=self.bt_config['top_quantile'],
                     max_holding_days=self.bt_config['max_holding_days'],
                     retry_buy_days=self.bt_config['retry_buy_days'],
+                    buy_after_sell_cooldown=self.bt_config['buy_after_sell_cooldown'],
                     debug_mode=True,
                     trading_days=load_trading_lists(aligned_factor.index[0], aligned_price.index[-1]),
                     real_wide_prices=price_for_strategy_logic,
@@ -1102,66 +1160,67 @@ class BacktraderMigrationEngine:
 
         return aligned_price, aligned_factor
 
-    def _generate_holding_signals_for_next(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
-        holding_signals = self._generate_holding_signals(factor_df, price_df)
-        # 将 T 日的交易计划，移动到 T-1 日的行上，为策略的 next() 方法做好准备
-        final_signals_for_strategy = holding_signals.shift(-1)
-        return final_signals_for_strategy
-
-    def _generate_holding_signals(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        生成持仓信号 -：factor_df t行数据 是t-1的数据！。也就说：t row rank排名：本质上是昨日数据rank的结果！
-        那么next走入t行，拿到这些昨日rank的结果，然后t+1开盘下单，显然有延迟！
-        解决办法：利用_generate_holding_signals_for_next ：调用包装这个_generate_holding_signals ，主要shift(-1)
-        Args:
-            factor_df: 对齐后的因子数据
-            price_df: 对齐后的价格数据
-            
-        Returns:
-            pd.DataFrame: 持仓信号矩阵
-        """
-        # 安全起见，  factor_df跟price_df 对照一下，如果价格为nan，那么把factor也置为nan，然后再去rank
-        is_tradable_mask = price_df.notna() & (price_df > 0)
-        factor_df = factor_df.where(is_tradable_mask)
-        # 计算每日排名百分位
-        ranks = factor_df.rank(axis=1, pct=True, method='average', na_option='keep')
-
-        # 生成调仓日期
-        rebalance_dates = generate_rebalance_dates(factor_df.index, self.bt_config['rebalancing_freq'])
-
-        # 初始化持仓信号矩阵
-        holding_signals = pd.DataFrame(False, index=factor_df.index, columns=factor_df.columns)
-
-        # 当前持仓组合（调仓间隔期间保持不变）
-        current_positions = None
-
-        for date in factor_df.index:
-            is_rebalance_day = date in rebalance_dates
-
-            if is_rebalance_day:
-                # 调仓日：重新选择股票
-                daily_valid_ranks = ranks.loc[date].dropna()
-
-                if len(daily_valid_ranks) > 0:
-                    # 计算目标持仓数
-                    num_to_select = int(np.ceil(len(daily_valid_ranks) * self.bt_config['top_quantile']))
-                    if self.bt_config['max_positions']:
-                        num_to_select = min(num_to_select, self.bt_config['max_positions'])
-
-                    # 选择排名最高的股票
-                    chosen_stocks = daily_valid_ranks.nlargest(num_to_select).index
-                    current_positions = chosen_stocks
-
-            # 重复前一天
-            if current_positions is not None:
-                holding_signals.loc[date, current_positions] = True
-
-        # 兜底保证，停牌日的持仓信号为False 放弃！
-        # holding_signals[price_df.isna() | (price_df <= 0)] = False#下游策略“信息缺失”，无法区分“主动调仓”与“被动停牌”
-        # 思考：还是有必要置为false ，因为backTrade用的fill数据价格，无法感知停牌！next（我们手动判断：也只能满足：每天看看持有的：哪些停牌了，得卖出。而无法满足：拦截买入时判断停牌状态！
-        # 假设两个仓之间：A因为停牌，卖出，但是信号一直为True，每天都在尝试买入! 假设后面可买入，准备明天开盘买，但是明天又停牌了!导致买入失败！ （但是好像也不大
-        # holding_signals[price_df.isna() | (price_df <= 0)] = False
-        return holding_signals.astype(bool)
+    # def _generate_holding_signals_for_next(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
+    #     holding_signals = self._generate_holding_signals(factor_df, price_df)
+    #     # 将 T 日的交易计划，移动到 T-1 日的行上，为策略的 next() 方法做好准备
+    #     final_signals_for_strategy = holding_signals.shift(-1)
+    #     return final_signals_for_strategy
+    # def _generate_holding_signals(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
+    #     """
+    #     生成持仓信号 -：factor_df t行数据 是t-1的数据！。也就说：t row rank排名：本质上是昨日数据rank的结果！
+    #     那么next走入t行，拿到这些昨日rank的结果，然后t+1开盘下单，显然有延迟！
+    #     解决办法：利用_generate_holding_signals_for_next ：调用包装这个_generate_holding_signals ，主要shift(-1)
+    #     Args:
+    #         factor_df: 对齐后的因子数据
+    #         price_df: 对齐后的价格数据
+    #
+    #     Returns:
+    #         pd.DataFrame: 持仓信号矩阵
+    #     """
+    #     # 安全起见，  factor_df跟price_df 对照一下，如果价格为nan，那么把factor也置为nan，然后再去rank
+    #     is_tradable_mask = price_df.notna() & (price_df > 0)
+    #     factor_df = factor_df.where(is_tradable_mask)
+    #     # 计算每日排名百分位
+    #     ranks = factor_df.rank(axis=1, pct=True, method='average', na_option='keep')
+    #
+    #     # 生成调仓日期
+    #     rebalance_dates = generate_rebalance_dates(factor_df.index, self.bt_config['rebalancing_freq'])
+    #
+    #     # 初始化持仓信号矩阵
+    #     holding_signals = pd.DataFrame(False, index=factor_df.index, columns=factor_df.columns)
+    #
+    #     # 当前持仓组合（调仓间隔期间保持不变）
+    #     current_positions = None
+    #
+    #     for date in factor_df.index:
+    #         is_rebalance_day = date in rebalance_dates
+    #
+    #         if is_rebalance_day:
+    #             # 调仓日：重新选择股票
+    #             daily_valid_ranks = ranks.loc[date].dropna()
+    #
+    #             if len(daily_valid_ranks) > 0:
+    #                 # 计算目标持仓数
+    #                 num_to_select = int(np.ceil(len(daily_valid_ranks) * self.bt_config['top_quantile']))
+    #                 if self.bt_config['max_positions']:
+    #                     num_to_select = min(num_to_select, self.bt_config['max_positions'])
+    #
+    #                 # 选择排名最高的股票
+    #                 chosen_stocks = daily_valid_ranks.nlargest(num_to_select).index
+    #                 current_positions = chosen_stocks
+    #
+    #         # 重复前一天
+    #         if current_positions is not None:
+    #             holding_signals.loc[date, current_positions] = True
+    #
+    #     # 兜底保证，停牌日的持仓信号为False 放弃！
+    #     # holding_signals[price_df.isna() | (price_df <= 0)] = False#下游策略“信息缺失”，无法区分“主动调仓”与“被动停牌”
+    #     # 思考：还是有必要置为false ，因为backTrade用的fill数据价格，无法感知停牌！next（我们手动判断：也只能满足：每天看看持有的：哪些停牌了，得卖出。而无法满足：拦截买入时判断停牌状态！
+    #     # 假设两个仓之间：A因为停牌，卖出，但是信号一直为True，每天都在尝试买入! 假设后面可买入，准备明天开盘买，但是明天又停牌了!导致买入失败！ （但是好像也不大
+    #     # holding_signals[price_df.isna() | (price_df <= 0)] = False
+    #
+    #     holding_signals = holding_signals.loc[:, holding_signals.any(axis=0)].astype(bool)
+    #     return holding_signals.astype(bool)
 
     def get_comparison_with_vectorbt(self, vectorbt_results: Dict = None) -> pd.DataFrame:
         """
@@ -1230,9 +1289,44 @@ class BacktraderMigrationEngine:
                 logger.info(f"  {date}: 买入成功 {buys} 笔, 卖出成功 {sells} 笔")
             logger.info("-" * 40)
 
-
-
         pass
+
+    def reshape_del_always_tottom(self, factor_df):
+        # 计算每日排名百分位
+        ranks = factor_df.rank(axis=1, pct=True, method='average', na_option='keep')
+        # 生成调仓日期
+        rebalance_dates = rebalance_dates = generate_rebalance_dates(factor_df.index, self.bt_config['rebalancing_freq'])
+        # 初始化持仓信号矩阵
+        holding_signals = pd.DataFrame(False, index=factor_df.index, columns=factor_df.columns)
+
+        # 当前持仓组合（调仓间隔期间保持不变）
+        current_positions = None
+
+        for date in factor_df.index:
+            is_rebalance_day = date in rebalance_dates
+
+            if is_rebalance_day:
+                # 调仓日：重新选择股票
+                daily_valid_ranks = ranks.loc[date].dropna()
+
+                if len(daily_valid_ranks) > 0:
+                    # 计算目标持仓数
+                    num_to_select = int(np.ceil(len(daily_valid_ranks) * (self.bt_config['top_quantile']+0.1))) #加0.1 为了安全
+                    if self.bt_config['max_positions']:
+                        num_to_select = int(min(num_to_select, self.bt_config['max_positions']*1.1)) #因为我没考虑停牌的,!这里多加入
+
+                    # 选择排名最高的股票
+                    chosen_stocks = daily_valid_ranks.nlargest(num_to_select).index
+                    current_positions = chosen_stocks
+
+            # 重复前一天
+            if current_positions is not None:
+                holding_signals.loc[date, current_positions] = True
+
+        holding_signals = holding_signals.loc[:, holding_signals.any(axis=0)].astype(bool)
+        #裁剪
+        factor_df = factor_df[holding_signals.columns]
+        return factor_df
 
 
 # === 便捷迁移函数 ===

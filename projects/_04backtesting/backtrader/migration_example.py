@@ -390,16 +390,15 @@ def t_():
         stamp_duty=0.001,
         initial_cash=1000000,  # 相对较少的初始资金
         max_positions=2,  # 少量持仓
-        max_holding_days=20  # 短期持有
+        max_holding_days=20,  # 短期持有
+        buy_after_sell_cooldown=10  #
     )
 
-    results, comparison = one_click_migration(
+    results = one_click_migration(
         price_df,
         {'problem_factor': factor_df},
         problem_config
     )
-    print("Backtrader结果:")
-    print(comparison)
 
 if __name__ == "__main__":
     t_()

@@ -47,6 +47,8 @@ class BacktraderConfig:
     retry_buy_days: int = 3              # 买入重试天数
     retry_sell_days: int = 50             # 卖出重试天数
     enable_forced_exits: bool = True     # 启用强制卖出
+    #  设置冷却期参数，例如卖出后10个交易日内不允许再买入
+    buy_after_sell_cooldown = 10
     enable_retry_mechanism: bool = True   # 启用重试机制
     trading_days: list = None         #  交易日期列表
     real_wide_prices: pd.DataFrame =None        #  真实价格
