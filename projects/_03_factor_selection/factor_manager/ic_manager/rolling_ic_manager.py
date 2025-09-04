@@ -72,7 +72,7 @@ class RollingICManager:
 
     def __init__(self,calcu_return_type, config: Optional[ICCalculationConfig] = None,version=None):
         self.main_work_path = Path(
-            r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
+            r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result")
         self.config = config or ICCalculationConfig()
         self.calcu_return_type=calcu_return_type
         self.version = version

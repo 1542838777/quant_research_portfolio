@@ -129,7 +129,7 @@ class RollingICFactorSelector:
         """
         self.snap_config_id = snap_config_id
         self.config = config or RollingICSelectionConfig()
-        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
+        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result")
         
         # 从配置快照获取基础信息
         self._load_config_info()

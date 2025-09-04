@@ -377,7 +377,7 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         self.quality_filter = FactorQualityFilter(self.config)
 
         # 设置工作路径
-        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result")
+        self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result")
 
         # 滚动IC管理器 - 核心改进
         rolling_ic_config = ICCalculationConfig(

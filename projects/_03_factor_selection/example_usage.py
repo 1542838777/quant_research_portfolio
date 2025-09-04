@@ -229,7 +229,7 @@ def save_close_hfq(stock_pool_name, factor_manager, data_manager):
         raise ValueError("close_hfq 数据为空，无法保存")
 
     path = Path(
-        r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result"
+        r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result"
     ) / stock_pool_index_code /'close_hfq'/ f'{data_manager.backtest_start_date}_{data_manager.backtest_end_date}'
 
     path.mkdir(parents=True, exist_ok=True)  # 确保目录存在

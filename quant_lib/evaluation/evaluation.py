@@ -229,8 +229,8 @@ def calculate_ic(
         - ic_series (pd.Series): IC时间序列，索引为满足条件的有效日期。
         - stats_dict (Dict): 包含IC均值、ICIR、t值、p值等核心统计指标的字典。
     """
-    # local_df=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\000906\log_circ_mv\c2c\20250101_20250710\processed_factor.parquet")
-    # close_hfq=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result\000906\close_hfq\20250101_20250710\close_hfq.parquet")
+    # local_df=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result\000906\log_circ_mv\c2c\20250101_20250710\processed_factor.parquet")
+    # close_hfq=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result\000906\close_hfq\20250101_20250710\close_hfq.parquet")
     # close_hfq_local=calculate_forward_returns_c2c(period=forward_periods[0],close_df=close_hfq)
     logger.info(f"\t向量化计算 {method.capitalize()} 类型IC (生产级版本)...")
     stats_periods_dict = {}

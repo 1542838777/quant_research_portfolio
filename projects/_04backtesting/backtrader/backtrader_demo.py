@@ -45,15 +45,15 @@ def load_data_for_backtrader_demo():
         # 加载因子数据
         factor_dict = {}
         
-        # 加载合成因子
-        composite_factor = result_manager.get_factor_data(
-            'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
-        )
-        
-        if composite_factor is not None and not composite_factor.empty:
-            factor_dict['lqs_orthogonal_v1'] = composite_factor
-            logger.info(f"合成因子加载成功: {composite_factor.shape}")
-        
+        # # 加载合成因子
+        # composite_factor = result_manager.get_factor_data(
+        #     'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
+        # )
+        #
+        # if composite_factor is not None and not composite_factor.empty:
+        #     factor_dict['lqs_orthogonal_v1'] = composite_factor
+        #     logger.info(f"合成因子加载成功: {composite_factor.shape}")
+        #
         # 如果没有合成因子，加载基础因子
         if not factor_dict:
             volatility_factor = result_manager.get_factor_data(
@@ -67,6 +67,7 @@ def load_data_for_backtrader_demo():
             raise ValueError("未能加载到有效的因子数据")
         
         logger.info(f"数据加载完成: 价格{price_df.shape}, 因子{len(factor_dict)}个")
+        price_df = price_df[-17:]
         return price_df, factor_dict
         
     except Exception as e:
@@ -82,25 +83,20 @@ def demo_basic_backtrader():
     
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
-        top_quantile=0.30,           # 做多前30%
-        rebalancing_freq='M',        # 月度调仓
+        top_quantile=0.15,           # 做多前30%
+        rebalancing_freq='d',        # 月度调仓
         commission_rate=0.0001,      # 万1佣金
         slippage_rate=0.001,         # 千1滑点
         stamp_duty=0.0005,           # 千0.5印花税
-        initial_cash=300000,         # 30万初始资金
-        max_positions=30,            # 最多持30只股票
-        max_holding_days=60
+        initial_cash=10000000,         # 30万初始资金
+        max_positions=1,            # 最多持30只股票
+        max_holding_days=30
     )
     # 3. 一键运行Backtrader回测
-    results, comparison_table = one_click_migration(price_df, factor_dict, config)
+    results = one_click_migration(price_df, factor_dict, config)
     
     # 4. 显示结果
-    logger.info("Backtrader回测结果:")
-    print("\n" + "="*80)
-    print("因子策略业绩对比表 (Backtrader版本)")
-    print("="*80)
-    print(comparison_table.round(4))
-    
+
     # 5. 详细分析每个因子的执行情况
     logger.info("\n" + "="*60)
     logger.info("📊 详细执行分析")
@@ -122,9 +118,9 @@ def demo_basic_backtrader():
             logger.info(f"  强制卖出: {strategy.forced_exits}次")
             logger.info(f"  最终价值: {result['final_value']:,.2f}")
     
-    return results, comparison_table
+    return results
 
-
+#不同策略config 对比实验
 def demo_advanced_scenarios():
     """高级场景演示 - 使用不同的策略模板"""
     logger.info("=" * 80)

@@ -11,7 +11,7 @@ Backtrader增强策略 - 完整迁移vectorBT复杂逻辑
 import warnings
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import backtrader as bt
 import numpy as np
@@ -436,14 +436,16 @@ class EnhancedFactorStrategy(bt.Strategy):
     def _submit_order_with_pending(self, stock_name: str, data_obj, target_weight: float, action: str,
                                    reason: str = 'normal') -> bool:
         ret = self._submit_order(stock_name, data_obj, target_weight, action, reason)
-        if ret:
-            return True
-        if action == 'sell':
-            # 如果卖出订单提交失败，加入待卖清单
-            self.push_to_pending_sells(stock_name, "提交卖出订单失败（原因：" + reason + ")")
-        if action == 'buy':
-            self.push_to_pending_buys(stock_name, "提交买入订单失败（原因：" + reason + ")")
-        return False
+        if ret is None:
+            if action == 'sell':
+                # 如果卖出订单提交失败，加入待卖清单
+                self.push_to_pending_sells(stock_name, "挂单卖出失败（原因：" + reason + ")")
+            if action == 'buy':
+                self.analyze_submit_fail
+                self.push_to_pending_buys(stock_name, "挂单买入失败（原因：" + reason + ")")
+            return False
+        return True
+
 
     def _submit_order(self, stock_name: str, data_obj, target_weight: float, action: str,
                       reason: str = 'narmal') -> bool:
@@ -560,8 +562,8 @@ class EnhancedFactorStrategy(bt.Strategy):
         current_value, _ = self.get_current_value_approximate()
 
         if self.p.debug_mode:
-            logger.debug(f"\t\t\t提交订单前状态 - 现金: {current_cash:.2f}, 总价值: {current_value:.2f}, "
-                         f"此次目标: {stock_name}  价格: {current_price:.2f}, 当前已持仓: {current_position}")
+            logger.debug(f"\t\t\t挂单前状态 - 现金: {current_cash:.2f}, 总价值: {current_value:.2f}, "
+                         f"此次{action}目标: {stock_name}  价格: {current_price:.2f}, 当前已持仓: {current_position}")
         return current_position, current_cash, current_price
 
     def get_current_value_approximate(self):
@@ -642,7 +644,7 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         self.pending_sells[stock_name] = (old_retrys + 1, trade_day, descrip)
 
-    def push_to_pending_buys(self, stock_name, descrip):
+    def push_to_pending_buys(self, stock_name, descrip=None):
         old_retrys = 0
         if stock_name in self.pending_buys:
             old_retrys = self.pending_buys[stock_name][0]  # 获取重试次数
@@ -768,7 +770,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         self.daily_stats.append(daily_stat)
 
         if self.p.debug_mode:
-            logger.info(f"\t\t{current_date}: 实际持仓{current_holdings_count}只, "
+            logger.info(f"\t\t{current_date}：今日开盘前 实际持仓{current_holdings_count}只, "
                         f"pending_sells_count {pending_sells_count}只, pending_buys_count {pending_buys_count}只, "
                         f"现金{cash:.1f}--总价值{total_value}")
 
@@ -929,20 +931,27 @@ class BacktraderMigrationEngine:
             try:
                 # === 1. 数据对齐（兼容原有逻辑）===
                 aligned_price, aligned_factor = self._align_data(price_df, factor_data)
+
+                # === 2. 生成明天的持仓信号
+                logger.info("开始信号生成")
+
+                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor,
+                                                                                   aligned_price)
+                logger.info("信号生成结束")
+                cerebro = bt.Cerebro(quicknotify=True)
+                # cerebro.broker.set_coo(True)
+
+                # todo 提前判断，！如果有的股票，从古到今都是在尾巴，那就tichu
+
+                holding_signals_for_next = holding_signals_for_next.loc[:, holding_signals_for_next.any(axis=0)].astype(bool)
+                aligned_factor = aligned_factor[holding_signals_for_next.columns]
+                aligned_price, aligned_factor = self._align_data(price_df, aligned_factor)
                 # ===：创建两份价格数据 ===
                 # a. 一份用于“欺骗”Backtrader底层引擎，确保getvalue()正常
-                #
                 price_for_bt_engine = aligned_price.fillna(method='ffill').fillna(method='bfill')
 
                 # b. 另一份是包含真实NaN的原始数据，用于策略的精准判断
                 price_for_strategy_logic = aligned_price
-
-                # === 2. 生成明天的持仓信号
-                holding_signals_for_next = self._generate_holding_signals_for_next(aligned_factor,
-                                                                                   price_for_strategy_logic)
-
-                cerebro = bt.Cerebro(quicknotify=True)
-                # cerebro.broker.set_coo(True)
 
                 # 添加数据源
                 self.add_wide_df_to_cerebro(cerebro, price_for_bt_engine, aligned_factor)
@@ -1007,6 +1016,7 @@ class BacktraderMigrationEngine:
                     'analyzers': strategy.analyzers,
                     'config_used': self.bt_config.copy()
                 }
+                #
 
                 logger.info(f"最终价值 {final_value:,.2f}, "
                             f"耗时 {execution_time:.2f}秒")
@@ -1015,6 +1025,7 @@ class BacktraderMigrationEngine:
                 raise ValueError("失败") from e
 
         self.results = migration_results
+        self.show_per_day_trade_details()
 
         return migration_results
 
@@ -1027,7 +1038,6 @@ class BacktraderMigrationEngine:
         logger.info(f"【V4 终极稳健版】开始加载数据...")
 
         wide_price_df, factor_wide_df = self._align_data(wide_price_df, factor_wide_df)
-
         for stock_symbol in wide_price_df.columns:
             # 1. 创建一个不带索引的DataFrame
             df_single_stock = pd.DataFrame()
@@ -1067,7 +1077,7 @@ class BacktraderMigrationEngine:
             )
 
             cerebro.adddata(data_feed, name=stock_symbol)
-            logger.info(f"  -> 已为 {stock_symbol} 添加数据源。")
+            # logger.info(f"  -> 已为 {stock_symbol} 添加数据源。")
 
         logger.info(f"\n成功为 {len(cerebro.datas)} 只股票添加了独立的数据源。")
 
@@ -1096,12 +1106,13 @@ class BacktraderMigrationEngine:
         holding_signals = self._generate_holding_signals(factor_df, price_df)
         # 将 T 日的交易计划，移动到 T-1 日的行上，为策略的 next() 方法做好准备
         final_signals_for_strategy = holding_signals.shift(-1)
-        return final_signals_for_strategy.astype(bool)
+        return final_signals_for_strategy
 
     def _generate_holding_signals(self, factor_df: pd.DataFrame, price_df: pd.DataFrame) -> pd.DataFrame:
         """
-        生成持仓信号 - 完整替代原有逻辑
-        
+        生成持仓信号 -：factor_df t行数据 是t-1的数据！。也就说：t row rank排名：本质上是昨日数据rank的结果！
+        那么next走入t行，拿到这些昨日rank的结果，然后t+1开盘下单，显然有延迟！
+        解决办法：利用_generate_holding_signals_for_next ：调用包装这个_generate_holding_signals ，主要shift(-1)
         Args:
             factor_df: 对齐后的因子数据
             price_df: 对齐后的价格数据
@@ -1198,16 +1209,41 @@ class BacktraderMigrationEngine:
 
         return bt_df
 
+    def show_per_day_trade_details(self):
+        #根据 _buy_success_num _sell_success_num 统计每天情况
+        if not self.results:
+            return
+        for factor_name, result in self.results.items():
+            strategy = result.get('strategy', None)
+            if strategy is None:
+                continue
+            buy_nums = strategy.p._buy_success_num
+            sell_nums = strategy.p._sell_success_num
+            if not buy_nums and not sell_nums:
+                continue
+            all_dates = set(buy_nums.keys()).union(set(sell_nums.keys()))
+            all_dates = sorted(all_dates)[-5:] # 只看最近5天
+            logger.info(f"每日交易详情 - 因子: {factor_name}")
+            for date in all_dates:
+                buys = buy_nums.get(date, 0)
+                sells = sell_nums.get(date, 0)
+                logger.info(f"  {date}: 买入成功 {buys} 笔, 卖出成功 {sells} 笔")
+            logger.info("-" * 40)
+
+
+
+        pass
+
 
 # === 便捷迁移函数 ===
 
 def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFrame],
-                        original_vectorbt_config=None) -> Tuple[Dict, pd.DataFrame]:
+                        original_vectorbt_config=None) -> Dict:
     """
     Args:
         price_df: 价格数据
         factor_dict: 因子数据字典  
-        original_vectorbt_config: 原有的vectorBT配置
+            original_vectorbt_config: 原有的vectorBT配置
     Returns:
         Tuple: (Backtrader回测结果, 对比表)
     """
@@ -1218,14 +1254,39 @@ def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFr
     results = migration_engine.migrate_and_run(price_df, factor_dict)
 
     # 生成对比表
-    comparison_table = migration_engine.get_comparison_with_vectorbt()
+    # comparison_table = migration_engine.get_comparison_with_vectorbt()
 
-    return results, comparison_table
+    return results
 
 
 # 运行测试
 
 if __name__ == "__main__":
     print()
-   #调用
+
+
+
+
+#写一个阶乘
+
+
+
+
+
+
+
+
+1
+
+
+
+
+
+
+
+
+
+
+
+
 

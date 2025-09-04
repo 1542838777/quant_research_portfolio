@@ -29,6 +29,8 @@ period_two_year = ('20230601', '20250710')
 period_one_year = ('20230601', '20240710')
 period_half_year = ('20250101', '20250710')
 temp_half_year = ('20200102', '20200810')
+test_half_year = ('20230928', '20231231')
+
 longest_periods = ('20190328', '20250710')
 
 massive_test_ZZ800_train_mode = {
@@ -148,25 +150,25 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-trans_pram =  {
-    'mode': 'massive_test',
+# trans_pram =  {
+#     'mode': 'massive_test',
+#     'pools': {
+#         **_massive_test_ZZ800_profile
+#     },
+#     'period': really_train_period,
+#     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
+#     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
+# }
+#
+trans_pram = {
+    'mode': 'fast',
     'pools': {
         **_massive_test_ZZ800_profile
     },
-    'period': really_train_period,
-    'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
-    'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
+    'period': test_half_year,
+    'evaluation': fast_eva_SETTING,  # <--- 【新增】
+    'desc': '测试环境'
 }
-#
-# trans_pram = {
-#     'mode': 'fast',
-#     'pools': {
-#         **fast_ZZ800_profile
-#     },
-#     'period': temp_half_year,
-#     'evaluation': fast_eva_SETTING,  # <--- 【新增】
-#     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
-# }
 
 # 使用包含1日期间的完整测试模式
 is_debug = False

@@ -84,12 +84,12 @@ class EnhancedTestRunner:
             experiments_config_path=str(self.experiments_config_path)
         )
         self.data_manager.prepare_basic_data()
-        
+
         # 初始化因子管理器
         logger.info("2. 初始化因子管理器...")
         self.factor_manager = FactorManager(self.data_manager)
         self.factor_manager.clear_cache()
-        
+
         # 初始化因子分析器
         logger.info("3. 初始化因子分析器...")
         self.factor_analyzer = FactorAnalyzer(factor_manager=self.factor_manager)
@@ -312,11 +312,13 @@ class EnhancedTestRunner:
             stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(first_stock_pool)
             
             close_hfq = self.factor_manager.get_prepare_aligned_factor_for_analysis('close_hfq', first_stock_pool, True)
+            ret_alinged = self.factor_manager.get_prepare_aligned_factor_for_analysis("volatility_40d", 'ZZ800', True)
+
             if close_hfq is None:
                 raise ValueError("close_hfq 数据为空，无法保存")
             
             path = Path(
-                r"D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\workspace\result"
+                r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result"
             ) / stock_pool_index_code / 'close_hfq' / f'{self.data_manager.backtest_start_date}_{self.data_manager.backtest_end_date}'
             
             path.mkdir(parents=True, exist_ok=True)
