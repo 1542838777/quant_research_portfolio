@@ -84,13 +84,13 @@ def demo_basic_backtrader():
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
         top_quantile=0.15,           # 做多前30%
-        rebalancing_freq='M',        # 月度调仓
+        rebalancing_freq='W',        # 月度调仓
         commission_rate=0.0001,      # 万1佣金
         slippage_rate=0.001,         # 千1滑点
         stamp_duty=0.0005,           # 千0.5印花税
-        initial_cash=10000000,         # 30万初始资金
-        max_positions=3,            # 最多持30只股票
-        max_holding_days=20
+        initial_cash=100000,         # 30万初始资金
+        max_positions=12,            # 最多持30只股票
+        max_holding_days=40
     )
     # 3. 一键运行Backtrader回测
     results = one_click_migration(price_df, factor_dict, config)
