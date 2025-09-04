@@ -95,7 +95,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         self.buy_retry_log = {}  # {stock_name: [失败日期列表]}
         self.sell_retry_log = {}  # {stock_name: [失败日期列表]}
         #交易冷却
-        self.recently_sold={}
+        self.recently_sold={} #记录卖出前一天的第k根位置
 
         # 1. 加载未经shift的原始因子计算出的每日排名
         #    ranks.loc[T] 存储的是基于T日收盘信息计算出的排名
@@ -176,11 +176,13 @@ class EnhancedFactorStrategy(bt.Strategy):
             logger.warning("到达回测终点，不再为明天做决策。")
             return
 
-        self.show_cur_day_first()
+        self.show_cur_day_first() #先打印!
 
         # === 第1步：日常状态更新 ===
         self._daily_state_update()
         self.init_data_for_target_positions_if_rebalance_day()
+        logger.info(f"每天打印明天需要买的今日需要挂单的---.>:{self.tomorrow_target_positions}")
+
 
         # === 第2步：统一卖出阶段 ===
         # 1. 收集所有今天需要卖出的股票
@@ -188,6 +190,8 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         # 2. 一次性执行所有卖出
         self._execute_all_sells(stocks_to_sell_today)
+
+
 
         # === 第3步：统一买入阶段 ===
         # 3. 收集所有今天需要买入的股票
@@ -219,10 +223,11 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         # 2. 获取“待买清单”中的旧目标
         pending_buy_candidates = set(self.pending_buys)
+        logger.info(f'待买--->{pending_buy_candidates}')
 
         # 3. 返回合并后的总候选池
         buys = new_buy_candidates.union(pending_buy_candidates)
-        buys = self._filter_cooldown_stocks(buys)
+        # buys = self._filter_cooldown_stocks(buys) #todo 最后排查完问题!开启
         return buys, set(self.pending_buys.keys()).__len__() == 0
 
     def _execute_all_buys_prioritized(self, buy_candidates: set, no_pending_buys: bool = None):
@@ -265,12 +270,9 @@ class EnhancedFactorStrategy(bt.Strategy):
             data_obj = self.getdatabyname(stock_name)
 
             if self._is_tradable(data_obj):
-                # ... 调用你的 _submit_order_with_pending ...
                 self._submit_order_with_pending(
                     stock_name=stock_name,
-                    data_obj=data_obj,
-                    target_weight=target_weight,
-                    action='buy'
+                    target_weight=target_weight
                 )
             else:
                 # 停牌，加入/更新待买清单
@@ -302,10 +304,12 @@ class EnhancedFactorStrategy(bt.Strategy):
         for data_obj in self.datas:
             stock_name = data_obj._name
             if self.getposition(data_obj).size > 0 and not self._is_tradable(data_obj):
+                self.tomorrow_target_positions.discard(stock_name)
+
                 reasons[stock_name].append("停牌退出")
 
         # 4. 调仓日不再持有的股票（避免在这里直接改变状态或调用副作用函数）
-        if self.tomorrow_is_rebalance_day():
+        if self.is_rebalance_day():
             # 推荐：外部先计算好 target_stocks 并传入；若为空则调用一次 expect_t_buy_by_signals（注意：确保此函数无副作用）
             if target_stocks_for_rebalance is None:
                 # 如果你确定 expect_t_buy_by_signals 是纯的可重入函数，才这样调用
@@ -350,10 +354,10 @@ class EnhancedFactorStrategy(bt.Strategy):
             else:
                 # 冷却期已过，从字典中移除
                 del self.recently_sold[stock]
-                logger.info(f"【冷却解除】: {stock} 已度过 {bars_since_sold} 根K线，解除冷却。")
+                # logger.info(f"【冷却解除】: {stock} 已度过 {bars_since_sold} 根K线，解除冷却。")
 
         return buy_candidates - stocks_in_cooldown
-    def _daily_state_update(self):
+    def _daily_state_update(self):#ok
         """
         每日状态更新 -
         """
@@ -447,9 +451,7 @@ class EnhancedFactorStrategy(bt.Strategy):
             if self.getposition(data_obj).size > 0:
                 self._submit_order_with_pending(
                     stock_name=stock_name,
-                    data_obj=data_obj,
                     target_weight=0,
-                    action='sell',
                     reason=reason
                 )
 
@@ -463,9 +465,7 @@ class EnhancedFactorStrategy(bt.Strategy):
                 #有必要判断,明天该买的股票 今天居然是停牌状态!,所以有必要让其加入pending,次日就不买! 次次日 发现pending有数据,会重新rank排序,如果发现排序依然在前面,才买!这样更安全
                 self._submit_order_with_pending(
                     stock_name=stock_name,
-                    data_obj=data_obj,
-                    target_weight=target_weight,
-                    action='buy'
+                    target_weight=target_weight
                 )
             else:
                 # 停牌，保持在待买清单
@@ -485,19 +485,100 @@ class EnhancedFactorStrategy(bt.Strategy):
     # --强制超期
     # --停牌危机
     # --调仓日发现信号没
-    def _submit_order_with_pending(self, stock_name: str, data_obj, target_weight: float, action: str,
-                                   reason: str = 'normal') -> bool:
-        ret = self._submit_order(stock_name, data_obj, target_weight, action, reason)
-        if ret is None:
-            if action == 'sell':
-                # 如果卖出订单提交失败，加入待卖清单
-                self.push_to_pending_sells(stock_name, "挂单卖出失败（原因：" + reason + ")")
-            if action == 'buy':
-                self.analyze_submit_fail
-                self.push_to_pending_buys(stock_name, "挂单买入失败（原因：" + reason + ")")
+    def _submit_order_with_pending(self, stock_name: str, target_weight: float, reason: str = 'normal') -> bool:
+        """
+        【升级版】调用统一的订单函数，并处理失败后的pending逻辑
+        """
+        # 调用新的、统一的核心函数
+        is_submitted, action_type = self._submit_target_order(stock_name, target_weight, reason)
+
+        if not is_submitted:
+            # 提交失败，推入待办清单
+            # 注意：这里的逻辑可以更精细，比如区分是买入待办还是卖出待办
+            # 一个简单的判断：如果目标权重>0, 意图是买；如果目标=0, 意图是卖
+            if target_weight > 0:
+                self.push_to_pending_buys(stock_name, f"挂单买入失败 (原因: {reason})")
+            else:
+                self.push_to_pending_sells(stock_name, f"挂单卖出失败 (原因: {reason})")
             return False
+
         return True
 
+        return True
+
+    def _submit_target_order(self, stock_name: str, target_weight: float, reason: str = 'normal') -> tuple[bool, str]:
+        """
+        【最终融合版】提交“目标权重”订单，并集成了你旧版函数中精细化的失败日志。
+        """
+        try:
+            # 步骤 1: 预先收集所有用于决策和日志记录的数据
+            data_obj = self.getdatabyname(stock_name)
+            if not len(data_obj):  # 确保data_obj里有数据
+                logger.warning(f"数据不足，无法为 {stock_name} 下单。")
+                return False, "失败"
+
+            current_pos = self.getposition(data_obj)
+            current_size = current_pos.size
+            current_price = data_obj.close[0]
+            portfolio_value = self.broker.getvalue()
+            current_weight = (current_size * current_price / portfolio_value) if portfolio_value != 0 else 0
+            current_cash = self.broker.get_cash()
+
+            # 步骤 2: 【统一调用】提交核心订单
+            order = self.order_target_percent(data=data_obj, target=target_weight)
+
+            # 步骤 3: 处理订单提交结果
+            if order:
+                # 订单已成功提交到Broker - 逻辑不变，非常清晰
+                action_type = "买入/增仓" if order.isbuy() else "卖出/减仓"
+                logger.info(
+                    f"\t\t\t\t{self.datetime.date(0)}-{action_type}-预备订单提交: {stock_name}, "
+                    f"目标权重: {target_weight:.2%}, 原因: {reason}")
+                return True, action_type
+            else:
+                # 订单未被创建 - 启动精细化失败原因分析
+
+                # a. 智能判断交易意图 (Intent)
+                intent = "unknown"
+                # 用一个小的阈值来处理浮点数精度问题
+                if target_weight > current_weight + 0.0001:
+                    intent = "buy"
+                elif target_weight < current_weight - 0.0001:
+                    intent = "sell"
+                else:
+                    return True, "无操作"  # 权重已到位，无需交易
+
+                # b. 【完美移植】沿用你原有的、优秀的失败原因分析逻辑
+                failure_reason = "未知原因"
+                if intent == 'sell':
+                    if current_size <= 0:
+                        failure_reason = "无持仓可卖"
+                    elif np.isnan(current_price) or current_price <= 0:
+                        failure_reason = "停牌/价格异常无法卖出"
+                    # 你可以继续加入更多卖出失败的判断...
+
+                elif intent == 'buy':
+                    required_cash = abs(portfolio_value * (target_weight - current_weight))
+                    if current_cash < required_cash and current_cash < current_price * 100:
+                        failure_reason = "现金不足"
+                    elif np.isnan(current_price) or current_price <= 0:
+                        failure_reason = "价格异常/停牌"
+                    elif target_weight < 0.001:  # 假设目标权重为0是清仓意图
+                        failure_reason = "目标权重过小"
+                    else:  # 如果以上都不是，很可能是Broker的保证金检查失败
+                        failure_reason = f"保证金不足或未知原因(目标权重{target_weight:.2%})"
+
+                # c. 打印你想要的、详细的警告日志
+                logger.warning(f"{self.datetime.date(0)}-{intent}订单提交失败: {stock_name} (原因: {failure_reason})")
+                logger.warning(
+                    f"  详细状态: 现金={current_cash:.2f}, 当前持仓={current_size}, "
+                    f"价格={current_price:.2f}, 当前权重={current_weight:.2%}, 目标权重={target_weight:.2%}")
+
+                return False, "失败"
+
+        except Exception as e:
+            logger.error(f"{self.datetime.date(0)}-执行订单时异常 for {stock_name}: {e}")
+            raise ValueError(e)
 
     def _submit_order(self, stock_name: str, data_obj, target_weight: float, action: str,
                       reason: str = 'narmal') -> bool:
@@ -870,9 +951,9 @@ class EnhancedFactorStrategy(bt.Strategy):
             logger.info(f"  待卖清单: {len(self.pending_sells)}只")
 
             if self.pending_buys:
-                logger.info("  待买股票:", list(self.pending_buys.keys()))
+                logger.info("  待买股票: %s", list(self.pending_buys.keys()))
             if self.pending_sells:
-                logger.info("  待卖股票:", list(self.pending_sells.keys()))
+                logger.info("  待卖股票: %s", list(self.pending_sells.keys()))
 
         # 持仓分析
         self._analyze_holding_patterns()
@@ -1000,7 +1081,6 @@ class BacktraderMigrationEngine:
                 cerebro = bt.Cerebro(quicknotify=True)
                 # cerebro.broker.set_coo(True)
 
-                # todo 提前判断，！如果有的股票，从古到今都是在尾巴，那就tichu
                 aligned_factor = self.reshape_del_always_tottom(aligned_factor)
                 aligned_price, aligned_factor = self._align_data(price_df, aligned_factor)
                 # ===：创建两份价格数据 ===

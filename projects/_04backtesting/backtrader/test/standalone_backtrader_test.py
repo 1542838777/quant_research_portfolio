@@ -249,6 +249,8 @@ def create_test_data():
 
     price_df = price_df.iloc[3:]
     price_df.loc[price_df.index[1], ['STOCK_A','STOCK_B']] = np.nan
+    price_df.loc[price_df.index[3], ['STOCK_C','STOCK_B']] = np.nan
+    price_df.loc[price_df.index[4], ['STOCK_C','STOCK_B']] = np.nan
     return price_df, factor_df
 
 

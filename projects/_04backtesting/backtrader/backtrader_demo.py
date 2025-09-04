@@ -45,15 +45,15 @@ def load_data_for_backtrader_demo():
         # 加载因子数据
         factor_dict = {}
         
-        # # 加载合成因子
-        # composite_factor = result_manager.get_factor_data(
-        #     'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
-        # )
-        #
-        # if composite_factor is not None and not composite_factor.empty:
-        #     factor_dict['lqs_orthogonal_v1'] = composite_factor
-        #     logger.info(f"合成因子加载成功: {composite_factor.shape}")
-        #
+        # 加载合成因子
+        composite_factor = result_manager.get_factor_data(
+            'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
+        )
+
+        if composite_factor is not None and not composite_factor.empty:
+            factor_dict['lqs_orthogonal_v1'] = composite_factor
+            logger.info(f"合成因子加载成功: {composite_factor.shape}")
+
         # 如果没有合成因子，加载基础因子
         if not factor_dict:
             volatility_factor = result_manager.get_factor_data(
@@ -67,7 +67,7 @@ def load_data_for_backtrader_demo():
             raise ValueError("未能加载到有效的因子数据")
         
         logger.info(f"数据加载完成: 价格{price_df.shape}, 因子{len(factor_dict)}个")
-        price_df = price_df[-20:]
+        # price_df = price_df[-20:]
         return price_df, factor_dict
         
     except Exception as e:
@@ -84,13 +84,13 @@ def demo_basic_backtrader():
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
         top_quantile=0.15,           # 做多前30%
-        rebalancing_freq='d',        # 月度调仓
+        rebalancing_freq='M',        # 月度调仓
         commission_rate=0.0001,      # 万1佣金
         slippage_rate=0.001,         # 千1滑点
         stamp_duty=0.0005,           # 千0.5印花税
         initial_cash=10000000,         # 30万初始资金
-        max_positions=1,            # 最多持30只股票
-        max_holding_days=30
+        max_positions=3,            # 最多持30只股票
+        max_holding_days=20
     )
     # 3. 一键运行Backtrader回测
     results = one_click_migration(price_df, factor_dict, config)
