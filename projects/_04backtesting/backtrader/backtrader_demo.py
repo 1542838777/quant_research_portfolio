@@ -34,7 +34,7 @@ def load_data_for_backtrader_demo(factor_names):
         )
         
         stock_pool_index = '000906'
-        start_date = '2023-03-28'
+        start_date = '2019-03-28'
         end_date = '2023-12-31'
         
         logger.info(f"数据配置: 股票池={stock_pool_index}, 时间范围={start_date}~{end_date}")
@@ -69,23 +69,32 @@ def load_data_for_backtrader_demo(factor_names):
         raise
 
 
+##年volatility_40d策略表现报告 化收益率 (Annualized Return): 4.78% -1方向
+#ln_turnover_value_90d -1 fang向
+##
+# 年化收益率 (Annualized Return): 9.92%
+# 夏普比率 (Sharpe Ratio): 0.6585558761463172
+# 最大回撤 (Max Drawdown): 15.72%
+# 最长回撤期 (Longest Drawdown Period): 345 天#
 def demo_basic_backtrader():
     """基础Backtrader演示 - 直接替代原有示例"""
 
     # 1. 加载数据
-    price_dfs, factor_dict = load_data_for_backtrader_demo( ['volatility_40d'])
-    price_dfs, factor_dict = load_data_for_backtrader_demo( ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio'])
+    zheng = ['cfp_ratio','amihud_liquidity','earnings_stability','value_composite']
+    reverse_ = ['turnover_rate_monthly_mean','volatility_120d','volatility_90d' ,'volatility_40d', 'turnover_rate_90d_mean', 'ln_turnover_value_90d']
+    # price_dfs, factor_dict = load_data_for_backtrader_demo( ['volatility_40d'])
+    price_dfs, factor_dict = load_data_for_backtrader_demo( reverse_)
 
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
         top_quantile=0.15,           # 做多前30%
-        rebalancing_freq='Q',        # 月度调仓
+        rebalancing_freq='40d',        # 月度调仓
         commission_rate=0.0001,      # 万1佣金
         slippage_rate=0.001,         # 千1滑点
         stamp_duty=0.0005,           # 千0.5印花税
-        initial_cash=10000000,         # 30万初始资金
-        max_positions=21,           # 最多持30只股票
-        max_holding_days=70
+        initial_cash=10000000,         # 初始资金
+        max_positions=21,           # 最多持
+        max_holding_days=80
     )
     # 3. 一键运行Backtrader回测
     results = one_click_migration(price_dfs, factor_dict, config)

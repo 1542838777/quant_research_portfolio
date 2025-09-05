@@ -54,8 +54,8 @@ def demo_professional_factor_selection(snap_config_id,factor_names=None):
         min_ic_stability=0.45,  # IC稳定性门槛（方向一致性）
         max_ic_volatility=0.06,  # IC波动率上限（控制风险）
         decay_rate=0.70,  # 衰减率（偏向短期表现）
-        max_factors_per_category=4,  # 每类最多选择2个因子
-        max_final_factors=16,  # 最终选择8个因子
+        max_factors_per_category=8,  # 每类最多选择2个因子
+        max_final_factors=20,  # 最终选择8个因子
         enable_turnover_penalty=True,
         # 三层相关性控制哲学 - 新增核心功能
         high_corr_threshold=0.7,  # 红色警报：|corr| > 0.7，坚决二选一
@@ -64,9 +64,9 @@ def demo_professional_factor_selection(snap_config_id,factor_names=None):
 
 
         ##日因子changed =
-        max_turnover_mean_daily=0.15,
-        max_turnover_trend_daily=0.0005,
-        max_turnover_vol_daily=0.025
+        max_turnover_mean_daily=0.55,#=0.15,
+        max_turnover_trend_daily=0.0015,#0.0005,
+        max_turnover_vol_daily=0.125#0.025
     )
 
 
@@ -222,10 +222,10 @@ def main():
 
 
 if __name__ == "__main__":
-    snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID 全部
-    snap_config_id = "20250828_181420_f6baf27c"  # 配置快照ID 全部
+    # snap_config_id = "20250825_091622_98ed2d08"  # 配置快照ID 全部
+    # snap_config_id = "20250828_181420_f6baf27c"  # 配置快照ID 全部
+    #
+    # demo_professional_factor_selection(snap_config_id,['lqs_orthogonal_v1'])
 
-    demo_professional_factor_selection(snap_config_id,['lqs_orthogonal_v1'])
 
-
-    # main()
+    main()

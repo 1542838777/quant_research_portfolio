@@ -51,7 +51,7 @@ class FactorResultsManager:
                              factor_name: str,
                              stock_index: str,  # 比如中证800
                              start_date: str, end_date: str,
-                             returns_calculator_func_name: str,  # 新增参数，用于区分 'c2c' 或 'o2c'
+                             returns_calculator_func_name: str,  # 新增参数，用于区分 'c2c' 或 'o2o'
                              results: Dict):
         """
         将单次因子测试的所有成果，保存到结构化的目录中。

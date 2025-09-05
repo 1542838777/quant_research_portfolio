@@ -56,9 +56,7 @@ class ConfigSnapshotManager:
     
     def __init__(self):
         # 动态定位workspace路径 - 修复硬编码路径问题
-        current_file = Path(__file__)
-        project_root = current_file.parent.parent.parent  # 从config_snapshot向上3级到_03_factor_selection
-        self.workspace_root = project_root / "workspace"
+        self.workspace_root =Path(r'D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace')
         self.snapshots_dir = self.workspace_root / "config_snapshots"
         self.snapshots_storage = self.snapshots_dir / "snapshots"
         self.index_file = self.snapshots_dir / "snapshot_index.json"

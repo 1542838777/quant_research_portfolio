@@ -28,7 +28,7 @@ def load_re():
     base_path = Path(RESULTS_PATH) / '000906'
     ret = []
     for factor_dir in base_path.iterdir():
-        path = factor_dir /'o2c/20190328_20250710/summary_stats.json'
+        path = factor_dir /'o2o/20190328_20250710/summary_stats.json'
         d1 = json.load(open(path, 'r', encoding='utf-8'))
 
         cur_ret = {

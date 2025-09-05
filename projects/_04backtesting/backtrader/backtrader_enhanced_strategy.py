@@ -494,6 +494,10 @@ class EnhancedFactorStrategy(bt.Strategy):
         # ==========================================================
         try:
             daily_ranks = self.ranks.loc[pd.to_datetime(current_date)].dropna()
+            #todo 测试！
+            #快速颠倒一下rank
+            daily_ranks = -daily_ranks
+
             if daily_ranks.empty:
                 logger.warning(f"调仓日 {current_date} 无有效因子排名，目标设定为空仓。")
                 target_positions_ideal = set()
@@ -964,11 +968,11 @@ class EnhancedFactorStrategy(bt.Strategy):
         #停牌只能查看真实原始数据
         if not np.isfinite(price):
             return False
-
-        if data_obj.high[0] == data_obj.low[0]:
-            # 这通常意味着股票全天一字板，无法买入也无法卖出
-            logger.info(f"'{data_obj._name}' 在 {self.datetime.date(0)} 出现一字板，认定为不可交易。")
-            return False
+        # todo 记得放开
+        # if data_obj.high[0] == data_obj.low[0]:
+        #     # 这通常意味着股票全天一字板，无法买入也无法卖出
+        #     logger.info(f"'{data_obj._name}' 在 {self.datetime.date(0)} 出现一字板，认定为不可交易。")
+        #     return False
 
         return True
 

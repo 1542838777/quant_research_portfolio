@@ -166,7 +166,7 @@ class EnhancedTestRunner:
         logger.info(f"📊 准备执行 {len(experiments_df)} 个实验")
 
         # 4. 保存价格数据
-        self._save_close_hfq_if_needed(experiments_df)
+        self._save_prices_hfq_if_needed(experiments_df)
 
         # 5. 执行批量测试
         results = []
@@ -304,26 +304,33 @@ class EnhancedTestRunner:
             test_func=self.factor_analyzer.test_factor_entity_service_by_smart_composite,
             his_snap_config_id=his_snap_config_id
         )
+    def _save_prices_hfq_if_needed(self, experiments_df: pd.DataFrame,price_type=None):
+        self._save_price_hfq_if_needed(experiments_df, price_type="close_hfq")
+        self._save_price_hfq_if_needed(experiments_df, price_type="open_hfq")
+        self._save_price_hfq_if_needed(experiments_df, price_type="high_hfq")
+        self._save_price_hfq_if_needed(experiments_df, price_type="low_hfq")
 
-    def _save_close_hfq_if_needed(self, experiments_df: pd.DataFrame):
+    def _save_price_hfq_if_needed(self, experiments_df: pd.DataFrame,price_type=None):
+        if price_type == None:
+            raise ValueError("⚠️ 价格类型未指定，无法保存价格数据")
         try:
             # 获取第一个实验的股票池（用于保存价格数据）
             first_stock_pool = experiments_df.iloc[0]['stock_pool_name']#这句话 就限制了 第一个实验的股票池 ：即：当前设计 不不支持一次实验使用多个不同的股票池！
             stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(first_stock_pool)
             
-            close_hfq = self.factor_manager.get_prepare_aligned_factor_for_analysis('close_hfq', first_stock_pool, True)
+            price_hfq = self.factor_manager.get_prepare_aligned_factor_for_analysis(price_type, first_stock_pool, True)
             ret_alinged = self.factor_manager.get_prepare_aligned_factor_for_analysis("volatility_40d", 'ZZ800', True)
 
-            if close_hfq is None:
-                raise ValueError("close_hfq 数据为空，无法保存")
+            if price_hfq is None:
+                raise ValueError("price_hfq 数据为空，无法保存")
             
             path = Path(
                 r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result"
-            ) / stock_pool_index_code / 'close_hfq' / f'{self.data_manager.backtest_start_date}_{self.data_manager.backtest_end_date}'
+            ) / stock_pool_index_code / price_type / f'{self.data_manager.backtest_start_date}_{self.data_manager.backtest_end_date}'
             
             path.mkdir(parents=True, exist_ok=True)
-            close_hfq.to_parquet(path / 'close_hfq.parquet')
-            logger.info(f"📊 价格数据保存成功: {path / 'close_hfq.parquet'}")
+            price_hfq.to_parquet(path / f'{price_type}.parquet')
+            logger.info(f"📊 价格数据保存成功: {path} / {price_hfq}.parquet'")
             
         except Exception as e:
             raise ValueError(f"⚠️ 价格数据保存失败:") from e

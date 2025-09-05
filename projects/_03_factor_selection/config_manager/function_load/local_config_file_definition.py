@@ -111,7 +111,7 @@ EVAL_SETTING_STANDARD = {
 EVAL_SETTING_FULL = {
     "quantiles": 5, # 兼容旧命名
     "forward_periods": [1, 5, 10, 21, 40, 60, 120],
-    "returns_calculator": [ 'c2c'],
+    "returns_calculator": [ 'o2o'],
     "style_factor_list": style_factor_list,
     "eva_data": ['raw', 'processed']  # 控制测试哪种数据状态：'raw'(原始)，'processed'(处理后)
 }

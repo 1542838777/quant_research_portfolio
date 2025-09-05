@@ -42,14 +42,14 @@ def safe_winsorize_series(series: pd.Series, limits: list = [0.025, 0.025]) -> p
     return pd.Series(winsorized_values, index=series.dropna().index).reindex(series.index)
 
 
-def calculate_forward_returns_tradable_o2c(period: int,
-                                                close_df: pd.DataFrame,
-                                                open_df: pd.DataFrame,
-                                                winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
+def calculate_forward_returns_tradable_o2o(period: int,
+                                           close_df: pd.DataFrame,
+                                           open_df: pd.DataFrame,
+                                           winsorize_limits: list = [0.025, 0.025]) -> pd.DataFrame:
     """
     周三收盘算出来的因子！t-1
     周四：t这一日：实际上是t-1的因子数据  （所以需要t日开盘价参与收益率计算
-    计算从 T+1日开盘价 到 T+period日收盘价 的未来收益率。
+    计算从 T日开盘价 到 T+period日收盘价 的未来收益率。
     包含了生存偏差过滤和截面去极值处理。
     """
     open_prices = open_df.copy(deep=True)
@@ -57,7 +57,7 @@ def calculate_forward_returns_tradable_o2c(period: int,
 
     # 1. 定义起点和终点价格 (逻辑核心)
     start_price = open_prices
-    end_price = close_prices.shift(-period)
+    end_price = open_prices.shift(-period)
 
     # 2. 创建“未来存续”掩码
     survived_mask = start_price.notna() & end_price.notna()
