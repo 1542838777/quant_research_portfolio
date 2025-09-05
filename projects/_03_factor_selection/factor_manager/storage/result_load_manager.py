@@ -74,6 +74,17 @@ class ResultLoadManager:
         returns = df.loc[start_date:end_date]
 
         return returns
+    #抽象一下
+    def get_price_data_by_type(self, stock_pool_index, start_date, end_date, price_type=None):
+        if price_type is None:
+            raise ValueError('请指定价格类型')
+        path = self.main_work_path / stock_pool_index / price_type / self.version / f'{price_type}.parquet'
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        # 过滤时间"
+        returns = df.loc[start_date:end_date]
+        return returns
+
 
     def get_factor_self_path(self, stock_pool_index, factor_name):
         return self.main_work_path / stock_pool_index / factor_name / self.calcu_type / self.version

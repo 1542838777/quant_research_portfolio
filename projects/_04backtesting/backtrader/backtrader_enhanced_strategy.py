@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from data.local_data_load import load_trading_lists, get_tomorrow_b_day
+from quant_lib.utils.dataFrame_utils import align_dfs
 
 warnings.filterwarnings('ignore')
 from collections import defaultdict
@@ -70,7 +71,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         ('trading_days', None),  # 交易日列表
         ('_buy_success_num', {}),  #每日买入数量
         ('_sell_success_num', {}),  #每日卖出数量
-        ('real_wide_prices', None),  # 保存真实价格
+        ('real_wide_close_price', None),  # 保存真实价格
         ('buy_after_sell_cooldown', None),  #
     )
 
@@ -118,7 +119,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 6. 风险控制
         self.emergency_exits = 0  # 紧急止损次数
         self.forced_exits = 0  # 强制超期卖出次数
-        self.real_wide_prices = self.p.real_wide_prices  # 保存真实价格
+        self.real_wide_close_price = self.p.real_wide_close_price  # 保存真实价格
 
 
         ##权重
@@ -958,8 +959,18 @@ class EnhancedFactorStrategy(bt.Strategy):
         """
         current_date = self.datetime.date(0)  # 可能需要+Bday ：最终解释：千万不要，那样偷看了未来！
         stock_name = data_obj._name
-        price = self.p.real_wide_prices.loc[pd.to_datetime(current_date), stock_name]
-        return not pd.isna(price)
+
+        price = self.p.real_wide_close_price.loc[pd.to_datetime(current_date), stock_name]
+        #停牌只能查看真实原始数据
+        if not np.isfinite(price):
+            return False
+
+        if data_obj.high[0] == data_obj.low[0]:
+            # 这通常意味着股票全天一字板，无法买入也无法卖出
+            logger.info(f"'{data_obj._name}' 在 {self.datetime.date(0)} 出现一字板，认定为不可交易。")
+            return False
+
+        return True
 
     def _cleanup_position_records(self, stock_name: str):
         """
@@ -1376,16 +1387,15 @@ class BacktraderMigrationEngine:
             'min_weight_threshold': 0.01
         }
 
-    def migrate_and_run(self, price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFrame],
-                        comparison_with_vectorbt: bool = True) -> Dict:
+    def migrate_and_run(self, price_dfs: Dict[str,pd.DataFrame], factor_dict: Dict[str, pd.DataFrame],
+                        ) -> Dict:
         """
         一键迁移并运行 - 完整替代原有的run_backtest函数
         
         Args:
-            price_df: 价格数据
+            close_df: 价格数据
             factor_dict: 因子数据字典
             comparison_with_vectorbt: 是否与vectorBT结果对比
-            
         Returns:
             Dict: 迁移结果
         """
@@ -1394,40 +1404,28 @@ class BacktraderMigrationEngine:
         for factor_name, factor_data in factor_dict.items():
 
             try:
-                # === 1. 数据对齐（兼容原有逻辑）===
-                aligned_price, aligned_factor = self._align_data(price_df, factor_data)
-
-                # === 2. 生成明天的持仓信号
-                logger.info("开始信号生成")
-
-                logger.info("信号生成结束")
                 cerebro = bt.Cerebro(quicknotify=True)
                 # cerebro.broker.set_coo(True)
 
-                aligned_factor = self.reshape_del_always_tottom(aligned_factor)
-                aligned_price, aligned_factor = self._align_data(price_df, aligned_factor)
+                factor_data = self.reshape_del_always_tottom(factor_data)
+                all_dfs =  align_dfs(**price_dfs, **{'factor_data':factor_data})
                 # ===：创建两份价格数据 ===
-                # a. 一份用于“欺骗”Backtrader底层引擎，确保getvalue()正常
-                price_for_bt_engine = aligned_price.fillna(method='ffill').fillna(method='bfill')
-
-                # b. 另一份是包含真实NaN的原始数据，用于策略的精准判断
-                price_for_strategy_logic = aligned_price
 
                 # 添加数据源
-                self.add_wide_df_to_cerebro(cerebro, price_for_bt_engine, aligned_factor)
+                self.add_wide_df_to_cerebro(cerebro, all_dfs)
                 # for d in cerebro.datas:
                 #     for i in range(len(d)):
                 #         print(d.datetime.date(i), d.open[i])
                 # 生成调仓日期
                 rebalance_dates = generate_rebalance_dates(
-                    aligned_factor.index,
+                    all_dfs['factor_data'].index,
                     self.bt_config['rebalancing_freq']
                 )
 
                 # 添加策略
                 cerebro.addstrategy(
                     EnhancedFactorStrategy,
-                    factor_data=aligned_factor,
+                    factor_data=all_dfs['factor_data'],
                     rebalance_dates=rebalance_dates,
                     max_positions=self.bt_config['max_positions'],
                     top_quantile=self.bt_config['top_quantile'],
@@ -1435,8 +1433,8 @@ class BacktraderMigrationEngine:
                     retry_buy_days=self.bt_config['retry_buy_days'],
                     buy_after_sell_cooldown=self.bt_config['buy_after_sell_cooldown'],
                     debug_mode=True,
-                    trading_days=load_trading_lists(aligned_factor.index[0], aligned_price.index[-1]),
-                    real_wide_prices=price_for_strategy_logic,
+                    trading_days=load_trading_lists(all_dfs['factor_data'].index[0], all_dfs['factor_data'].index[-1]),
+                    real_wide_close_price=all_dfs['close'],
                     log_detailed=True
                 )
 
@@ -1490,27 +1488,29 @@ class BacktraderMigrationEngine:
     import backtrader as bt
     import pandas as pd
 
-    def add_wide_df_to_cerebro(self, cerebro: bt.Cerebro, wide_price_df: pd.DataFrame,
-                               factor_wide_df: pd.DataFrame) -> None:
+    def add_wide_df_to_cerebro(self, cerebro: bt.Cerebro,all_dfs) -> None:
 
-        logger.info(f"【V4 终极稳健版】开始加载数据...")
+        #对必须要ffill                ( 一份用于“欺骗”Backtrader底层引擎，确保getvalue()正常
 
-        wide_price_df, factor_wide_df = self._align_data(wide_price_df, factor_wide_df)
-        for stock_symbol in wide_price_df.columns:
+        open_df = all_dfs['open'].fillna(method='ffill').fillna(method='bfill')
+        high_df = all_dfs['high'].fillna(method='ffill').fillna(method='bfill')
+        low_df = all_dfs['low'].fillna(method='ffill').fillna(method='bfill')
+        close_df = all_dfs['close'].fillna(method='ffill').fillna(method='bfill')
+        factor_wide_df = all_dfs['factor_data']
+
+        logger.info(f"add_wide_df_to_cerebro.")
+        for stock_symbol in close_df.columns:
             # 1. 创建一个不带索引的DataFrame
             df_single_stock = pd.DataFrame()
 
             # 2. 【核心】将日期从索引变成一个名为'datetime'的普通列
-            #    确保它是python原生的datetime对象，兼容性最好
-            df_single_stock['datetime'] = pd.to_datetime(wide_price_df.index)
+            df_single_stock['datetime'] = pd.to_datetime(close_df.index)
 
-            # 3. 填充OHLCV和其他数据列
             #    使用 .values 可以避免pandas版本差异带来的索引对齐问题
-            temp = wide_price_df[stock_symbol].values
-            df_single_stock['open'] = temp * 0.8
-            df_single_stock['high'] = temp
-            df_single_stock['low'] = temp
-            df_single_stock['close'] = temp
+            df_single_stock['open'] = open_df[stock_symbol].values
+            df_single_stock['high'] = high_df[stock_symbol].values
+            df_single_stock['low'] = low_df[stock_symbol].values
+            df_single_stock['close'] = close_df[stock_symbol].values
             df_single_stock['volume'] = 0
             df_single_stock['openinterest'] = 0
             # if stock_symbol == 'STOCK_B':
@@ -1535,8 +1535,6 @@ class BacktraderMigrationEngine:
             )
 
             cerebro.adddata(data_feed, name=stock_symbol)
-            # logger.info(f"  -> 已为 {stock_symbol} 添加数据源。")
-
         logger.info(f"\n成功为 {len(cerebro.datas)} 只股票添加了独立的数据源。")
 
     def _align_data(self, price_df: pd.DataFrame, factor_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -1686,7 +1684,7 @@ class BacktraderMigrationEngine:
 
 # === 便捷迁移函数 ===
 
-def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFrame],
+def one_click_migration(price_dfs:Dict[str, pd.DataFrame], factor_dict: Dict[str, pd.DataFrame],
                         original_vectorbt_config=None) -> Dict:
     """
     Args:
@@ -1700,7 +1698,7 @@ def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFr
     migration_engine = BacktraderMigrationEngine(original_vectorbt_config)
 
     # 执行迁移和回测
-    results = migration_engine.migrate_and_run(price_df, factor_dict)
+    results = migration_engine.migrate_and_run(price_dfs, factor_dict)
     return results
 
 

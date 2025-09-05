@@ -659,7 +659,7 @@ def fama_macbeth_regression(
         neutral_factors: Dict[str, pd.DataFrame] = None # 因为factor_df以及除杂过，现在不需要再次进行除杂了
 ) -> Tuple[Series,Series, Dict[str, Any]]:
     """
-    【最终生产版】对单个因子进行Fama-MacBeth回归检验。
+    对单个因子进行Fama-MacBeth回归检验。
     此版本逻辑结构清晰，代码健壮，并使用Newey-West标准误修正t检验，符合学术界和业界的严格标准。
     return:Series 表示纯因子带来的收益，纯收益
     """

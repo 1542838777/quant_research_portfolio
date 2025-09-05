@@ -34,25 +34,20 @@ def load_data_for_backtrader_demo(factor_names):
         )
         
         stock_pool_index = '000906'
-        start_date = '2019-03-28'
+        start_date = '2023-03-28'
         end_date = '2023-12-31'
         
         logger.info(f"数据配置: 股票池={stock_pool_index}, 时间范围={start_date}~{end_date}")
         
         # 加载价格数据
-        price_df = result_manager.get_close_hfq_data(stock_pool_index, start_date, end_date)
-        
+        close_df = result_manager.get_price_data_by_type(stock_pool_index, start_date, end_date, price_type='close_hfq')
+        open_df = result_manager.get_price_data_by_type(stock_pool_index, start_date, end_date, price_type='open_hfq')
+        high_df = result_manager.get_price_data_by_type(stock_pool_index, start_date, end_date, price_type='high_hfq')
+        low_df = result_manager.get_price_data_by_type(stock_pool_index, start_date, end_date, price_type='low_hfq')
+        #
         # 加载因子数据
         factor_dict = {}
         
-        # # 加载合成因子
-        # composite_factor = result_manager.get_factor_data(
-        #     'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
-        # )
-        #
-        # if composite_factor is not None and not composite_factor.empty:
-        #     factor_dict['lqs_orthogonal_v1'] = composite_factor
-        #     logger.info(f"合成因子加载成功: {composite_factor.shape}")
 
         # 如果没有合成因子，加载基础因子
         for name in factor_names:
@@ -61,10 +56,13 @@ def load_data_for_backtrader_demo(factor_names):
             )
             if ret is not None:
                 factor_dict[name] = ret
-
-        logger.info(f"数据加载完成: 价格{price_df.shape}, 因子{len(factor_dict)}个")
         # price_df = price_df[-20:]
-        return price_df, factor_dict
+        return {
+            'close': close_df,
+            'open': open_df,
+            'high': high_df,
+            'low': low_df,
+        }, factor_dict
         
     except Exception as e:
         logger.error(f"数据加载失败: {e}")
@@ -75,8 +73,8 @@ def demo_basic_backtrader():
     """基础Backtrader演示 - 直接替代原有示例"""
 
     # 1. 加载数据
-    price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d'])
-    price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio'])
+    price_dfs, factor_dict = load_data_for_backtrader_demo( ['volatility_40d'])
+    price_dfs, factor_dict = load_data_for_backtrader_demo( ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio'])
 
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
@@ -90,7 +88,7 @@ def demo_basic_backtrader():
         max_holding_days=70
     )
     # 3. 一键运行Backtrader回测
-    results = one_click_migration(price_df, factor_dict, config)
+    results = one_click_migration(price_dfs, factor_dict, config)
     
     # 4. 显示结果
 
@@ -109,7 +107,7 @@ def demo_basic_backtrader():
 
         # b. 打印一份清晰的报告
         print(f"\n============== {factor_name}策略表现报告 ==============")
-        print(f"回测期间: {price_df.index[0]} to {strategy.datas[0].datetime.date(-1)}")
+        print(f"回测期间: {price_dfs['close'].index[0]} to {strategy.datas[0].datetime.date(-1)}")
         print(f"期初资产: {strategy.broker.startingcash:,.2f}")
         print(f"期末资产: {strategy.broker.getvalue():,.2f}")
 
