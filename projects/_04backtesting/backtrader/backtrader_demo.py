@@ -24,7 +24,7 @@ from quant_lib.config.logger_config import setup_logger
 logger = setup_logger(__name__)
 
 
-def load_data_for_backtrader_demo():
+def load_data_for_backtrader_demo(factor_names):
     """加载演示数据"""
     try:
         result_manager = ResultLoadManager(
@@ -34,7 +34,7 @@ def load_data_for_backtrader_demo():
         )
         
         stock_pool_index = '000906'
-        start_date = '2019-03-28'
+        start_date = '2023-03-28'
         end_date = '2023-12-31'
         
         logger.info(f"数据配置: 股票池={stock_pool_index}, 时间范围={start_date}~{end_date}")
@@ -45,27 +45,23 @@ def load_data_for_backtrader_demo():
         # 加载因子数据
         factor_dict = {}
         
-        # 加载合成因子
-        composite_factor = result_manager.get_factor_data(
-            'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
-        )
-
-        if composite_factor is not None and not composite_factor.empty:
-            factor_dict['lqs_orthogonal_v1'] = composite_factor
-            logger.info(f"合成因子加载成功: {composite_factor.shape}")
+        # # 加载合成因子
+        # composite_factor = result_manager.get_factor_data(
+        #     'lqs_orthogonal_v1', stock_pool_index, start_date, end_date
+        # )
+        #
+        # if composite_factor is not None and not composite_factor.empty:
+        #     factor_dict['lqs_orthogonal_v1'] = composite_factor
+        #     logger.info(f"合成因子加载成功: {composite_factor.shape}")
 
         # 如果没有合成因子，加载基础因子
-        if not factor_dict:
-            volatility_factor = result_manager.get_factor_data(
-                'volatility_40d', stock_pool_index, start_date, end_date
+        for name in factor_names:
+            ret = result_manager.get_factor_data(
+                name, stock_pool_index, start_date, end_date
             )
-            if volatility_factor is not None:
-                factor_dict['volatility_40d'] = volatility_factor
-                logger.info(f"波动率因子加载成功: {volatility_factor.shape}")
-        
-        if not factor_dict:
-            raise ValueError("未能加载到有效的因子数据")
-        
+            if ret is not None:
+                factor_dict[name] = ret
+
         logger.info(f"数据加载完成: 价格{price_df.shape}, 因子{len(factor_dict)}个")
         # price_df = price_df[-20:]
         return price_df, factor_dict
@@ -79,8 +75,9 @@ def demo_basic_backtrader():
     """基础Backtrader演示 - 直接替代原有示例"""
 
     # 1. 加载数据
-    price_df, factor_dict = load_data_for_backtrader_demo()
-    
+    price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio'])
+    price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d'])
+
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
         top_quantile=0.15,           # 做多前30%
@@ -88,9 +85,9 @@ def demo_basic_backtrader():
         commission_rate=0.0001,      # 万1佣金
         slippage_rate=0.001,         # 千1滑点
         stamp_duty=0.0005,           # 千0.5印花税
-        initial_cash=100000,         # 30万初始资金
-        max_positions=12,            # 最多持30只股票
-        max_holding_days=40
+        initial_cash=10000000,         # 30万初始资金
+        max_positions=21,           # 最多持30只股票
+        max_holding_days=70
     )
     # 3. 一键运行Backtrader回测
     results = one_click_migration(price_df, factor_dict, config)
@@ -103,21 +100,37 @@ def demo_basic_backtrader():
     logger.info("="*60)
     
     for factor_name, result in results.items():
-        if result:
-            strategy = result['strategy']
-            logger.info(f"\n{factor_name} 执行统计:")
-            logger.info(f"  调仓次数: {strategy.rebalance_count}")
-            logger.info(f"  总订单数: {strategy.success_buy_orders}")
-            logger.info(f"  成功订单: {strategy.submit_buy_orders}")
-            logger.info(f"  失败订单: {strategy.failed_orders}")
-            
-            if strategy.success_buy_orders > 0:
-                success_rate = strategy.submit_buy_orders / strategy.success_buy_orders * 100
-                logger.info(f"  订单成功率: {success_rate:.1f}%")
-            
-            logger.info(f"  强制卖出: {strategy.forced_exits}次")
-            logger.info(f"  最终价值: {result['final_value']:,.2f}")
-    
+        strategy = result['strategy']
+        # a. 从 .analyzers 中获取各个分析器的分析结果
+        returns_analysis = strategy.analyzers.returns.get_analysis()
+        sharpe_analysis = strategy.analyzers.sharpe.get_analysis()
+        drawdown_analysis = strategy.analyzers.drawdown.get_analysis()
+        trade_analysis = strategy.analyzers.trades.get_analysis()
+
+        # b. 打印一份清晰的报告
+        print(f"\n============== {factor_name}策略表现报告 ==============")
+        print(f"回测期间: {strategy.datas[0].datetime.date(0)} to {strategy.datas[0].datetime.date(-1)}")
+        print(f"期初资产: {strategy.broker.startingcash:,.2f}")
+        print(f"期末资产: {strategy.broker.getvalue():,.2f}")
+
+        print("\n----- 核心指标 -----")
+        # 注意：rnorm100 是年化收益率
+        print(f"年化收益率 (Annualized Return): {returns_analysis['rnorm100']:.2f}%")
+        print(f"夏普比率 (Sharpe Ratio): {sharpe_analysis['sharpe']:.2f}")
+        print(f"最大回撤 (Max Drawdown): {drawdown_analysis['max']['drawdown']:.2f}%")
+        print(f"最长回撤期 (Longest Drawdown Period): {drawdown_analysis['max']['len']} 天")
+
+        print("\n----- 交易统计 -----")
+        if trade_analysis['total']['total'] > 0:
+            print(f"总交易次数: {trade_analysis['total']['total']}")
+            print(
+                f"胜率 (Win Rate): {trade_analysis['won']['total'] / trade_analysis['total']['total'] * 100:.2f}%")
+            print(f"平均每笔盈利: {trade_analysis['won']['pnl']['average']:.2f}")
+            print(f"平均每笔亏损: {trade_analysis['lost']['pnl']['average']:.2f}")
+            print(
+                f"盈亏比 (Profit/Loss Ratio): {abs(trade_analysis['won']['pnl']['average'] / trade_analysis['lost']['pnl']['average']):.2f}")
+        print(f"=======================耗时 {result['execution_time']:.2f}秒===================")
+
     return results
 
 #不同策略config 对比实验

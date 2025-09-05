@@ -125,8 +125,9 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 1. 组合目标总敞口 (例如，最多用90%的资金买股票)
         self.p.target_portfolio_exposure = 0.9
 
-        # 2. 再平衡容忍带 (例如，权重偏离理想值±5%以内则不操作)
-        self.p.rebalance_tolerance = 0.05
+        # 容忍带参数
+        self.p.tolerance_ratio = 0.10  # 相对比例部分：10%
+        self.p.tolerance_abs = 0.02  # 绝对阈值部分：2%
 
         # 3. 股票池最大持仓数
         # self.p.max_positions =3  # 示例值
@@ -134,7 +135,7 @@ class EnhancedFactorStrategy(bt.Strategy):
         # 4. 选股分位数
         self.p.top_quantile = 0.1  # 示例值
 
-        #订单
+        #订单 意图
         self.order_intents = {}
         # 辅助信息
 
@@ -143,6 +144,22 @@ class EnhancedFactorStrategy(bt.Strategy):
         logger.info(f"  最大持仓: {self.p.max_positions}只")
         logger.info(f"  最大持有期: {self.p.max_holding_days}天")
         logger.info(f"  重试期限: {self.p.retry_buy_days}天")
+
+    # 在你的策略类中，增加这个辅助方法
+    def _is_weight_out_of_band(self, current_weight: float, ideal_weight: float) -> bool:
+        """
+        【混合模式】检查当前权重是否超出了动态计算的容忍带。
+        返回: True (超出) / False (在带内)
+        """
+        # 1. 计算容忍带的宽度 (取相对值和绝对值中的较大者)
+        tolerance = max(ideal_weight * self.p.tolerance_ratio, self.p.tolerance_abs)
+
+        # 2. 计算上下轨
+        upper_bound = ideal_weight + tolerance
+        lower_bound = ideal_weight - tolerance
+
+        # 3. 判断是否出界
+        return not (lower_bound <= current_weight <= upper_bound)
     def load_t_ranks_df(self):
           origin_t1= self.p.factor_data.copy()#因为我们传入的t-1
           factor_df =origin_t1.shift(-1)
@@ -432,90 +449,151 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         return all_sells
 
+    # 在你的策略类中，增加这个辅助方法
+    def _get_practical_target_weight(self, data_obj: bt.DataBase, ideal_weight: float) -> float:
+        """
+        根据理想权重，计算出最接近的、可用整手股数实现的“实用”目标权重。
+        这是方案A的最终实现。
+        """
+        portfolio_value = self.broker.getvalue()
+        price = data_obj.close[0]
+
+        # 如果价格无效或总价值为0，则无法计算，返回0
+        if price <= 0 or portfolio_value == 0:
+            return 0.0
+
+        # 1. 根据理想权重，计算出理想的、未取整的股数
+        ideal_size = (portfolio_value * ideal_weight) / price
+
+        # 2. 对理想股数进行向下取整（100的倍数）
+        rounded_size = (ideal_size // 100) * 100
+
+        # 3. 如果取整后股数为0（买不起一手），则目标权重也为0
+        if rounded_size == 0:
+            return 0.0
+
+        # 4. 将取整后的股数，重新计算成一个“实用”的权重
+        practical_weight = (rounded_size * price) / portfolio_value
+
+        return practical_weight
     def _rebalance_portfolio(self, tactical_sells: dict):
         """
         原子性调仓】
         在调仓日当天，完成所有计算、意图生成和下单。
-        集成了容忍带、战术/战略合并、冷却风控等所有高级功能。
+        融合了动态容忍带、最低持仓过滤、战术/战略合并、冷却风控等所有高级功能。
         """
         current_date = self.datetime.date(0)
-        # ==========================================================
-        # 模块 1: 确定最终的战略目标 (Get Targets)
-        # ==========================================================
-        try:
-            daily_ranks = self.ranks.loc[pd.to_datetime(current_date)].dropna()
-            if daily_ranks.empty:
-                raise ValueError(f"调仓日 {current_date} 无有效因子排名，本次不进行战略调整。")
-            else:
-                num_to_select = int(np.ceil(len(daily_ranks) * self.p.top_quantile))
-                if self.p.max_positions:
-                    num_to_select = min(num_to_select, self.p.max_positions)
-                target_positions = set(daily_ranks.nlargest(num_to_select).index)
-        except KeyError:
-            raise ValueError(f"在 {current_date} 无法找到排名数据，调仓失败。")
-            return  # 关键数据缺失，直接中止调仓
-
-        logger.info(f"本日战略目标确定，共 {len(target_positions)} 只股票: {target_positions}")
-
-        # ==========================================================
-        # 模块 2: 计算理想权重与动态容忍带
-        # ==========================================================
-        if not target_positions:
-            ideal_weight = 0
-        else:
-            ideal_weight = self.p.target_portfolio_exposure / len(target_positions)
-
-        upper_bound = ideal_weight * (1 + self.p.rebalance_tolerance)
-        lower_bound = ideal_weight * (1 - self.p.rebalance_tolerance)
-
-        # ==========================================================
-        # 模块 3: 统一决策与执行
-        # ==========================================================
         portfolio_value = self.broker.getvalue()
         current_positions_map = {d._name: self.getposition(d) for d in self.datas if self.getposition(d).size > 0}
         current_positions_set = set(current_positions_map.keys())
 
-        # --- 决策 3.1: 处理清仓和减仓 ---
-        strategic_sells = {stock: "调仓卖出" for stock in (current_positions_set - target_positions)}
+        # ==========================================================
+        # 模块 1: 确定“理想中”的战略目标
+        # ==========================================================
+        try:
+            daily_ranks = self.ranks.loc[pd.to_datetime(current_date)].dropna()
+            if daily_ranks.empty:
+                logger.warning(f"调仓日 {current_date} 无有效因子排名，目标设定为空仓。")
+                target_positions_ideal = set()
+            else:
+                num_to_select = int(np.ceil(len(daily_ranks) * self.p.top_quantile))
+                if self.p.max_positions:
+                    num_to_select = min(num_to_select, self.p.max_positions)
+                target_positions_ideal = set(daily_ranks.nlargest(num_to_select).index)
+        except KeyError:
+            raise ValueError(f"在 {current_date} 无法找到排名数据，调仓失败。")
+            return  # 关键数据缺失，直接中止调仓
+
+        # ==========================================================
+        # 模块 2: 【风控】分离决策，保护现有持仓，过滤新候选
+        # ==========================================================
+        positions_to_hold = current_positions_set & target_positions_ideal
+        new_buy_candidates = target_positions_ideal - current_positions_set
+
+        affordable_new_buys = set()
+        if new_buy_candidates:
+            # 预算是基于“理想”目标持仓数来平均计算的
+            final_potential_count = len(target_positions_ideal)
+            if final_potential_count > 0:
+                ideal_weight_for_budgeting = self.p.target_portfolio_exposure / final_potential_count
+                value_per_stock_budget = portfolio_value * ideal_weight_for_budgeting
+
+                for stock_name in new_buy_candidates:
+                    price = self.getdatabyname(stock_name).close[0]
+                    if price * 100 <= value_per_stock_budget:
+                        affordable_new_buys.add(stock_name)
+                    else:
+                        logger.info(
+                            f"新候选 '{stock_name}' (价格:{price:.2f}) 因最低持仓金额不足(预算:{value_per_stock_budget:.2f})被剔除。")
+
+        # 【得出最终目标】= 计划继续持有的 + 审查后买得起的新目标
+        final_target_positions = positions_to_hold | affordable_new_buys
+        logger.info(f"本日最终战略目标确定，共 {len(final_target_positions)} 只股票: {final_target_positions}")
+
+        # ==========================================================
+        # 模块 3: 计算最终理想权重
+        # ==========================================================
+        if not final_target_positions:
+            ideal_weight = 0
+        else:
+            ideal_weight = self.p.target_portfolio_exposure / len(final_target_positions)
+
+        # ==========================================================
+        # 模块 4: 【完整版】统一决策与执行
+        # ==========================================================
+
+        # --- 决策 4.1: 处理清仓 ---
+        # 卖出原因：1. 战术性卖出 2. 战略性卖出（不在最终目标池中）
+        strategic_sells = {stock: "调仓卖出" for stock in (current_positions_set - final_target_positions)}
         final_sells = strategic_sells
-        final_sells.update(tactical_sells)  # 用战术卖出覆盖战略卖出
+        final_sells.update(tactical_sells)  # 用战术原因覆盖战略原因
 
         for stock_name, reason in final_sells.items():
             if stock_name in current_positions_map:
                 self._submit_order_with_pending(stock_name, 0.0, reason)
 
-        # --- 决策 3.2: 处理持仓调整 (应用容忍带) ---
-        positions_to_hold_over = current_positions_set & target_positions
-        for stock_name in positions_to_hold_over:
-            if stock_name in final_sells: continue  # 如果已决定卖出，则跳过
+        # --- 决策 4.2: 处理持仓调整 (应用容忍带) ---
+        # 只对那些应该继续持有的股票，进行权重微调
+        positions_to_adjust = current_positions_set & final_target_positions
+        for stock_name in positions_to_adjust:
+            # 双重保险：如果一只股票既要被持有又要被战术性卖出，听战术的，跳过调整
+            if stock_name in final_sells:
+                continue
 
             pos = current_positions_map[stock_name]
             current_weight = pos.size * pos.price / portfolio_value
 
-            # 只有当权重超出容忍带时，才进行调整
-            if not (lower_bound <= current_weight <= upper_bound):
-                logger.info(
-                    f"持仓 '{stock_name}' 当前权重 {current_weight:.2%} 超出容忍带 [{lower_bound:.2%}, {upper_bound:.2%}]，调整至目标 {ideal_weight:.2%}")
+            # 调用我们之前设计的混合模式容忍带函数
+            if self._is_weight_out_of_band(current_weight, ideal_weight):
                 self._submit_order_with_pending(stock_name, ideal_weight, "调仓-权重调整")
 
-        # --- 决策 3.3: 处理新建仓 ---
-        new_buy_candidates = target_positions - current_positions_set
-        if not new_buy_candidates:
-            logger.info("无新买入目标。")
-            return
+        # --- 决策 4.3: 处理新建仓 ---
+        # 新建仓的来源，是之前审查过的“买得起”的股票池
+        final_new_buy_candidates = final_target_positions - current_positions_set
 
-        # 应用最终的风控检查（冷却、黑名单等）
-        final_buys = self._filter_cooldown_stocks(new_buy_candidates)#------------------------------------------
+        # 应用最终的行为层风控（冷却机制）
+        final_buys = self._filter_cooldown_stocks(final_new_buy_candidates)
 
-        # 为最终决定要买入的股票下单
         for stock_name in final_buys:
-            if stock_name in final_sells: continue  # 双重保险，确保不买回刚决定要卖的
+            # 双重保险：确保不会买回在同一次决策中要被卖出的股票
+            if stock_name in final_sells:
+                continue
 
             data_obj = self.getdatabyname(stock_name)
+
             if self._is_tradable(data_obj):
-                self._submit_order_with_pending(stock_name, ideal_weight, "调仓-新建仓")
+                # 不直接使用 ideal_weight，而是先将其转换为 practical_weight
+                practical_weight = self._get_practical_target_weight(data_obj, ideal_weight)
+
+                if practical_weight > 0:
+                    self._submit_order_with_pending(stock_name, practical_weight, "调仓-新建仓")
+                else:
+                    logger.info(f"'{stock_name}' 目标权重 {ideal_weight:.2%} 过小，无法买入一手，本次跳过。")
             else:
-                self.push_to_pending_buys(stock_name, ideal_weight,"调仓新建时停牌")
+                self.push_to_pending_buys(stock_name, ideal_weight, "调仓新建时停牌")
+
+        logger.info(f"====== 【调仓日】决策与only挂单执行完毕 ======")
+
 
     # 在你的策略类中
     def _filter_cooldown_stocks(self, buy_candidates: set) -> set:
@@ -678,11 +756,10 @@ class EnhancedFactorStrategy(bt.Strategy):
             # 注意：这里的逻辑可以更精细，比如区分是买入待办还是卖出待办
             # 一个简单的判断：如果目标权重>0, 意图是买；如果目标=0, 意图是卖
             if target_weight > 0:
-                self.push_to_pending_buys(stock_name, f"挂单买入失败 (原因: {reason})")
+                self.push_to_pending_buys(stock_name, target_weight,f"挂单买入失败 (原因: {reason})")
             else:
                 self.push_to_pending_sells(stock_name, f"挂单卖出失败 (原因: {reason})")
             return False
-
         return True
 
         return True
@@ -704,6 +781,8 @@ class EnhancedFactorStrategy(bt.Strategy):
             portfolio_value = self.broker.getvalue()
             current_weight = (current_size * current_price / portfolio_value) if portfolio_value != 0 else 0
             current_cash = self.broker.get_cash()
+            if '新建仓' in reason:
+                self.submit_buy_orders += 1
 
             # 步骤 2: 【统一调用】提交核心订单
             order = self.order_target_percent(data=data_obj, target=target_weight)
@@ -711,7 +790,9 @@ class EnhancedFactorStrategy(bt.Strategy):
             # 步骤 3: 处理订单提交结果
             if order:
                 # 【关键】订单已创建
-                self.order_intents[order.ref] = target_weight
+                intent_data = {'weight': target_weight, 'reason': reason}
+
+                self.order_intents[order.ref] = intent_data
                 # 订单已成功提交到Broker - 逻辑不变，非常清晰
                 action_type = "买入/增仓" if order.isbuy() else "卖出/减仓"
                 logger.info(
@@ -974,13 +1055,21 @@ class EnhancedFactorStrategy(bt.Strategy):
         """
         订单状态通知 - 增强的交易状态处理
         """
+        #简单点！ 权重调整的订单 不进行任何处理
+
         stock_name = order.data._name
         current_date = self.datetime.date(0)
         pending_buys_snap = self.pending_buys
         pending_sells_snap = self.pending_sells
+        if self.order_intents[order.ref]['reason'] is not None and '权重调整' in self.order_intents[order.ref][
+            'reason']:
+            action = '权重调整'
+        else:
+            action = "新建仓" if order.isbuy() else "平仓"
+
         # 订单成功执行
         if order.status == order.Completed:
-            action = "买入" if order.isbuy() else "卖出"
+
             actionTimeType = "属于延迟日级别重试" if (
                     (stock_name in pending_sells_snap) or (stock_name in pending_buys_snap)) else "调仓"
 
@@ -1004,12 +1093,15 @@ class EnhancedFactorStrategy(bt.Strategy):
                             f"乘积: {order.executed.price * order.executed.size}")
             # 存入map
             self.push_to_cur_day_num(execution_date, order)
-
+            # 无论如何，事已至此  清理订单意图记录，
+            self.order_intents.pop(order.ref, None)
+            return
         # 订单失败处理
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+
+
             self.failed_orders += 1
-            action = "买入" if order.isbuy() else "卖出"
-            original_target_weight = self.order_intents.get(order.ref, 0.0)
+            original_target_weight = self.order_intents.get(order.ref, {}).get('weight', None)
 
             # 记录失败原因
             failure_record = {
@@ -1028,12 +1120,15 @@ class EnhancedFactorStrategy(bt.Strategy):
                 # 买入失败，加入待买清单
                 self.push_to_pending_buys(
                     stock_name=stock_name,
-                    ideal_weight=original_target_weight,  # <-- 完美解决了你的问题
+                    ideal_weight=original_target_weight,
                     descrip=f"{order.getstatusname()}"
                 )
             elif order.issell():
                 # 卖出失败，加入待卖清单
                 self.push_to_pending_sells(stock_name, f"{failure_record['status']}")
+
+            # 无论如何，事已至此  清理订单意图记录，
+            self.order_intents.pop(order.ref, None)
 
             if self.p.debug_mode:
                 logger.warning(f"{action}失败，加入重试: {stock_name}, 原因: {failure_record}")
@@ -1053,9 +1148,10 @@ class EnhancedFactorStrategy(bt.Strategy):
                 origin_num = self.p._buy_success_num[execution_date]
             self.p._buy_success_num[execution_date] = origin_num + 1
             return
-        if execution_date in self.p._sell_success_num:
-            origin_num = self.p._sell_success_num[execution_date]
-        self.p._sell_success_num[execution_date] = origin_num + 1
+        if order.issell():
+            if execution_date in self.p._sell_success_num:
+                origin_num = self.p._sell_success_num[execution_date]
+            self.p._sell_success_num[execution_date] = origin_num + 1
 
     # 注意场景！
     def _calculate_dynamic_weight(self, need_buy_count, ) -> float:  # todo 需要测试 回测
@@ -1118,8 +1214,8 @@ class EnhancedFactorStrategy(bt.Strategy):
 
         logger.info(f"资金统计:")
         logger.info(f"  初始资金: {self.broker.startingcash:,.2f}")
-        logger.info(f"  最终资金: {final_value:,.2f}")
-        logger.info(f"  总收益率: {total_return:.2f}%")
+        logger.info(f"  最终资金: {self.broker.getvalue():,.2f}")
+        logger.info(f"  总收益率: { (final_value / self.broker.startingcash - 1) * 100:.2f}%")
 
         # 交易统计
         success_rate = self.success_buy_orders / max(self.submit_buy_orders, 1) * 100
@@ -1127,12 +1223,12 @@ class EnhancedFactorStrategy(bt.Strategy):
         logger.info(f"交易统计:")
         logger.info(f"  总提交订单数（提交买入订单数）: {self.submit_buy_orders}")
         logger.info(f"  失败订单（别担心，反正有重试: {self.failed_orders}")
-        logger.info(f"  买入成功率: {success_rate:.1f}%")
+        logger.info(f"  买入成功率: {self.success_buy_orders / max(self.submit_buy_orders, 1) * 100:.1f}%")
 
         # 调仓统计
         logger.info(f"调仓统计:")
-        logger.info(f"  调仓次数: {self.rebalance_count}")
-        logger.info(f"  强制卖出: {self.forced_exits}次")
+        logger.info(f"  调仓次数: {len(self.rebalance_dates_set)}")
+        logger.info(f"  强制到期: {self.forced_exits}次")
         logger.info(f"  紧急止损: {self.emergency_exits}次")
 
         # 待处理队列统计
@@ -1345,10 +1441,7 @@ class BacktraderMigrationEngine:
                     'analyzers': strategy.analyzers,
                     'config_used': self.bt_config.copy()
                 }
-                #
 
-                logger.info(f"最终价值 {final_value:,.2f}, "
-                            f"耗时 {execution_time:.2f}秒")
 
             except Exception as e:
                 raise ValueError("失败") from e
@@ -1493,51 +1586,6 @@ class BacktraderMigrationEngine:
     #     holding_signals = holding_signals.loc[:, holding_signals.any(axis=0)].astype(bool)
     #     return holding_signals.astype(bool)
 
-    def get_comparison_with_vectorbt(self, vectorbt_results: Dict = None) -> pd.DataFrame:
-        """
-        与vectorBT结果对比
-        
-        Args:
-            vectorbt_results: vectorBT回测结果
-            
-        Returns:
-            pd.DataFrame: 对比结果表
-        """
-        if not self.results:
-            raise ValueError("请先运行Backtrader回测")
-
-        # 提取Backtrader结果
-        bt_comparison_data = {}
-
-        for factor_name, result in self.results.items():
-            if result is None:
-                continue
-
-            try:
-                analyzers = result['analyzers']
-                total_return = (result['final_value'] / self.bt_config['initial_cash'] - 1) * 100
-                sharpe_ratio = analyzers.sharpe.get_analysis().get('sharperatio', 0) or 0
-                max_drawdown = abs(analyzers.drawdown.get_analysis()['max']['drawdown'])
-
-                bt_comparison_data[factor_name] = {
-                    'Total Return [%]': total_return,
-                    'Sharpe Ratio': sharpe_ratio,
-                    'Max Drawdown [%]': max_drawdown,
-                    'Framework': 'Backtrader'
-                }
-
-            except Exception as e:
-                logger.error(f"提取{factor_name}结果时出错: {e}")
-
-        bt_df = pd.DataFrame(bt_comparison_data).T
-
-        # 如果提供了vectorBT结果，进行对比
-        if vectorbt_results:
-            # 这里可以添加详细的对比逻辑
-            logger.info("Backtrader vs vectorBT 结果对比:")
-            print(bt_df)
-
-        return bt_df
 
     def show_per_day_trade_details(self):
         #根据 _buy_success_num _sell_success_num 统计每天情况
@@ -1617,15 +1665,35 @@ def one_click_migration(price_df: pd.DataFrame, factor_dict: Dict[str, pd.DataFr
 
     # 执行迁移和回测
     results = migration_engine.migrate_and_run(price_df, factor_dict)
-
-    # 生成对比表
-    # comparison_table = migration_engine.get_comparison_with_vectorbt()
-
     return results
 
 
 # 运行测试
+class A_ShareRoundLotSizer(bt.sizers.PercentSizer):
+    """
+    A股整手（100股）Sizer
+    - 继承自 PercentSizer，完美配合 order_target_percent
+    - 只重写 _getsizing 方法，加入“向下取整到100的倍数”的逻辑
+    - 保持了 Sizer 的无状态性和职责单一性
+    """
+    params = (('lot', 100),)
 
+    def _getsizing(self, comminfo, cash, data, isbuy):
+        # 1. 调用父类（PercentSizer）的_getsizing方法，获取理论上的、未取整的理想股数
+        #    我们不重复造轮子，让 backtrader 的原生逻辑先计算
+        size = super()._getsizing(comminfo, cash, data, isbuy)
+        print(f"DEBUGGGGG: {data._name} size={size} isbuy={isbuy}")
+
+        # 如果计算出的size是0，直接返回0
+        if size == 0:
+            return 0
+
+        # 2. 对理想股数，执行我们唯一的、核心的逻辑：向下取整到 lot 的倍数
+        #    math.floor(size / self.p.lot) * self.p.lot 也是可以的
+        rounded_size = (size // 100) * 100
+
+        # 3. 返回处理后的最终股数
+        return rounded_size
 if __name__ == "__main__":
     print()
 
