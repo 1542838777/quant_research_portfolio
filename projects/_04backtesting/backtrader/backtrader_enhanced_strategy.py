@@ -7,6 +7,7 @@ Backtrader增强策略 - 完整迁移vectorBT复杂逻辑
 3. 使用Backtrader事件驱动模型替代复杂for循环
 4. 保持原有策略的所有核心逻辑和参数
 """
+import math # 确保导入
 
 import warnings
 from datetime import datetime
@@ -251,7 +252,7 @@ class EnhancedFactorStrategy(bt.Strategy):
             # b. 检查“执行可行性”（今天是否可交易）
             data_obj = self.getdatabyname(stock_name)
             if self._is_tradable(data_obj):
-                logger.info(f"待买任务 '{stock_name}' 今日已复牌，尝试以目标权重 {target_weight:.2%} 买入。")
+                logger.info(f"待买任务 '{stock_name}' 今日已复牌，明日开仓尝试以目标权重 {target_weight:.2%} 买入。")
 
                 # c. 提交订单
                 # 注意：我们在这里调用 _submit_order_with_pending
@@ -775,26 +776,57 @@ class EnhancedFactorStrategy(bt.Strategy):
                 logger.warning(f"数据不足，无法为 {stock_name} 下单。")
                 return False, "失败"
 
+            # 步骤 1: 手动计算理论目标股数
+            portfolio_value = self.broker.getvalue()
+            target_value = portfolio_value * target_weight
+            price = data_obj.close[0]
+            if price <= 0 or np.isnan(price):
+                return False, "没有获取到当日价格"
+
+            ideal_size = target_value / price
+
+            # 步骤 2: 【关键】执行A股的“整手”规则，自己掌控取整
+            rounded_target_size = math.floor(ideal_size / 100.0) * 100.0
+            #提交核心订单
+            ##
+            #     核心：放弃 order_target_percent，改用 order_target_size。
+            #     因为我之前专门算好整100 size 转换成权重，然调用！，但是底层会自动画蛇添足 只卖n-1股！ （可能是因为手续费的原因！）
+            #     #
+            # order = self.order_target_percent(data=data_obj, target=target_weight)
+
+            # 步骤 3: 使用 order_target_size 下达精确指令
+            order = self.order_target_size(data=data_obj, target=rounded_target_size)
+
             current_pos = self.getposition(data_obj)
             current_size = current_pos.size
             current_price = data_obj.close[0]
             portfolio_value = self.broker.getvalue()
             current_weight = (current_size * current_price / portfolio_value) if portfolio_value != 0 else 0
+            #当前资产
+            value,_ = self.get_current_value_approximate()
+
             current_cash = self.broker.get_cash()
             if '新建仓' in reason:
                 self.submit_buy_orders += 1
 
-            # 步骤 2: 【统一调用】提交核心订单
-            order = self.order_target_percent(data=data_obj, target=target_weight)
+            action_type='UNKNOW'
+            if '权重调整' in reason:
+                action_type = '权重调整'
+
 
             # 步骤 3: 处理订单提交结果
             if order:
                 # 【关键】订单已创建
-                intent_data = {'weight': target_weight, 'reason': reason}
+                # order.created.size 会告诉你 backtrader 内部计算出的、未成交的理论股数
+                logger.info(f"【Backtrader 内部计算】标的: {stock_name}, 理论目标股数: {order.created.size}")
+                if action_type == 'UNKNOW' and order.isbuy():
+                    action_type = "新建仓"
+                elif action_type == 'UNKNOW' and order.issell():
+                    action_type = "平仓"
 
-                self.order_intents[order.ref] = intent_data
+                self.order_intents[order.ref] =  {'weight': target_weight, 'reason': reason}
                 # 订单已成功提交到Broker - 逻辑不变，非常清晰
-                action_type = "买入/增仓" if order.isbuy() else "卖出/减仓"
+
                 logger.info(
                     f"\t\t\t\t{self.datetime.date(0)}-{action_type}-预备订单提交: {stock_name}, "
                     f"目标权重: {target_weight:.2%}, 原因: {reason}")
@@ -802,26 +834,28 @@ class EnhancedFactorStrategy(bt.Strategy):
             else:
                 # 订单未被创建 - 启动精细化失败原因分析
 
-                # a. 智能判断交易意图 (Intent)
-                intent = "unknown"
                 # 用一个小的阈值来处理浮点数精度问题
-                if target_weight > current_weight + 0.0001:
-                    intent = "buy"
-                elif target_weight < current_weight - 0.0001:
-                    intent = "sell"
-                else:
+                if target_weight == current_weight :
+                    logger.info("权重已到位，无需交易")
                     return True, "无操作"  # 权重已到位，无需交易
+                #size 一致无需交易
+                if rounded_target_size == current_size:
+                    logger.info("股数已到位，无需交易")
+                    return True, "无操作"
+
 
                 # b. 【完美移植】沿用你原有的、优秀的失败原因分析逻辑
                 failure_reason = "未知原因"
-                if intent == 'sell':
+                if reason in ['调仓-权重调整', '调仓卖出', '停牌退出', '强制到期']:
+                    action_type = '平仓'
                     if current_size <= 0:
                         failure_reason = "无持仓可卖"
                     elif np.isnan(current_price) or current_price <= 0:
                         failure_reason = "停牌/价格异常无法卖出"
                     # 你可以继续加入更多卖出失败的判断...
 
-                elif intent == 'buy':
+                elif    reason in ['调仓-新建仓', '待买清单执行', '挂单买入失败 (原因: normal)']:
+                    action_type = '新建仓'
                     required_cash = abs(portfolio_value * (target_weight - current_weight))
                     if current_cash < required_cash and current_cash < current_price * 100:
                         failure_reason = "现金不足"
@@ -833,10 +867,12 @@ class EnhancedFactorStrategy(bt.Strategy):
                         failure_reason = f"保证金不足或未知原因(目标权重{target_weight:.2%})"
 
                 # c. 打印你想要的、详细的警告日志
-                logger.warning(f"{self.datetime.date(0)}-{intent}订单提交失败: {stock_name} (原因: {failure_reason})")
+                logger.warning(f"{self.datetime.date(0)}-{action_type}订单提交失败: {stock_name} (原因: {failure_reason})")
                 logger.warning(
-                    f"  详细状态: 现金={current_cash:.2f}, 当前持仓={current_size}, "
-                    f"价格={current_price:.2f}, 当前权重={current_weight:.2%}, 目标权重={target_weight:.2%}")
+                    f"  详细状态: 现金={current_cash:.2f}, 总价值:{value},当前此股票持仓={current_size}, "
+                    f"股票价格={current_price:.2f}, 当前权重={current_weight:.2%}, 目标权重={target_weight:.2%},"
+                    f"权重差额={value*(target_weight - current_weight)}"
+                )
 
                 return False, "失败"
 
@@ -1682,7 +1718,7 @@ class A_ShareRoundLotSizer(bt.sizers.PercentSizer):
         # 1. 调用父类（PercentSizer）的_getsizing方法，获取理论上的、未取整的理想股数
         #    我们不重复造轮子，让 backtrader 的原生逻辑先计算
         size = super()._getsizing(comminfo, cash, data, isbuy)
-        print(f"DEBUGGGGG: {data._name} size={size} isbuy={isbuy}")
+        # print(f"DEBUGGGGG: {data._name} size={size} isbuy={isbuy}")
 
         # 如果计算出的size是0，直接返回0
         if size == 0:

@@ -34,7 +34,7 @@ def load_data_for_backtrader_demo(factor_names):
         )
         
         stock_pool_index = '000906'
-        start_date = '2023-03-28'
+        start_date = '2019-03-28'
         end_date = '2023-12-31'
         
         logger.info(f"数据配置: 股票池={stock_pool_index}, 时间范围={start_date}~{end_date}")
@@ -75,13 +75,13 @@ def demo_basic_backtrader():
     """基础Backtrader演示 - 直接替代原有示例"""
 
     # 1. 加载数据
-    price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio'])
     price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d'])
+    price_df, factor_dict = load_data_for_backtrader_demo( ['volatility_40d','sp_ratio','earnings_stability','cfp_ratio','ep_ratio'])
 
     # 2. 使用原有配置（完全兼容）
     config = BacktestConfig(
         top_quantile=0.15,           # 做多前30%
-        rebalancing_freq='W',        # 月度调仓
+        rebalancing_freq='Q',        # 月度调仓
         commission_rate=0.0001,      # 万1佣金
         slippage_rate=0.001,         # 千1滑点
         stamp_duty=0.0005,           # 千0.5印花税
@@ -109,14 +109,14 @@ def demo_basic_backtrader():
 
         # b. 打印一份清晰的报告
         print(f"\n============== {factor_name}策略表现报告 ==============")
-        print(f"回测期间: {strategy.datas[0].datetime.date(0)} to {strategy.datas[0].datetime.date(-1)}")
+        print(f"回测期间: {price_df.index[0]} to {strategy.datas[0].datetime.date(-1)}")
         print(f"期初资产: {strategy.broker.startingcash:,.2f}")
         print(f"期末资产: {strategy.broker.getvalue():,.2f}")
 
         print("\n----- 核心指标 -----")
         # 注意：rnorm100 是年化收益率
         print(f"年化收益率 (Annualized Return): {returns_analysis['rnorm100']:.2f}%")
-        print(f"夏普比率 (Sharpe Ratio): {sharpe_analysis['sharpe']:.2f}")
+        print(f"夏普比率 (Sharpe Ratio): {sharpe_analysis['sharperatio']}")
         print(f"最大回撤 (Max Drawdown): {drawdown_analysis['max']['drawdown']:.2f}%")
         print(f"最长回撤期 (Longest Drawdown Period): {drawdown_analysis['max']['len']} 天")
 
