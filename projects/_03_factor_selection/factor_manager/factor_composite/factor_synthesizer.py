@@ -122,7 +122,7 @@ class FactorSynthesizer:
 
         return composite_factor_df
 
-    def do_composite_eq_wights(self, factor_name, stock_pool_index_name):
+    def do_composite_eq_wights(self, factor_name,stock_pool_index_name):
         # 这个合成就是老版本的合成（每次都是重新测试儿因子，效率差） 等权！，不可复用！
         """
         执行因子合成 - 支持等权和IC加权两种模式
@@ -175,7 +175,7 @@ class FactorSynthesizer:
         ic_synthesizer.print_synthesis_report(report)
 
         return composite_df
-    def do_composite_route(self, factor_name, stock_pool_index, use_ic_weighting=True, weighting_config=None, snap_config_id=None):
+    def do_composite_route(self, factor_name, stock_pool_index_name, use_ic_weighting=True, weighting_config=None, snap_config_id=None):
         if use_ic_weighting:#升级为带正交化功能
             # 获取子因子列表
             sub_factor_names = self.factor_manager.data_manager.get_cal_require_base_fields_for_composite(factor_name)
@@ -188,5 +188,5 @@ class FactorSynthesizer:
               , snap_config_id=snap_config_id, force_generate_ic=False))
             # composite_df = self.do_composite_wights_by_rolling_ic(factor_name, stock_pool_index, weighting_config,snap_config_id)
         else:
-            composite_df = self.do_composite_eq_wights(factor_name, stock_pool_index)
+            composite_df = self.do_composite_eq_wights(factor_name, stock_pool_index_name=stock_pool_index_name)
         return composite_df

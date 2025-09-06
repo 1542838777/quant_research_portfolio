@@ -319,7 +319,6 @@ class EnhancedTestRunner:
             stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(first_stock_pool)
             
             price_hfq = self.factor_manager.get_prepare_aligned_factor_for_analysis(price_type, first_stock_pool, True)
-            ret_alinged = self.factor_manager.get_prepare_aligned_factor_for_analysis("volatility_40d", 'ZZ800', True)
 
             if price_hfq is None:
                 raise ValueError("price_hfq 数据为空，无法保存")
@@ -330,7 +329,7 @@ class EnhancedTestRunner:
             
             path.mkdir(parents=True, exist_ok=True)
             price_hfq.to_parquet(path / f'{price_type}.parquet')
-            logger.info(f"📊 价格数据保存成功: {path} / {price_hfq}.parquet'")
+            logger.info(f"📊 价格数据保存成功: {path} / {price_type}.parquet'")
             
         except Exception as e:
             raise ValueError(f"⚠️ 价格数据保存失败:") from e
@@ -458,17 +457,16 @@ class EnhancedTestRunner:
         return self.config_snapshot_manager.compare_configs(snapshot_id1, snapshot_id2)
 
 #单因子测试主入口
-def run_test_by_config():
+def run_test_by_config(session_description):
     """主函数 - 使用增强的测试运行器"""
     try:
 
-        
         # 创建增强的测试运行器
         test_runner = EnhancedTestRunner()
         
         # 运行批量测试
         results = test_runner.init_and_test_for_simple(
-            session_description="生产环境_因子批量 o2o_V3.0"
+            session_description=session_description
         )
         
         # 输出最终结果
@@ -489,6 +487,6 @@ def run_test_composite_by_local_rolling_ic(his_snap_config_id):
 
 
 if __name__ == "__main__":
-    run_test_by_config()
+    run_test_by_config('临时测试')
     # run_test_composite_by_local_rolling_ic('20250825_091622_98ed2d08')
 

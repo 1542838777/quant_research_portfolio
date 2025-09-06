@@ -922,7 +922,7 @@ class FactorCalculator:
         # 1. 获取最基础的日线数据
         # 假设 FactorManager 可以直接获取 amount 和 vol
         amount_df = self.factor_manager.get_raw_factor('amount')
-        vol_df = self.factor_manager.get_raw_factor('vol_raw')
+        vol_df = self.factor_manager.get_raw_factor('vol_hfq')
 
         # 2. 对齐数据
         amount_aligned, vol_aligned = amount_df.align(vol_df, join='inner', axis=None)
@@ -1250,7 +1250,7 @@ class FactorCalculator:
                 """
         print(f"    >  正在从 {source_column} 计算 {single_q_col_name}...")
 
-        financial_long_df = data_loader_func().copy(deep=True)
+        financial_long_df = data_loader_func.copy(deep=True)
 
         # 步骤一：【调用新工具】创建脚手架并合并，解决季度跳跃问题
         merged_df = self._create_scaffold_and_merge_quarterly_data(financial_long_df, 'end_date')
@@ -1379,16 +1379,9 @@ class FactorCalculator:
         """【V3.0 - 统一版】根据通用复权乘数计算【反向】复权成交量"""
         vol_raw = self.factor_manager.get_raw_factor('vol_raw')
         hfq_adj_factor = self.factor_manager.get_raw_factor('hfq_adj_factor')
-        # 价格乘数是 < 1 的“折扣”，所以成交量要【除以】它，实现反向调整
-        ##
-        # 为什么 vol (成交量) 是要反向的？（for：确保跨时间历史数据的可比性
-        # 一句话概括：因为vol（成交量）是一个实物数量（Physical Quantity）指标，它会因为送股、拆股等股本变化事件而发生剧烈跳变，导致历史数据和当前数据完全没有可比性，因此必须调整。#
-        ##
-        #
-        # 比如10元一股 1000量 成交额1w
-        #  次日因为分红，把现金给出去。股价：1元 ，但是每天成交额都是1w左右 （基于这个假设。 所以今天量：10000的量，显然无法跟昨天相比，跨倍数太多！。所以需要除以复权因子
-        #
-        # #
+         ##
+        # 核心原则： 我们到底为什么要对成交量进行复权？
+        # 答案是：为了消除因“送转股”或“拆股”等股本变化事件，导致的成交量剧烈跳变，从而让历史上的成交量和现在的成交量具有可比性。#
         ret =  vol_raw/hfq_adj_factor
         return ret
 
@@ -1478,7 +1471,7 @@ class FactorCalculator:
     ###标准内部件
 
     def _calculate_vol_raw(self):
-        return self.factor_manager.get_raw_factor('val_raw').copy(deep=True) * 100 # 成交量 vol 的单位是 手 (1手 = 100股)，需要乘以 100 换算成 股。
+        return self.factor_manager.data_manager.raw_dfs['vol_raw'].copy(deep=True) * 100 # 成交量 vol 的单位是 手 (1手 = 100股)，需要乘以 100 换算成 股。
 
     ##
     #  目前用于 计算adj_factor 必须是ffill#

@@ -1464,13 +1464,13 @@ class FactorAnalyzer:
         """
         # --- 步骤一：准备【所有】需要的【T日】原材料 ---
 
-        is_composite_factor = self.factor_manager.data_manager.is_composite_factor(factor_name)
+        is_composite_factor ,use_ic_weighting= self.factor_manager.data_manager.is_composite_factor(factor_name)
         stock_pool_index_code = self.factor_manager.data_manager.get_stock_pool_index_code_by_name(stock_pool_name)
 
         if is_composite_factor:
             factorComposite =  FactorSynthesizer(self.factor_manager,self,self.factor_processor)
             # 注意：合成因子内部已经处理了shift逻辑，这里直接使用
-            factor_data_t1 = factorComposite.do_composite_route(factor_name=factor_name, stock_pool_index=stock_pool_index_code, snap_config_id=his_snap_config_id)
+            factor_data_t1 = factorComposite.do_composite_route(factor_name=factor_name,use_ic_weighting=use_ic_weighting, stock_pool_index_name=stock_pool_name, snap_config_id=his_snap_config_id)
         else:
             # a) 获取已经对齐的T-1因子值 (get_prepare...函数现在内部已经shift并对齐)
             factor_data_t1 = self.factor_manager.get_prepare_aligned_factor_for_analysis(factor_name, stock_pool_name, True)

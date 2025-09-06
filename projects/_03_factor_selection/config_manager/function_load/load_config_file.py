@@ -12,7 +12,7 @@ from projects._03_factor_selection.config_manager.function_load.local_config_fil
     CSI500_none_FFF_most_basic_profile, EVAL_SETTING_FULL, EVAL_SETTING_FAST, \
     dongbei_SETTING, fast_hs300_profile, ZZ1000_more_filter_profile, ZZ1000_no_filter_profile, fast_eva_SETTING, \
     HS300_no_filter_profile, ALL_none_FFF_most_basic_profile, fast_ZZ800_profile, ZZ500_more_filter_profile, \
-    东北_zz500_profile
+    东北_zz500_profile, HS300_fast_profile
 from quant_lib import logger
 from quant_lib.config.logger_config import log_warning
 
@@ -149,7 +149,6 @@ def check_backtest_periods(start_date, end_date):
 
 
 
-
 trans_pram =  {
     'mode': 'massive_test',
     'pools': {
@@ -158,6 +157,17 @@ trans_pram =  {
     'period': really_train_period,
     'evaluation': EVAL_SETTING_FULL,  # <--- 【新增】
     'desc': '海量测试环境 zz800股票池+必要过滤  （这是最真实的环境'
+}
+
+
+trans_pram =  {
+    'mode': 'massive_test',
+    'pools': {
+        **HS300_fast_profile
+    },
+    'period': temp_half_year,
+    'evaluation': EVAL_SETTING_FAST,  # <--- 【新增】
+    'desc': 'fast临时'
 }
 #
 # trans_pram = {

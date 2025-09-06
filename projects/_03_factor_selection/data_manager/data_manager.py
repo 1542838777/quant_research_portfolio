@@ -981,7 +981,8 @@ class DataManager:
         return pd.DataFrame(self.config['factor_definition'])
 
     def is_composite_factor(self, factor_name):
-        return self.get_factor_definition(factor_name).get('action').iloc[0] in ['composite', 'composite_by_rolling_ic']
+        action = self.get_factor_definition(factor_name).get('action').iloc[0]
+        return action  in ['composite', 'composite_by_rolling_ic'], action=='composite_by_rolling_ic'
 
     def get_pool_profiles(self):
         return self.config['stock_pool_profiles']
