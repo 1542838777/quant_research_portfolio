@@ -200,9 +200,9 @@ class VisualizationManager:
             return None
 
         fig, axes = plt.subplots(1, 2, figsize=(25, 8), sharey=True)
-        self._plot_daily_quantile_subplot(axes[0], data['q_daily_returns_raw'], "A. 原始因子 (Raw Factor) 分层回测")
+        self._plot_daily_quantile_subplot(axes[0], data['q_daily_returns_raw'], "A. 原始因子 (Raw Factor) 分层回测（每日收益累乘）")
         self._plot_daily_quantile_subplot(axes[1], data['q_daily_returns_proc'],
-                                          "B. 纯净因子 (Processed Factor) 分层回测")
+                                          "B. 纯净因子 (Processed Factor) 分层回测（每日收益累乘")
         fig.suptitle(f"因子 [{factor_name}] 价值归因分析: 处理前 vs. 处理后\n(版本: {data['run_version_str']})",
                      fontsize=20, y=1.02, fontproperties=cn_font)
 
@@ -217,7 +217,7 @@ class VisualizationManager:
 
         fig, axes = plt.subplots(1, 2, figsize=(25, 8))
         self._plot_ic_analysis_subplot(axes[0], data, title="A. 因子IC序列与累计IC")
-        self._plot_quantile_net_value_subplot(axes[1], data, title=f'B. 分层累计净值 ({data["best_period"]})')
+        self._plot_quantile_net_value_subplot(axes[1], data, title=f'B. 最佳周期：分层累计净值 ({data["best_period"]})')
         fig.suptitle(f"因子 [{factor_name}] 核心分析面板\n(版本: {data['run_version_str']})", fontsize=20, y=1.02,
                      fontproperties=cn_font)
 
@@ -228,12 +228,36 @@ class VisualizationManager:
         # ==========================================================================================
 
     def _save_figure(self, fig: plt.Figure, data: Dict, report_type: str) -> str:
+        self._save_self_figure(fig, data, report_type)
+        self._save_collective_figure(fig, data, report_type)
+        
+
+    def _save_collective_figure(self, fig: plt.Figure, data: Dict, report_type: str) -> str:
         """【私有】统一的图形保存函数。"""
         try:
             plt.tight_layout(rect=[0, 0, 1, 0.96])
-            report_dir = data['base_path'] / 'reports'
-            report_dir.mkdir(parents=True, exist_ok=True)
-            save_path = report_dir / f"{data['factor_name']}_{report_type}_{data['default_config']}_{data['run_version_str']}.png"
+            self_report_dir = data['collective_report_pics_path'] / report_type
+            self_report_dir.mkdir(parents=True, exist_ok=True)
+            pic_desc =  f"{data['factor_name']}_{report_type}_{data['default_config']}_{data['run_version_str']}.png"
+            save_path = self_report_dir /pic_desc
+            fig.savefig(save_path, dpi=200, bbox_inches='tight')
+            path_str = str(save_path)
+            logger.info(f"✓ {report_type} 已保存至: {path_str}")
+            return path_str
+        except Exception as e:
+            logger.error(f"保存图表 {report_type} 时出错: {e}")
+            return ""
+        finally:
+            plt.close(fig)
+
+    def _save_self_figure(self, fig: plt.Figure, data: Dict, report_type: str) -> str:
+        """【私有】统一的图形保存函数。"""
+        try:
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            self_report_dir = data['base_path'] / 'reports'
+            self_report_dir.mkdir(parents=True, exist_ok=True)
+            pic_desc =  f"{data['factor_name']}_{report_type}_{data['default_config']}_{data['run_version_str']}.png"
+            save_path = self_report_dir /pic_desc
             fig.savefig(save_path, dpi=200, bbox_inches='tight')
             path_str = str(save_path)
             logger.info(f"✓ {report_type} 已保存至: {path_str}")
@@ -249,12 +273,13 @@ class VisualizationManager:
         """【私有】统一的数据加载和预处理中心。"""
         try:
             base_path = Path(results_path) / backtest_base_on_index / factor_name
+            collective_report_pics = Path(results_path) / backtest_base_on_index / 'collective_report_pics'
             config_path = base_path / default_config
             target_version_path = self._find_target_version_path(config_path, run_version)
             if not target_version_path: raise FileNotFoundError(f"在 {config_path} 中未找到版本 '{run_version}'")
 
             stats = load_json_with_numpy(target_version_path / 'summary_stats.json')
-            data = {'stats': stats, 'base_path': base_path, 'target_version_path': target_version_path,
+            data = {'stats': stats, 'base_path': base_path,'collective_report_pics_path':collective_report_pics , 'target_version_path': target_version_path,
                     'run_version_str': target_version_path.name, 'factor_name': factor_name,
                     'default_config': default_config}
 
@@ -373,7 +398,7 @@ class VisualizationManager:
                                                                  color='black', lw=1.5)
 
         ax.set_title(title, fontproperties=cn_font, fontsize=16)
-        ax.set_ylabel('分层累计净值', fontproperties=cn_font)
+        ax.set_ylabel('每日分层累计净值', fontproperties=cn_font)
         ax_twin.set_ylabel('多空组合累计净值', fontproperties=cn_font, color='gray')
         lines, labels = ax.get_legend_handles_labels();
         lines2, labels2 = ax_twin.get_legend_handles_labels()
@@ -520,7 +545,7 @@ class VisualizationManager:
         for i, col in enumerate(quantile_cols):
             ax.plot(net_worth_df.index, net_worth_df[col], color=colors(i), label=f'{col}', linewidth=2)
         ax.set_title(title, fontsize=16, fontproperties=cn_font)
-        ax.set_ylabel('分层累计净值', fontproperties=cn_font)
+        ax.set_ylabel('每日分层累计净值', fontproperties=cn_font)
         ax_twin.set_ylabel('多空组合累计净值', fontproperties=cn_font, color='gray')
         lines, labels = ax.get_legend_handles_labels();
         lines2, labels2 = ax_twin.get_legend_handles_labels()

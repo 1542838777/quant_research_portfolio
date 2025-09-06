@@ -130,6 +130,20 @@
 #[34/36] 因子 value_composite 测试失败: 'NoneType' object has no attribute 'config_content'
 #vwap_deviation_20d 测试失败: 获取因子失败：val_raw
 
+#todo
+#
+#'value_composite',
+#  'total_mv',
+#  'amount',
+#  'turnover_rate',
+#  'roa_ttm',
+#
+#   'roe_change_q',
+#  , 'vwap_deviation_20d',
+#  'large_trade_ratio_10d',
+#  'revenue_growth_ttm',
+#  'beta',
+#  'net_profit_growth_ttm'
 #待新增：
 # 资金流向类 money_flow todo
 

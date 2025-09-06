@@ -909,7 +909,7 @@ def calculate_quantile_daily_returns(
         n_quantiles
 ) ->   pd.DataFrame:
     """
-    【V3 最终版】计算因子分层组合的每日收益率。
+    计算因子分层组合的每日收益率。
     1. 修正了函数签名，防止因参数位置错误导致的TypeError。
     2. 增加了对因子数据类型的强制转换，确保qcut函数安全运行。
 

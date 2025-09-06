@@ -355,6 +355,7 @@ factor_definition:
     time_alignment: 'pre_aligned'
     cal_require_base_fields: [ 'q_roe']
     cal_require_base_fields_from_daily: False
+
   - name: 'roe_ttm'
     style_category: 'quality'
     description: '净资产收益率(Return on Equity)，衡量公司为股东创造利润的能力，巴菲特最看重的指标之一。'
