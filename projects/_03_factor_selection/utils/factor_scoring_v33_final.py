@@ -130,12 +130,12 @@ def calculate_advanced_metrics(summary_row: Union[pd.Series, dict]) -> Dict:
     """
     
     # 1. 因子独特性：基于与市场的相关性
-    market_corr = abs(get_metric(summary_row, 'market_correlation_c2c', 0.4))
+    market_corr = abs(get_metric(summary_row, 'market_correlation_o2o', 0.4))
     factor_uniqueness = max(0, 1 - market_corr)
     
     # 2. 市场环境适应性：基于IC稳定性
-    ic_mean_abs = abs(get_metric(summary_row, 'ic_mean_processed_c2c', 0))
-    ic_std = get_metric(summary_row, 'ic_std_processed_c2c', 0.1)
+    ic_mean_abs = abs(get_metric(summary_row, 'ic_mean_processed_o2o', 0))
+    ic_std = get_metric(summary_row, 'ic_std_processed_o2o', 0.1)
     
     if ic_std > 0:
         stability_ratio = ic_mean_abs / ic_std
@@ -144,7 +144,7 @@ def calculate_advanced_metrics(summary_row: Union[pd.Series, dict]) -> Dict:
         regime_adaptability = 0.5
     
     # 3. IC一致性：基于胜率的改进版本
-    win_rate = get_metric(summary_row, 'tmb_win_rate_processed_c2c', 0.5)
+    win_rate = get_metric(summary_row, 'tmb_win_rate_processed_o2o', 0.5)
     # IC一致性 = max(正向一致性, 负向一致性)
     ic_consistency = max(win_rate, 1 - win_rate)
     
@@ -188,14 +188,14 @@ def calculate_factor_score_v33(summary_row: Union[pd.Series, dict],
     
     # === 1. 基础指标提取 ===
     base_metrics = {
-        'ic_mean': get_metric(summary_row, 'ic_mean_processed_c2c'),
-        'ic_ir': get_metric(summary_row, 'ic_ir_processed_c2c'), 
-        'fm_t': get_metric(summary_row, 'fm_t_statistic_processed_c2c'),
-        'sharpe': get_metric(summary_row, 'tmb_sharpe_processed_c2c'),
-        'max_drawdown': get_metric(summary_row, 'tmb_max_drawdown_processed_c2c'),
-        'monotonicity': get_metric(summary_row, 'monotonicity_spearman_processed_c2c'),
-        'ic_decay': get_metric(summary_row, 'ic_decay_c2c', 0.5),
-        'sharpe_raw': get_metric(summary_row, 'tmb_sharpe_raw_c2c')
+        'ic_mean': get_metric(summary_row, 'ic_mean_processed_o2o'),
+        'ic_ir': get_metric(summary_row, 'ic_ir_processed_o2o'), 
+        'fm_t': get_metric(summary_row, 'fm_t_statistic_processed_o2o'),
+        'sharpe': get_metric(summary_row, 'tmb_sharpe_processed_o2o'),
+        'max_drawdown': get_metric(summary_row, 'tmb_max_drawdown_processed_o2o'),
+        'monotonicity': get_metric(summary_row, 'monotonicity_spearman_processed_o2o'),
+        'ic_decay': get_metric(summary_row, 'ic_decay_o2o', 0.5),
+        'sharpe_raw': get_metric(summary_row, 'tmb_sharpe_raw_o2o')
     }
     
     # === 2. 高级指标计算 ===
@@ -319,17 +319,17 @@ if __name__ == "__main__":
     
     # 测试数据
     test_data = {
-        'ic_mean_processed_c2c': 0.042,
-        'ic_ir_processed_c2c': 0.48,
-        'fm_t_statistic_processed_c2c': 2.6,
-        'tmb_sharpe_processed_c2c': 0.75,
-        'tmb_max_drawdown_processed_c2c': -0.28,
-        'tmb_win_rate_processed_c2c': 0.58,
-        'monotonicity_spearman_processed_c2c': 0.62,
-        'ic_decay_c2c': 0.22,
-        'tmb_sharpe_raw_c2c': 0.95,
-        'market_correlation_c2c': 0.35,
-        'ic_std_processed_c2c': 0.09
+        'ic_mean_processed_o2o': 0.042,
+        'ic_ir_processed_o2o': 0.48,
+        'fm_t_statistic_processed_o2o': 2.6,
+        'tmb_sharpe_processed_o2o': 0.75,
+        'tmb_max_drawdown_processed_o2o': -0.28,
+        'tmb_win_rate_processed_o2o': 0.58,
+        'monotonicity_spearman_processed_o2o': 0.62,
+        'ic_decay_o2o': 0.22,
+        'tmb_sharpe_raw_o2o': 0.95,
+        'market_correlation_o2o': 0.35,
+        'ic_std_processed_o2o': 0.09
     }
     
     result = calculate_factor_score_v33(test_data)

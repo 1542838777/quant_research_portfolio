@@ -3,79 +3,80 @@ from pathlib import Path
 from typing import Union, Dict, Any, List
 
 import pandas as pd
+from jupyterlab.pytest_plugin import workspaces_dir
 
-from projects._03_factor_selection.config_manager.base_config import INDEX_CODES
+from projects._03_factor_selection.config_manager.base_config import INDEX_CODES, workspaces_result_dir
 from projects._03_factor_selection.utils.factor_scoring_v33_final import calculate_factor_score_v33
 from quant_lib import logger
 
 from projects._03_factor_selection.visualization_manager import VisualizationManager
 
-
-def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.Series:
-    def get_metric(key: str, default=0.0):
-        val = summary_row.get(key)
-        return default if pd.isna(val) else val
-
-    ic_ir_processed_o2c = get_metric('ic_ir_processed_o2c')
-    ic_mean_processed_o2c = get_metric('ic_mean_processed_o2c')
-    tmb_sharpe_proc_o2c = get_metric('tmb_sharpe_processed_o2c')
-    fm_t_stat_proc_o2c = get_metric('fm_t_statistic_processed_o2c')
-    tmb_max_drawdown_proc_o2c = get_metric('tmb_max_drawdown_processed_o2c')
-    monotonicity_spearman_proc_o2c = get_metric('monotonicity_spearman_processed_o2c', None)
-    tmb_sharpe_raw_o2c = get_metric('tmb_sharpe_raw_o2c')
-    factor_direction = 1
-    if ic_mean_processed_o2c < -1e-4:
-        factor_direction = -1
-    elif abs(ic_mean_processed_o2c) <= 1e-4 and fm_t_stat_proc_o2c < 0:
-        factor_direction = -1
-    base_score = 0
-    adj_ic_mean = ic_mean_processed_o2c * factor_direction
-    if adj_ic_mean > 0.05:
-        base_score += 20
-    elif adj_ic_mean > 0.03:
-        base_score += 15
-    elif adj_ic_mean > 0.01:
-        base_score += 10
-    adj_ic_ir = ic_ir_processed_o2c * factor_direction
-    if adj_ic_ir > 0.5:
-        base_score += 20
-    elif adj_ic_ir > 0.3:
-        base_score += 15
-    elif adj_ic_ir > 0.1:
-        base_score += 10
-    t_abs = abs(fm_t_stat_proc_o2c)
-    if t_abs > 3.0:
-        base_score += 30
-    elif t_abs > 2.0:
-        base_score += 25
-    elif t_abs > 1.5:
-        base_score += 15
-    adj_tmb_sharpe = tmb_sharpe_proc_o2c * factor_direction
-    perf_score = 0
-    if adj_tmb_sharpe > 1.0:
-        perf_score = 20
-    elif adj_tmb_sharpe > 0.5:
-        perf_score = 15
-    elif adj_tmb_sharpe > 0.2:
-        perf_score = 10
-    if tmb_max_drawdown_proc_o2c < -0.5: perf_score -= 5
-    base_score += max(0, perf_score)
-    if pd.notna(monotonicity_spearman_proc_o2c) and abs(monotonicity_spearman_proc_o2c) >= 0.5:
-        base_score += abs(monotonicity_spearman_proc_o2c) * 10
-    robustness_penalty = 0
-    purity_penalty = 0
-    if tmb_sharpe_raw_o2c * factor_direction > 0.3:
-        denominator = max(abs(tmb_sharpe_raw_o2c), 1e-6)
-        decay_ratio = (tmb_sharpe_raw_o2c - tmb_sharpe_proc_o2c) / denominator
-        if decay_ratio > 0.5: purity_penalty += 15
-        if decay_ratio > 0.8: purity_penalty += 25
-    final_score = base_score - robustness_penalty - purity_penalty
-    return pd.Series({
-        'Base_Score': base_score,
-        'Robustness_Penalty': robustness_penalty,
-        'Purity_Penalty': purity_penalty,
-        'Final_Score': max(0, final_score)
-    })
+#
+# def calculate_factor_score_ultimate(summary_row: Union[pd.Series, dict]) -> pd.Series:
+#     def get_metric(key: str, default=0.0):
+#         val = summary_row.get(key)
+#         return default if pd.isna(val) else val
+#
+#     ic_ir_processed_o2c = get_metric('ic_ir_processed_o2c')
+#     ic_mean_processed_o2c = get_metric('ic_mean_processed_o2c')
+#     tmb_sharpe_proc_o2c = get_metric('tmb_sharpe_processed_o2c')
+#     fm_t_stat_proc_o2c = get_metric('fm_t_statistic_processed_o2c')
+#     tmb_max_drawdown_proc_o2c = get_metric('tmb_max_drawdown_processed_o2c')
+#     monotonicity_spearman_proc_o2c = get_metric('monotonicity_spearman_processed_o2c', None)
+#     tmb_sharpe_raw_o2c = get_metric('tmb_sharpe_raw_o2c')
+#     factor_direction = 1
+#     if ic_mean_processed_o2c < -1e-4:
+#         factor_direction = -1
+#     elif abs(ic_mean_processed_o2c) <= 1e-4 and fm_t_stat_proc_o2c < 0:
+#         factor_direction = -1
+#     base_score = 0
+#     adj_ic_mean = ic_mean_processed_o2c * factor_direction
+#     if adj_ic_mean > 0.05:
+#         base_score += 20
+#     elif adj_ic_mean > 0.03:
+#         base_score += 15
+#     elif adj_ic_mean > 0.01:
+#         base_score += 10
+#     adj_ic_ir = ic_ir_processed_o2c * factor_direction
+#     if adj_ic_ir > 0.5:
+#         base_score += 20
+#     elif adj_ic_ir > 0.3:
+#         base_score += 15
+#     elif adj_ic_ir > 0.1:
+#         base_score += 10
+#     t_abs = abs(fm_t_stat_proc_o2c)
+#     if t_abs > 3.0:
+#         base_score += 30
+#     elif t_abs > 2.0:
+#         base_score += 25
+#     elif t_abs > 1.5:
+#         base_score += 15
+#     adj_tmb_sharpe = tmb_sharpe_proc_o2c * factor_direction
+#     perf_score = 0
+#     if adj_tmb_sharpe > 1.0:
+#         perf_score = 20
+#     elif adj_tmb_sharpe > 0.5:
+#         perf_score = 15
+#     elif adj_tmb_sharpe > 0.2:
+#         perf_score = 10
+#     if tmb_max_drawdown_proc_o2c < -0.5: perf_score -= 5
+#     base_score += max(0, perf_score)
+#     if pd.notna(monotonicity_spearman_proc_o2c) and abs(monotonicity_spearman_proc_o2c) >= 0.5:
+#         base_score += abs(monotonicity_spearman_proc_o2c) * 10
+#     robustness_penalty = 0
+#     purity_penalty = 0
+#     if tmb_sharpe_raw_o2c * factor_direction > 0.3:
+#         denominator = max(abs(tmb_sharpe_raw_o2c), 1e-6)
+#         decay_ratio = (tmb_sharpe_raw_o2c - tmb_sharpe_proc_o2c) / denominator
+#         if decay_ratio > 0.5: purity_penalty += 15
+#         if decay_ratio > 0.8: purity_penalty += 25
+#     final_score = base_score - robustness_penalty - purity_penalty
+#     return pd.Series({
+#         'Base_Score': base_score,
+#         'Robustness_Penalty': robustness_penalty,
+#         'Purity_Penalty': purity_penalty,
+#         'Final_Score': max(0, final_score)
+#     })
 
 
 class FactorSelectorV2:
@@ -90,7 +91,7 @@ class FactorSelectorV2:
 
     def run_factor_analysis(self, TARGET_STOCK_POOL: str, top_n_final: int = 5, correlation_threshold: float = 0.5,
                             run_version: str = None):
-        RESULTS_PATH = 'D:\\lqs\\codeAbout\\py\\Quantitative\\quant_research_portfolio\\projects\\_03_factor_selection\\workspace\\result'
+        RESULTS_PATH = workspaces_result_dir
 
         # --- 第一、二级火箭: 构建多周期冠军排行榜 ---
         champion_leaderboard = self.build_champion_leaderboard(
@@ -201,11 +202,11 @@ class FactorSelectorV2:
                 with open(summary_file, 'r') as f: return json.load(f)
             return None
 
-        stats_o2c = _find_and_load_stats(factor_dir, 'o2o', run_version)
-        if not stats_o2c: return None
+        stats_o2o = _find_and_load_stats(factor_dir, 'o2o', run_version)
+        if not stats_o2o: return None
 
         row = {'factor_name': factor_dir.name}
-        for r_type, stats_data in [('o2o', stats_o2c)]:
+        for r_type, stats_data in [('o2o', stats_o2o)]:
             for d_type in ['raw', 'processed']:
                 try:
                     ic_stats = stats_data.get(f'ic_analysis_{d_type}', {}).get(period, {})
@@ -280,15 +281,13 @@ class FactorSelectorV2:
 
         final_leaderboard = pd.DataFrame(champions_data).set_index('factor_name', drop=False)
         ##
-        [
-                     ['ic_mean_processed_c2c', 'ic_ir_processed_c2c', 'monotonicity_spearman_processed_c2c',
 
-                    'Final_Score',
-                      'ic_mean_raw_c2c', 'ic_ir_raw_c2c', 'tmb_sharpe_raw_c2c', 'tmb_max_drawdown_raw_c2c',
-                    'monotonicity_spearman_raw_c2c', 'tmb_sharpe_processed_c2c',
-                    'tmb_max_drawdown_processed_c2c', 'monotonicity_spearman_processed_c2c', 'fm_t_statistic_processed_c2c',
-                    'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score',
-                    'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period','factor_name']]#
+        [['Final_Score','ic_mean_processed_o2o', 'ic_ir_processed_o2o', 'tmb_sharpe_processed_o2o',
+         'tmb_max_drawdown_processed_o2o', 'monotonicity_spearman_processed_o2o', 'fm_t_statistic_processed_o2o',
+         'Prediction_Score', 'Strategy_Score', 'Stability_Score', 'Purity_Score', 'Composability_Score', 'Final_Score','factor_name', 'ic_mean_raw_o2o', 'ic_ir_raw_o2o', 'tmb_sharpe_raw_o2o', 'tmb_max_drawdown_raw_o2o',
+         'monotonicity_spearman_raw_o2o',
+         'Grade', 'Factor_Direction', 'Composability_Passed', 'best_period']]
+        #
         ret  = final_leaderboard.sort_values(by='Final_Score', ascending=False)
         return ret
 
@@ -384,7 +383,7 @@ if __name__ == '__main__':
 
     selector.run_factor_analysis(
         TARGET_STOCK_POOL=TARGET_UNIVERSE,
-        top_n_final=2,
+        top_n_final=400,
         correlation_threshold=0.0,
         run_version='latest'
     )

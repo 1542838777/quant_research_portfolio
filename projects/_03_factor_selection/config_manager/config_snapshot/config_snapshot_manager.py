@@ -451,42 +451,95 @@ def load_config_from_yaml(config_path: str) -> Dict[str, Any]:
     """从YAML文件加载配置"""
     with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
+#
+#
+# if __name__ == "__main__":
+#     # 示例用法
+#     config_path = r"/projects/_03_factor_selection/factory/config.yaml"
+#
+#     # 创建配置管理器
+#     manager = ConfigSnapshotManager()
+#
+#     # 加载配置
+#     config = load_config_from_yaml(config_path)
+#
+#     # 创建配置快照
+#     snapshot_id = manager.create_snapshot(
+#         config,
+#         snapshot_name="测试动量因子配置V1.0",
+#         test_context={
+#             'test_type': 'single_factor',
+#             'factors': ['momentum_120d', 'volatility_90d'],
+#             'stock_pools': ['institutional_stock_pool']
+#         }
+#     )
+#
+#     # 关联测试结果
+#     manager.link_test_result(
+#         snapshot_id=snapshot_id,
+#         factor_name="momentum_120d",
+#         stock_pool="000300",
+#         test_description="动量因子单因子测试"
+#     )
+#
+#     # 查看快照
+#     manager.print_snapshot_summary(snapshot_id)
+#
+#     # 列出所有快照
+#     snapshots = manager.list_snapshots(limit=10)
+#     print(f"\n📝 最近的配置快照:")
+#     for snapshot in snapshots:
+#         print(f"  {snapshot['snapshot_id']}: {snapshot['snapshot_name']}")
 
 
-if __name__ == "__main__":
-    # 示例用法
-    config_path = r"/projects/_03_factor_selection/factory/config.yaml"
-    
-    # 创建配置管理器
+
+
+
+if __name__ == '__main__':
+    factors_tested =  [
+        "operating_accruals",
+        "earnings_stability",
+        "pead",
+        "quality_momentum",
+        "rsi",
+        "cci",
+        "log_total_mv",
+        "log_circ_mv",
+        "bm_ratio",
+        "ep_ratio",
+        "sp_ratio",
+        "cfp_ratio",
+        "roe_change_q",
+        "roe_ttm",
+        "gross_margin_ttm",
+        "debt_to_assets",
+        "net_profit_growth_yoy",
+        "total_revenue_growth_yoy",
+        "sharpe_momentum_60d",
+        "momentum_12_1",
+        "momentum_20d",
+        "momentum_120d",
+        "momentum_pct_60d",
+        "volatility_120d",
+        "volatility_90d",
+        "volatility_40d",
+        "reversal_21d",
+        "reversal_5d",
+        "turnover_rate_90d_mean",
+        "ln_turnover_value_90d",
+        "turnover_t1_div_t20d_avg",
+        "turnover_rate_monthly_mean",
+        "amihud_liquidity",
+        "value_composite",
+        "vwap_deviation_20d",
+        "sw_l1_momentum_21d"
+    ]
     manager = ConfigSnapshotManager()
-    
-    # 加载配置
-    config = load_config_from_yaml(config_path)
-    
-    # 创建配置快照
-    snapshot_id = manager.create_snapshot(
-        config, 
-        snapshot_name="测试动量因子配置V1.0",
-        test_context={
-            'test_type': 'single_factor',
-            'factors': ['momentum_120d', 'volatility_90d'],
-            'stock_pools': ['institutional_stock_pool']
-        }
-    )
-    
-    # 关联测试结果
-    manager.link_test_result(
-        snapshot_id=snapshot_id,
-        factor_name="momentum_120d",
-        stock_pool="000300",
-        test_description="动量因子单因子测试"
-    )
-    
-    # 查看快照
-    manager.print_snapshot_summary(snapshot_id)
-    
-    # 列出所有快照
-    snapshots = manager.list_snapshots(limit=10)
-    print(f"\n📝 最近的配置快照:")
-    for snapshot in snapshots:
-        print(f"  {snapshot['snapshot_id']}: {snapshot['snapshot_name']}")
+    #20190328_20231231
+    for name in factors_tested:
+       manager.link_test_result(
+            snapshot_id = '20250906_045625_05e460ab',
+            factor_name=name,
+            stock_pool="000906",
+            test_description="o2o_v3"
+        )
