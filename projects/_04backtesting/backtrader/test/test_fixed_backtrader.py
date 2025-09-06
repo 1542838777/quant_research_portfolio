@@ -97,7 +97,7 @@ def test_real_data():
     
     try:
         result_manager = ResultLoadManager(
-            calcu_return_type='c2c', 
+            calcu_return_type='o2o',
             version='20190328_20231231',
             is_raw_factor=False
         )

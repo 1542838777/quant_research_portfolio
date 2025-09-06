@@ -212,7 +212,7 @@ def run_working_test():
     try:
         # 1. 加载真实数据（小规模）
         result_manager = ResultLoadManager(
-            calcu_return_type='c2c', 
+            calcu_return_type='o2o',
             version='20190328_20231231',
             is_raw_factor=False
         )

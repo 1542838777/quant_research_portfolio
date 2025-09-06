@@ -187,7 +187,7 @@ class RollingICFactorSelector:
         
         # 构建数据路径
         rolling_ic_dir = (self.main_work_path / self.pool_index / factor_name / 
-                         'c2c' / self.version / 'rolling_ic')
+                         'o2o' / self.version / 'rolling_ic')
         
         # 如果目录不存在，尝试生成
         if not rolling_ic_dir.exists() or force_generate:
@@ -929,7 +929,7 @@ class RollingICFactorSelector:
         try:
             # 构建数据路径
             factor_dir = (self.main_work_path / self.pool_index / factor_name / 
-                         'c2c' / self.version)
+                         'o2o' / self.version)
             
             # 寻找处理后的因子文件
             processed_file = factor_dir / 'processed_factor.parquet'

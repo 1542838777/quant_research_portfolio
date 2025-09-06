@@ -20,6 +20,7 @@ from .factor_calculator.factor_calculator import FactorCalculator
 # 导入子模块
 from .registry.factor_registry import FactorRegistry, FactorCategory, FactorMetadata
 from .storage.single_storage import add_single_factor_test_result
+from ..config_manager.base_config import workspaces_result_dir
 from ..config_manager.factor_direction_config import FACTOR_DIRECTIONS
 from ..data_manager.data_manager import DataManager, fill_and_align_by_stock_pool, my_align
 from ..utils.data.check_data import check_data_quality_detail
@@ -33,7 +34,7 @@ class FactorResultsManager:
     def __init__(self,
                  **kwargs):
 
-        self.results_dir = Path(__file__).parent.parent / 'workspace' / 'result'
+        self.results_dir =  workspaces_result_dir
 
         for key, value in kwargs.items():
             setattr(self, key, value)

@@ -587,13 +587,13 @@ class ICWeightedSynthesizer(FactorSynthesizer):
         logger.info(f"📊 IC数据收集完成: {len(factor_ic_stats)}/{len(factor_names)} 个因子")
         return factor_ic_stats
 
-    def _load_factor_ic_stats(self, factor_name: str, stock_pool_index: str, calcu_type='c2c', snap_config_id: str = None) -> Optional[Dict]:
+    def _load_factor_ic_stats(self, factor_name: str, stock_pool_index: str, calcu_type='o2o', snap_config_id: str = None) -> Optional[Dict]:
         """
         从滚动IC存储中提取因子的IC统计数据
         Args:
             factor_name: 因子名称
             stock_pool_index: 股票池索引
-            calcu_type: 收益计算类型，默认'c2c'
+            calcu_type: 收益计算类型，默认'o2o'
             snap_config_id: 配置快照ID，用于确定版本
             
         Returns:

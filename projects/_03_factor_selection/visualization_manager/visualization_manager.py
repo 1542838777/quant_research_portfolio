@@ -149,7 +149,7 @@ class VisualizationManager:
     # ==========================================================================================
 
     def plot_performance_report(self, backtest_base_on_index: str, factor_name: str, results_path: str,
-                                default_config: str = 'c2c', run_version: str = 'latest') -> Optional[str]:
+                                default_config: str = 'o2o', run_version: str = 'latest') -> Optional[str]:
         """【业绩报告】生成单因子综合表现报告 (3x2布局)，专注盈利能力。"""
         logger.info(f"为因子 {factor_name} 生成综合表现报告...")
         data = self._load_report_data(backtest_base_on_index, factor_name, results_path, default_config, run_version)
@@ -171,7 +171,7 @@ class VisualizationManager:
         return self._save_figure(fig, data, "performance_report")
 
     def plot_characteristics_report(self, backtest_base_on_index: str, factor_name: str, results_path: str,
-                                    default_config: str = 'c2c', run_version: str = 'latest') -> Optional[str]:
+                                    default_config: str = 'o2o', run_version: str = 'latest') -> Optional[str]:
         """【特性报告】生成因子特性诊断报告 (2x2布局)，专注因子自身内在属性。"""
         logger.info(f"为因子 {factor_name} 生成特性诊断报告...")
         data = self._load_report_data(backtest_base_on_index, factor_name, results_path, default_config, run_version)
@@ -190,7 +190,7 @@ class VisualizationManager:
         return self._save_figure(fig, data, "characteristics_report")
 
     def plot_attribution_panel(self, backtest_base_on_index: str, factor_name: str, results_path: str,
-                               default_config: str = 'c2c', run_version: str = 'latest') -> Optional[str]:
+                               default_config: str = 'o2o', run_version: str = 'latest') -> Optional[str]:
         """【归因报告】生成对比Raw vs. Processed分层表现的归因面板 (1x2布局)。"""
         logger.info(f"为因子 {factor_name} 生成因子归因分析面板...")
         data = self._load_report_data(backtest_base_on_index, factor_name, results_path, default_config, run_version)
@@ -209,7 +209,7 @@ class VisualizationManager:
         return self._save_figure(fig, data, "attribution_panel")
 
     def plot_ic_quantile_panel(self, backtest_base_on_index: str, factor_name: str, results_path: str,
-                               default_config: str = 'c2c', run_version: str = 'latest') -> Optional[str]:
+                               default_config: str = 'o2o', run_version: str = 'latest') -> Optional[str]:
         """【核心摘要】生成IC分析和分层回测的核心摘要面板 (1x2布局)。"""
         logger.info(f"为因子 {factor_name} 生成IC与分层核心摘要面板...")
         data = self._load_report_data(backtest_base_on_index, factor_name, results_path, default_config, run_version)

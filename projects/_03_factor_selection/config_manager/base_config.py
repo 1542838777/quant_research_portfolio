@@ -1,4 +1,8 @@
 # 常用指数代码配置
+from pathlib import Path
+
+from jupyterlab.pytest_plugin import workspaces_dir
+
 INDEX_CODES = {
     "HS300": "000300",     # 沪深300
     "ZZ500": "000905",     # 中证500
@@ -33,5 +37,8 @@ FACTOR_STYLE_RISK_MODEL = {
 #     'default': ['market_cap', 'industry']
 # }
 
+
+workspaces_dir = Path(r'D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace')
+workspaces_result_dir = workspaces_dir / 'result'
 config_yaml_path=r'D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\config.yaml'
 experiments_yaml_path=r'D:\lqs\codeAbout\py\Quantitative\quant_research_portfolio\projects\_03_factor_selection\factory\experiments.yaml'

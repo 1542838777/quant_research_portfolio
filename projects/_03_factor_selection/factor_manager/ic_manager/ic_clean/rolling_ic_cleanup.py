@@ -202,7 +202,7 @@ class RollingICCleaner:
     def cleanup_by_factor_list(
         self,
         factor_names: List[str],
-        calcu_type: str = "c2c",
+        calcu_type: str = "o2o",
         version: str = "20190328_20231231",
         stock_pool: str = "000906",
         dry_run: bool = True

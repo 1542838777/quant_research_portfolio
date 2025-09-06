@@ -20,7 +20,7 @@ class BacktestDataLoader:
     """回测数据加载器"""
     
     def __init__(self, 
-                 calcu_return_type: str = 'c2c',
+                 calcu_return_type: str = 'o2o',
                  version: str = '20190328_20231231',
                  is_raw_factor: bool = False):
         """
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     
     # 创建数据加载器
     data_loader = BacktestDataLoader(
-        calcu_return_type='c2c',
+        calcu_return_type='o2o',
         version='20190328_20231231',
         is_raw_factor=False
     )

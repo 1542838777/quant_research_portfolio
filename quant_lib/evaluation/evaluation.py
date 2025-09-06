@@ -53,7 +53,6 @@ def calculate_forward_returns_tradable_o2o(period: int,
     包含了生存偏差过滤和截面去极值处理。
     """
     open_prices = open_df.copy(deep=True)
-    close_prices = close_df.copy(deep=True)
 
     # 1. 定义起点和终点价格 (逻辑核心)
     start_price = open_prices
@@ -229,7 +228,7 @@ def calculate_ic(
         - ic_series (pd.Series): IC时间序列，索引为满足条件的有效日期。
         - stats_dict (Dict): 包含IC均值、ICIR、t值、p值等核心统计指标的字典。
     """
-    # local_df=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result\000906\log_circ_mv\c2c\20250101_20250710\processed_factor.parquet")
+    # local_df=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result\000906\log_circ_mv\o2o\20250101_20250710\processed_factor.parquet")
     # close_hfq=pd.read_parquet(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result\000906\close_hfq\20250101_20250710\close_hfq.parquet")
     # close_hfq_local=calculate_forward_returns_c2c(period=forward_periods[0],close_df=close_hfq)
     logger.info(f"\t向量化计算 {method.capitalize()} 类型IC (生产级版本)...")

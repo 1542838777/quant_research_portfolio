@@ -281,7 +281,7 @@ class EnhancedTestRunner:
                     snapshot_id=session_snapshot_id,
                     factor_name=factor_name,
                     stock_pool=stock_pool_index,
-                    calc_type='c2c',
+                    calc_type='o2o',
                     version=f"{self.data_manager.backtest_start_date}_{self.data_manager.backtest_end_date}",
                     test_description=f"批量测试_{self.current_session['session_id']}"
                 )
@@ -468,7 +468,7 @@ def run_test_by_config():
         
         # 运行批量测试
         results = test_runner.init_and_test_for_simple(
-            session_description="生产环境_因子筛选_V2.0"
+            session_description="生产环境_因子批量 o2o_V3.0"
         )
         
         # 输出最终结果
@@ -489,6 +489,6 @@ def run_test_composite_by_local_rolling_ic(his_snap_config_id):
 
 
 if __name__ == "__main__":
-    # run_test_by_config()
-    run_test_composite_by_local_rolling_ic('20250825_091622_98ed2d08')
+    run_test_by_config()
+    # run_test_composite_by_local_rolling_ic('20250825_091622_98ed2d08')
 

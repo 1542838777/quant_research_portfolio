@@ -41,7 +41,7 @@ def quick_cleanup_all_factors():
     logger.info("\n=== 试运行模式 - 预览将要删除的目录 ===")
     success, failed, errors = cleaner.cleanup_by_factor_list(
         factor_names=all_factors,
-        calcu_type="c2c",
+        calcu_type="o2o",
         version="20190328_20231231", 
         stock_pool="000906",
         dry_run=True  # 试运行
@@ -61,7 +61,7 @@ def quick_cleanup_all_factors():
         logger.info("\n=== 开始实际删除操作 ===")
         success, failed, errors = cleaner.cleanup_by_factor_list(
             factor_names=all_factors,
-            calcu_type="c2c", 
+            calcu_type="o2o",
             version="20190328_20231231",
             stock_pool="000906",
             dry_run=False  # 实际删除
@@ -115,7 +115,7 @@ def cleanup_by_pattern():
     # 清理特定股票池和版本下的所有因子
     success, failed, errors = cleaner.cleanup_by_criteria(
         stock_pools=["000906"],        # 只清理000906股票池
-        calcu_types=["c2c"],           # 只清理c2c计算类型
+        calcu_types=["o2o"],           # 只清理c2c计算类型
         versions=["20190328_20231231"], # 只清理特定版本
         dry_run=False
     )

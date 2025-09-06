@@ -33,7 +33,7 @@ def load_ic_stats(json:json=None,is_raw_factor:bool=False):
     ic_stas =json.get(f'ic_analysis{subfix}')
     return ic_stas
 class ResultLoadManager:
-    def __init__(self, calcu_return_type='c2c', version:str=None, is_raw_factor: bool=False):
+    def __init__(self, calcu_return_type='o2o', version:str=None, is_raw_factor: bool=False):
         if version is None:
             raise ValueError('请指定版本')
         self.main_work_path = Path(r"D:\lqs\codeAbout\py\Quantitative\import_file\quant_research_portfolio\workspace\result")

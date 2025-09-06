@@ -144,7 +144,7 @@ class ConfigSnapshotManager:
         snapshot_id: str,
         factor_name: str,
         stock_pool: str, 
-        calc_type: str = 'c2c',
+        calc_type: str = 'o2o',
         version: str = '20190328_20231231',
         test_description: str = ""
     ) -> bool:
@@ -222,7 +222,7 @@ class ConfigSnapshotManager:
         self,
         factor_name: str,
         stock_pool: str,
-        calc_type: str = 'c2c', 
+        calc_type: str = 'o2o',
         version: str = '20190328_20231231'
     ) -> Optional[Dict[str, Any]]:
         """获取测试结果对应的配置"""

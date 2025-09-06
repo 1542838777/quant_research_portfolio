@@ -44,7 +44,7 @@ class ICCalculationConfig:
     max_monthly_turnover: float = 0.40  # 最大月度换手率上限
     turnover_mode: str = 'calculate'  # 换手率计算模式: 'estimate'(经验估算) 或 'calculate'(动态计算)
 
-    def __init__(self,lookback_months=12, forward_periods: list=None , min_require_observations: int = 120, calculation_frequency: str = 'M',calcu_type='c2c', version='20190328_20231231', turnover_mode='estimate'):
+    def __init__(self,lookback_months=12, forward_periods: list=None , min_require_observations: int = 120, calculation_frequency: str = 'M',calcu_type='o2o', version='20190328_20231231', turnover_mode='estimate'):
         self.lookback_months = lookback_months
         self.forward_periods = forward_periods
         self.min_require_observations = min_require_observations
@@ -841,11 +841,11 @@ def run_cal_and_save_rolling_ic_by_snapshot_config_id(snapshot_config_id, factor
         min_require_observations=120,
         calculation_frequency='M'
     )
-    if 'c2c' not in config_evaluation['returns_calculator']:
+    if 'o2o' not in config_evaluation['returns_calculator']:
         raise ValueError("之前的测试 计算收益率不是按照c2c来的，现在无法滚动 ")
-    manager = RollingICManager('c2c', config,version)
+    manager = RollingICManager('o2o', config,version)
 
-    resultLoadManager = ResultLoadManager(calcu_return_type='c2c', version=version,
+    resultLoadManager = ResultLoadManager(calcu_return_type='o2o', version=version,
                                           is_raw_factor=False)
 
     stock_pool_index = pool_index

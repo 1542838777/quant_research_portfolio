@@ -31,7 +31,7 @@ def load_test_data():
     """加载测试数据 - 使用真实的价格和因子数据"""
     try:
         result_manager = ResultLoadManager(
-            calcu_return_type='c2c', 
+            calcu_return_type='o2o',
             version='20190328_20231231',
             is_raw_factor=False
         )

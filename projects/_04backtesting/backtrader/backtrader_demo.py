@@ -28,7 +28,7 @@ def load_data_for_backtrader_demo(factor_names):
     """加载演示数据"""
     try:
         result_manager = ResultLoadManager(
-            calcu_return_type='c2c', 
+            calcu_return_type='o2o',
             version='20190328_20231231',
             is_raw_factor=False
         )

@@ -1495,7 +1495,7 @@ class FactorAnalyzer:
         # 定义测试配置
         test_configurations = {
             'o2o': o2o_calculator,
-            'c2c': c2c_calculator
+            'o2o': c2c_calculator
         }
         returns_calculator_config = self.factor_manager.data_manager.config['evaluation']['returns_calculator']
         returns_calculator_result = {name: test_configurations[name] for name in returns_calculator_config}
